@@ -54,6 +54,7 @@ Menu b2menu =
 char	*b3items[B3FIXED+MAXHIDDEN+1] =
 {
 	"New",
+	"Launch",
 	"Reshape",
 	"Move",
 	"Delete",
@@ -64,6 +65,7 @@ char	*b3items[B3FIXED+MAXHIDDEN+1] =
 enum
 {
 	New,
+	Launch,
 	Reshape,
 	Move,
 	Delete,
@@ -79,6 +81,26 @@ Menu	egg =
 {
 	version
 };
+
+void 
+runterm() {
+	if(termprog != NULL){
+		execl(shell, shell, "-c", termprog, (char*)0);
+		fprintf(stderr, "rio: exec %s", shell);
+		perror(" failed");
+	}
+	execlp("9term", "9term", scrolling ? "-ws" : "-w", (char*)0);
+	execlp("xterm", "xterm", "-ut", (char*)0);
+	perror("rio: exec 9term/xterm failed");
+	exit(1);
+}
+
+void
+runlauncher() {
+	execlp("dmenu_run", "dmenu_run", (char*)0);
+	perror("rio: exec dmenu_run failed");
+	exit(1);
+}
 
 void
 button(XButtonEvent *e)
@@ -157,7 +179,10 @@ button(XButtonEvent *e)
 		cmapnofocus(s);
 	switch (n = menuhit(e, &b3menu)){
 	case New:
-		spawn(s);
+		spawn(s, runterm);
+		break;
+	case Launch:
+		spawn(s, runlauncher);
 		break;
 	case Reshape:
 		reshape(selectwin(1, 0, s), Button3, sweep, 0);
@@ -184,7 +209,7 @@ button(XButtonEvent *e)
 }
 
 void
-spawn(ScreenInfo *s)
+spawn(ScreenInfo *s, void (*fn)())
 {
 	/*
 	 * ugly dance to cause sweeping for terminals.
@@ -205,15 +230,7 @@ spawn(ScreenInfo *s)
 			signal(SIGINT, SIG_DFL);
 			signal(SIGTERM, SIG_DFL);
 			signal(SIGHUP, SIG_DFL);
-			if(termprog != NULL){
-				execl(shell, shell, "-c", termprog, (char*)0);
-				fprintf(stderr, "rio: exec %s", shell);
-				perror(" failed");
-			}
-			execlp("9term", "9term", scrolling ? "-ws" : "-w", (char*)0);
-			execlp("xterm", "xterm", "-ut", (char*)0);
-			perror("rio: exec 9term/xterm failed");
-			exit(1);
+			fn(); /* run in child process */
 		}
 		exit(0);
 	}

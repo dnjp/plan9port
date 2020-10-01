@@ -28,6 +28,7 @@ XFontStruct 	*font;
 int 			nostalgia;
 char			**myargv;
 char			*termprog;
+char			*launcher;
 char			*shell;
 Bool			shape;
 int 			_border = 4;
@@ -114,6 +115,8 @@ main(int argc, char *argv[])
 				fprintf(stderr, "rio: wrong number of virtual displays, defaulting to 4\n");
 				numvirtuals = 4;
 			}
+		} else if(strcmp(argv[i], "-launcher")){
+			launcher = argv[++i];
 		} else if(strcmp(argv[i], "-version") == 0){
 			fprintf(stderr, "%s", version[0]);
 			if(PATCHLEVEL > 0)
