@@ -36,7 +36,7 @@ extern	int	Pfmt(Fmt*);
 #define 	DGreen		0x00FF00FF
 #define 	DBlue		0x0000FFFF
 #define 	DCyan		0x00FFFFFF
-#define 	DMagenta		0xFF00FFFF
+#define 	DMagenta	0xFF00FFFF
 #define 	DYellow		0xFFFF00FF
 #define 	DPaleyellow	0xFFFFAAFF
 #define 	DDarkyellow	0xEEEE9EFF
@@ -44,16 +44,20 @@ extern	int	Pfmt(Fmt*);
 #define 	DPalegreen	0xAAFFAAFF
 #define 	DMedgreen	0x88CC88FF
 #define 	DDarkblue	0x000055FF
-#define 	DPalebluegreen 0xAAFFFFFF
-#define 	DPaleblue		0x0000BBFF
+#define 	DPalebluegreen  0xAAFFFFFF
+#define 	DPaleblue	0x0000BBFF
 #define 	DBluegreen	0x008888FF
 #define 	DGreygreen	0x55AAAAFF
 #define 	DPalegreygreen	0x9EEEEEFF
 #define 	DYellowgreen	0x99994CFF
-#define 	DMedblue		0x000099FF
+#define 	DMedblue	0x000099FF
 #define 	DGreyblue	0x005DBBFF
 #define 	DPalegreyblue	0x4993DDFF
 #define 	DPurpleblue	0x8888CCFF
+#define		DCoralGreen	0x72DEC2FF
+#define		DMedRed		0xAA0000FF
+#define		DLightGreen	0x006600FF
+#define		DLightCyan	0x72DEC2FF
 
 #define 	DNotacolor	0xFFFFFF00
 #define 	DNofill		DNotacolor

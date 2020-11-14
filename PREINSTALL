@@ -1,12 +1,11 @@
 #!/bin/sh
 
 sudo rm -rf /usr/local/plan9/*
-sudo mkdir /usr/local/plan9
+sudo mkdir -p /usr/local/plan9
 sudo cp -r ./* /usr/local/plan9/
 cd /usr/local/plan9
 sudo ./INSTALL
 
-su
 PLAN9=/usr/local/plan9
 cd $PLAN9/src/cmd/upas/nfs
 mk install
