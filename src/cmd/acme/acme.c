@@ -492,7 +492,7 @@ keyboardthread(void *v)
 				t->w->body.file->curtext = &t->w->body;
 			if(timer != nil)
 				timercancel(timer);
-			if(t!=nil && t->what==Tag) {
+			if(t!=nil && t->what==Tag){
 				timer = timerstart(500);
 				alts[KTimer].c = timer->c;
 				alts[KTimer].op = CHANRCV;
@@ -577,7 +577,7 @@ mousethread(void *v)
 			t = rowwhich(&row, m.xy);
 
 			if((t!=mousetext && t!=nil && t->w!=nil) &&
-				(mousetext==nil || mousetext->w==nil || t->w->id!=mousetext->w->id)) {
+				(mousetext==nil || mousetext->w==nil || t->w->id!=mousetext->w->id)){
 				xfidlog(t->w, "focus");
 			}
 
@@ -1040,7 +1040,7 @@ iconinit(void)
 	Rectangle r;
 	Image *tmp;
 
-	if(tagcols[BACK] == nil) {
+	if(tagcols[BACK] == nil){
 		/* Blue */
 		tagcols[BACK] = display->black;
 		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
@@ -1053,7 +1053,7 @@ iconinit(void)
 		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DLightCyan);
 
 		/* Halftone */
-		textcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DYellowgreen);
+		textcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DBlack);
 		draw(textcols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
 		draw(textcols[BORD], Rect(0,0,1,1), display->white, nil, ZP);
 		textcols[TEXT] = display->black;

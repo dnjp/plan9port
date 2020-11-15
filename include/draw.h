@@ -48,16 +48,16 @@ extern	int	Pfmt(Fmt*);
 #define 	DPaleblue	0x0000BBFF
 #define 	DBluegreen	0x008888FF
 #define 	DGreygreen	0x55AAAAFF
-#define 	DPalegreygreen	0x9EEEEEFF
+#define 	DPalegreygreen 0x9EEEEEFF
 #define 	DYellowgreen	0x99994CFF
 #define 	DMedblue	0x000099FF
 #define 	DGreyblue	0x005DBBFF
 #define 	DPalegreyblue	0x4993DDFF
 #define 	DPurpleblue	0x8888CCFF
-#define		DCoralGreen	0x72DEC2FF
-#define		DMedRed		0xAA0000FF
-#define		DLightGreen	0x006600FF
-#define		DLightCyan	0x72DEC2FF
+#define	DCoralGreen	0x72DEC2FF
+#define	DMedRed		0xAA0000FF
+#define	DLightGreen	0x006600FF
+#define	DLightCyan	0x72DEC2FF
 
 #define 	DNotacolor	0xFFFFFF00
 #define 	DNofill		DNotacolor
