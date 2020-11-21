@@ -30,12 +30,11 @@ flstart(Rectangle r)
 	lDrect = r;
 
 	/* Main text is yellowish */
-	maincols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
+	/* maincols[BACK] = allocimagemix(display, DPaleyellow, DWhite); */
+	maincols[BACK] = display->black;
 	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DLightCyan);
-	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DBlack);
-	draw(maincols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
-	draw(maincols[BORD], Rect(0,0,1,1), display->white, nil, ZP);
-	maincols[TEXT] = display->black;
+	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DPurpleBlue);
+	maincols[TEXT] = display->white;
 	maincols[HTEXT] = display->black;
 
 	/* Command text is blueish */
