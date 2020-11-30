@@ -31,18 +31,16 @@ flstart(Rectangle r)
 
 	/* Main text is yellowish */
 	maincols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
-	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DLightCyan);
-	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DBlack);
-	draw(maincols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
-	draw(maincols[BORD], Rect(0,0,1,1), display->white, nil, ZP);
+	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
+	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DYellowgreen);
 	maincols[TEXT] = display->black;
 	maincols[HTEXT] = display->black;
 
 	/* Command text is blueish */
-	cmdcols[BACK] = display->black;
-	cmdcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
+	cmdcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
+	cmdcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
 	cmdcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DPurpleblue);
-	cmdcols[TEXT] = display->white;
+	cmdcols[TEXT] = display->black;
 	cmdcols[HTEXT] = display->black;
 }
 

@@ -492,7 +492,7 @@ keyboardthread(void *v)
 				t->w->body.file->curtext = &t->w->body;
 			if(timer != nil)
 				timercancel(timer);
-			if(t!=nil && t->what==Tag){
+			if(t!=nil && t->what==Tag) {
 				timer = timerstart(500);
 				alts[KTimer].c = timer->c;
 				alts[KTimer].op = CHANRCV;
@@ -577,7 +577,7 @@ mousethread(void *v)
 			t = rowwhich(&row, m.xy);
 
 			if((t!=mousetext && t!=nil && t->w!=nil) &&
-				(mousetext==nil || mousetext->w==nil || t->w->id!=mousetext->w->id)){
+				(mousetext==nil || mousetext->w==nil || t->w->id!=mousetext->w->id)) {
 				xfidlog(t->w, "focus");
 			}
 
@@ -1040,56 +1040,52 @@ iconinit(void)
 	Rectangle r;
 	Image *tmp;
 
-	if(tagcols[BACK] == nil){
+	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = display->black;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DCoralGreen);
-		tagcols[TEXT] = display->white;
+		tagcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
+		tagcols[TEXT] = display->black;
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
 		textcols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DLightCyan);
-
-		/* Halftone */
-		textcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DBlack);
-		draw(textcols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
-		draw(textcols[BORD], Rect(0,0,1,1), display->white, nil, ZP);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
+		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellowgreen);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
 	}
 
-	/* Button */
 	r = Rect(0, 0, Scrollwid+ButtonBorder, font->height+1);
 	if(button && eqrect(r, button->r))
 		return;
+
 	if(button){
 		freeimage(button);
 		freeimage(modbutton);
 		freeimage(colbutton);
 	}
+
 	button = allocimage(display, r, screen->chan, 0, DNofill);
 	draw(button, r, tagcols[BACK], nil, r.min);
 	r.max.x -= ButtonBorder;
 	border(button, r, ButtonBorder, tagcols[BORD], ZP);
 
-	/* Mod Button */
 	r = button->r;
 	modbutton = allocimage(display, r, screen->chan, 0, DNofill);
 	draw(modbutton, r, tagcols[BACK], nil, r.min);
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
-
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DLightCyan);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DMedblue);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
+
 	r = button->r;
 	colbutton = allocimage(display, r, screen->chan, 0, DPurpleblue);
 
-	but2col = allocimage(display, r, screen->chan, 1, DBlack);
-	but3col = allocimage(display, r, screen->chan, 1, DLightCyan);
+	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
+	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);
 }
 
 /*
