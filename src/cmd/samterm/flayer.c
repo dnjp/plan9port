@@ -91,12 +91,12 @@ void
 flclose(Flayer *l)
 {
 	if(l->visible == All)
-		draw(screen, l->entire, display->white, nil, ZP);
+		draw(screen, l->entire, display->black, nil, ZP);
 	else if(l->visible == Some){
 		if(l->f.b == 0)
 			l->f.b = allocimage(display, l->entire, screen->chan, 0, DNofill);
 		if(l->f.b){
-			draw(l->f.b, l->entire, display->white, nil, ZP);
+			draw(l->f.b, l->entire, display->black, nil, ZP);
 			flrefresh(l, l->entire, 0);
 		}
 	}
@@ -368,7 +368,7 @@ flresize(Rectangle dr)
 	if(0 && Dx(dr)==Dx(olDrect) && Dy(dr)==Dy(olDrect))
 		move = 1;
 	else
-		draw(screen, lDrect, display->white, nil, ZP);
+		draw(screen, lDrect, display->black, nil, ZP);
 	for(i=0; i<nllist; i++){
 		l = llist[i];
 		l->lastsr = ZR;

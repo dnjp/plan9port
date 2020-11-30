@@ -53,16 +53,16 @@ wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 		/* greys are multiples of 0x11111100+0xFF, 14* being palest */
 		grey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xEEEEEEFF);
 		darkgrey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x666666FF);
-		cols[BACK] = display->white;
+		cols[BACK] = display->black;
 		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xCCCCCCFF);
 		cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x999999FF);
-		cols[TEXT] = display->black;
-		cols[HTEXT] = display->black;
+		cols[TEXT] = display->white;
+		cols[HTEXT] = display->white;
 		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreygreen);
 		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreygreen);
-		holdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DMedblue);
-		lightholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreyblue);
-		paleholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreyblue);
+		holdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DLightCyan);
+		lightholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DLightGreen);
+		paleholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DLightCyan);
 	}
 	w = emalloc(sizeof(Window));
 	w->screenr = i->r;
@@ -764,9 +764,9 @@ wsetcols(Window *w)
 			w->f.cols[TEXT] = w->f.cols[HTEXT] = lightholdcol;
 	else
 		if(w == input)
-			w->f.cols[TEXT] = w->f.cols[HTEXT] = display->black;
+			w->f.cols[TEXT] = w->f.cols[HTEXT] = display->white;
 		else
-			w->f.cols[TEXT] = w->f.cols[HTEXT] = darkgrey;
+			w->f.cols[TEXT] = w->f.cols[HTEXT] = display->white;
 }
 
 void

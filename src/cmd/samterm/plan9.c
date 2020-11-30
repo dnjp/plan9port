@@ -57,7 +57,7 @@ getscreen(int argc, char **argv)
 		maxtab = strtoul(t, nil, 0);
 		free(t);
 	}
-	draw(screen, screen->clipr, display->white, nil, ZP);
+	draw(screen, screen->clipr, display->black, nil, ZP);
 }
 
 int

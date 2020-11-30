@@ -6,10 +6,5 @@ sudo cp -r ./* /usr/local/plan9/
 cd /usr/local/plan9
 sudo ./INSTALL
 
-PLAN9=/usr/local/plan9
-cd $PLAN9/src/cmd/upas/nfs
-mk install
-
-cd $PLAN9/src/cmd/upas
-mk install
+su -s /bin/sh -c 'export PLAN9=/usr/local/plan9 && export PATH=$PATH:$PLAN9/bin && cd $PLAN9/src/cmd/upas/nfs && mk install && cd $PLAN9/src/cmd/upas && mk install'
 
