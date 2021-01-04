@@ -28,6 +28,7 @@ XFontStruct 	*font;
 int 			nostalgia;
 char			**myargv;
 char			*termprog;
+char			*launcher;
 char			*shell;
 Bool			shape;
 int 			_border = 4;
@@ -108,6 +109,8 @@ main(int argc, char *argv[])
 		}
 		else if(strcmp(argv[i], "-term") == 0 && i+1<argc)
 			termprog = argv[++i];
+		else if(strcmp(argv[i], "-launcher") == 0 && i+1 < argc)
+			launcher = argv[++i];
 		else if(strcmp(argv[i], "-virtuals") == 0 && i+1<argc){
 			numvirtuals = atoi(argv[++i]);
 			if(numvirtuals < 0 || numvirtuals > 12){

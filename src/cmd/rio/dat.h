@@ -4,7 +4,7 @@
 #define CORNER		_corner
 #define	INSET		_inset
 #define MAXHIDDEN	128
-#define B3FIXED 	5
+#define B3FIXED 6
 #define NUMVIRTUALS	12
 
 #define AllButtonMask	(Button1Mask|Button2Mask|Button3Mask \
@@ -140,6 +140,7 @@ extern int			nostalgia;
 extern char		**myargv;
 extern Bool 		shape;
 extern char 		*termprog;
+extern char		*launcher;
 extern char 		*shell;
 extern char 		*version[];
 extern int			_border;
