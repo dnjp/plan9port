@@ -1,4 +1,4 @@
-#!/usr/local/plan9/bin/rc
+#!/home/daniel/src/cfg/sources/github.com/dnjp/plan9port/bin/rc
 
 if(~ $winid [0-9]*) {
 	9p read acme/$winid/body
