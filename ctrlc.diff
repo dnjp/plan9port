@@ -1,0 +1,107 @@
+diff --git a/src/cmd/9term/wind.c b/src/cmd/9term/wind.c
+index 28d45cb..5020903 100644
+--- a/src/cmd/9term/wind.c
++++ b/src/cmd/9term/wind.c
+@@ -684,17 +684,17 @@ wkeyctl(Window *w, Rune r)
+ 		waddraw(w, &r, 1);
+ 		return;
+ 	}
+-	if(r == Kcmd+'x'){
++	if(r == 0x18){
+ 		wsnarf(w);
+ 		wcut(w);
+ 		wscrdraw(w);
+ 		return;
+ 	}
+-	if(r == Kcmd+'c'){
++	if(r == 0x03){
+ 		wsnarf(w);
+ 		return;
+ 	}
+-	if(r == Kcmd+'v'){
++	if(r == 0x16){
+ 		riogetsnarf();
+ 		wpaste(w);
+ 		wscrdraw(w);
+diff --git a/src/cmd/acme/text.c b/src/cmd/acme/text.c
+index 7634d92..fb040ba 100644
+--- a/src/cmd/acme/text.c
++++ b/src/cmd/acme/text.c
+@@ -749,11 +749,11 @@ texttype(Text *t, Rune r)
+ 			q0++;
+ 		textshow(t, q0, q0, TRUE);
+ 		return;
+-	case Kcmd+'c':	/* %C: copy */
++	case 0x03:	/* ^C: copy */
+ 		typecommit(t);
+ 		cut(t, t, nil, TRUE, FALSE, nil, 0);
+ 		return;
+-	case Kcmd+'z':	/* %Z: undo */
++	case 0x1a:	/* ^Z: undo */
+ 	 	typecommit(t);
+ 		undo(t, nil, nil, TRUE, 0, nil, 0);
+ 		return;
+@@ -781,7 +781,7 @@ texttype(Text *t, Rune r)
+ 	}
+ 	/* cut/paste must be done after the seq++/filemark */
+ 	switch(r){
+-	case Kcmd+'x':	/* %X: cut */
++	case 0x18:	/* ^X: cut */
+ 		typecommit(t);
+ 		if(t->what == Body){
+ 			seq++;
+@@ -791,7 +791,7 @@ texttype(Text *t, Rune r)
+ 		textshow(t, t->q0, t->q0, 1);
+ 		t->iq1 = t->q0;
+ 		return;
+-	case Kcmd+'v':	/* %V: paste */
++	case 0x16:	/* ^V: paste */
+ 		typecommit(t);
+ 		if(t->what == Body){
+ 			seq++;
+diff --git a/src/cmd/samterm/main.c b/src/cmd/samterm/main.c
+index 5b645e8..3960ef0 100644
+--- a/src/cmd/samterm/main.c
++++ b/src/cmd/samterm/main.c
+@@ -494,9 +494,10 @@ flushtyping(int clearesc)
+ #define	PAGEUP	Kpgup
+ #define	RIGHTARROW	Kright
+ #define	SCROLLKEY	Kdown
+-#define	CUT	(Kcmd+'x')
+-#define	COPY	(Kcmd+'c')
+-#define	PASTE	(Kcmd+'v')
++#define	CUT	0x18
++#define	COPY	0x03
++#define	PASTE	0x16
++#define	BACK	0x02 /* ctrl-b: from 9front sam */
+ 
+ int
+ nontypingkey(int c)
+@@ -512,6 +513,10 @@ nontypingkey(int c)
+ 	case PAGEUP:
+ 	case RIGHTARROW:
+ 	case SCROLLKEY:
++	case CUT:
++	case COPY:
++	case PASTE:
++	case BACK:
+ 		return 1;
+ 	}
+ 	if(c >= Kcmd)
+@@ -691,6 +696,16 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
+ 			flushtyping(0);
+ 			paste(t, t->front);
+ 			break;
++		case BACK:
++			t = &cmd;
++			for(l=t->l; l->textfn==0; l++)
++				;
++			current(l);
++			flushtyping(0);
++			a = t->rasp.nrunes;
++			flsetselect(l, a, a);
++			center(l, a);
++			break;
+ 		}
+ 	}
+ }

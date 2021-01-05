@@ -494,9 +494,10 @@ flushtyping(int clearesc)
 #define	PAGEUP	Kpgup
 #define	RIGHTARROW	Kright
 #define	SCROLLKEY	Kdown
-#define	CUT	(Kcmd+'x')
-#define	COPY	(Kcmd+'c')
-#define	PASTE	(Kcmd+'v')
+#define	CUT	0x18
+#define	COPY	0x03
+#define	PASTE	0x16
+#define	BACK	0x02 /* ctrl-b: from 9front sam */
 
 int
 nontypingkey(int c)
@@ -514,7 +515,7 @@ nontypingkey(int c)
 	case SCROLLKEY:
 	case CUT:
 	case COPY:
-	case PASTE:
+	case BACK:
 		return 1;
 	}
 	return 0;
@@ -691,6 +692,16 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		case PASTE:
 			flushtyping(0);
 			paste(t, t->front);
+			break;
+		case BACK:
+			t = &cmd;
+			for(l=t->l; l->textfn==0; l++)
+				;
+			current(l);
+			flushtyping(0);
+			a = t->rasp.nrunes;
+			flsetselect(l, a, a);
+			center(l, a);
 			break;
 		}
 	}
