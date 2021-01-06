@@ -484,20 +484,20 @@ flushtyping(int clearesc)
 }
 
 #define	BACKSCROLLKEY	Kup
-#define	ENDKEY	Kend
+#define	ENDKEY		Kend
 #define	ESC		0x1B
-#define	HOMEKEY	Khome
+#define	HOMEKEY		Khome
 #define	LEFTARROW	Kleft
-#define	LINEEND	0x05
+#define	LINEEND		0x05
 #define	LINESTART	0x01
 #define	PAGEDOWN	Kpgdown
-#define	PAGEUP	Kpgup
+#define	PAGEUP		Kpgup
 #define	RIGHTARROW	Kright
 #define	SCROLLKEY	Kdown
-#define	CUT	0x18
-#define	COPY	0x03
-#define	PASTE	0x16
-#define	BACK	0x02 /* ctrl-b: from 9front sam */
+#define	CUT		0x18
+#define	COPY		0x03
+#define	PASTE		0x16
+#define	BACK		0x02 /* ctrl-b: from 9front sam */
 
 int
 nontypingkey(int c)
@@ -515,6 +515,7 @@ nontypingkey(int c)
 	case SCROLLKEY:
 	case CUT:
 	case COPY:
+	case PASTE:
 	case BACK:
 		return 1;
 	}
