@@ -1,0 +1,22 @@
+#!/bin/sh
+
+git remote add upstream https://github.com/9fans/plan9port.git
+
+sudo rm -rf /usr/local/plan9/*
+sudo mkdir -p /usr/local/plan9
+sudo cp -r ./* /usr/local/plan9/
+cd /usr/local/plan9
+sudo ./INSTALL
+
+echo
+echo
+echo 'To setup plan9port mail, follow these steps:'
+echo
+echo 'export PLAN9=/usr/local/plan9'
+echo 'export PATH=$PATH:$PLAN9/bin'
+echo 'cd $PLAN9/src/cmd/upas/nfs'
+echo 'mk install'
+echo 'cd $PLAN9/src/cmd/upas'
+echo 'mk install'
+echo
+echo
