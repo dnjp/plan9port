@@ -497,6 +497,7 @@ flushtyping(int clearesc)
 #define	CUT	(Kcmd+'x')
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
+#define	BACK	(Kcmd+'b')
 
 int
 nontypingkey(int c)
@@ -515,6 +516,7 @@ nontypingkey(int c)
 	case CUT:
 	case COPY:
 	case PASTE:
+	case BACK:
 		return 1;
 	}
 	return 0;
@@ -691,6 +693,16 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		case PASTE:
 			flushtyping(0);
 			paste(t, t->front);
+			break;
+		case BACK:
+			t = &cmd;
+			for(l=t->l; l->textfn==0; l++)
+				;
+			current(l);
+			flushtyping(0);
+			a = t->rasp.nrunes;
+			flsetselect(l, a, a);
+			center(l, a);
 			break;
 		}
 	}
