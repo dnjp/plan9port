@@ -23,8 +23,10 @@ long	modified = 0;		/* strange lookahead for menus */
 char	hostlock = 1;
 char	hasunlocked = 0;
 int	maxtab = 8;
+int	chord;
 int	autoindent;
 
+#define chording 0	/* code here for reference but it causes deadlocks */
 
 void
 notifyf(void *a, char *msg)
@@ -37,7 +39,7 @@ notifyf(void *a, char *msg)
 void
 threadmain(int argc, char *argv[])
 {
-	int i, got, scr, chord, w;
+	int i, got, scr, w;
 	Text *t;
 	Rectangle r;
 	Flayer *nwhich;
@@ -83,7 +85,6 @@ threadmain(int argc, char *argv[])
 
 	got = 0;
 	if(protodebug) print("loop\n");
-	chord = 0;
 	for(;;got = waitforio()){
 		if(hasunlocked && RESIZED())
 			resize();
@@ -107,32 +108,19 @@ threadmain(int argc, char *argv[])
 				continue;
 			}
 			nwhich = flwhich(mousep->xy);
-			scr = which && (ptinrect(mousep->xy, which->scroll) ||
-				mousep->buttons&(8|16));
+			scr = which && ptinrect(mousep->xy, which->scroll);
 			if(mousep->buttons)
 				flushtyping(1);
-			if((mousep->buttons&1)==0)
+			if(chording && chord==1 && !mousep->buttons)
 				chord = 0;
-			if(chord && which && which==nwhich){
-				chord |= mousep->buttons;			
-				t = (Text *)which->user1;
-				if(!t->lock){
-					w = which-t->l;
-					if(chord&2){
-						cut(t, w, 1, 1);
-						chord &= ~2;
-					}
-					if(chord&4){
-						paste(t, w);
-						chord &= ~4;
-					}
-				}
-			}else if(mousep->buttons&(1|8)){
+			if(chording && chord)
+				chord |= mousep->buttons;
+			else if(mousep->buttons&1){
 				if(nwhich){
 					if(nwhich!=which)
 						current(nwhich);
 					else if(scr)
-						scroll(which, (mousep->buttons&8) ? 4 : 1);
+						scroll(which, 1);
 					else{
 						t=(Text *)which->user1;
 						if(flselect(which)){
@@ -149,13 +137,26 @@ threadmain(int argc, char *argv[])
 					scroll(which, 2);
 				else
 					menu2hit();
-			}else if(mousep->buttons&(4|16)){
+			}else if((mousep->buttons&4)){
 				if(scr)
-					scroll(which, (mousep->buttons&16) ? 5 : 3);
+					scroll(which, 3);
 				else
 					menu3hit();
 			}
 			mouseunblock();
+		}
+		if(chording && chord){
+			t = (Text*)which->user1;
+			if(!t->lock && !hostlock){
+				w = which-t->l;
+				if(chord&2){
+					cut(t, w, 1, 1);
+					chord &= ~2;
+				}else if(chord&4){
+					paste(t, w);
+					chord &= ~4;
+				}
+			}
 		}
 	}
 }
@@ -497,7 +498,6 @@ flushtyping(int clearesc)
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
 #define	BACK	(Kcmd+'b')
-#define	Kstx	0x02
 
 int
 nontypingkey(int c)
@@ -517,7 +517,6 @@ nontypingkey(int c)
 	case COPY:
 	case PASTE:
 	case BACK:
-	case Kstx:
 		return 1;
 	}
 	return 0;
@@ -673,15 +672,6 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 				}
 			}
 		}
-	}else if(c == Kstx){
-		t = &cmd;
-		for(l=t->l; l->textfn==0; l++)
-			;
-		current(l);
-		flushtyping(0);
-		a = t->rasp.nrunes;
-		flsetselect(l, a, a);
-		center(l, a);
 	}else{
 		if(c==ESC && typeesc>=0){
 			l->p0 = typeesc;
