@@ -35,8 +35,6 @@ struct Cmdtab cmdtab[]={
 	{'>',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd},
 	{'<',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd},
 	{'|',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd},
-	'^',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd,
-	'_',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd,
 	{'=',	0,	0,	0,	0,	aDot,	0,	linex,	eq_cmd},
 	{'c'|0x100,0,	0,	0,	0,	aNo,	0,	wordx,	cd_cmd},
 	{0,	0,	0,	0,	0,	0,	0,	0},
@@ -78,13 +76,7 @@ inputc(void)
 
     Again:
 	nbuf = 0;
-	if(cmdbufpos > cmdbuf.nc && cmdbuf.nc > 0){
-		cmdbufpos = 0;
-		bufreset(&cmdbuf);
-	}
-	if(cmdbufpos < cmdbuf.nc && cmdbuf.nc > 0)
-		bufread(&cmdbuf, cmdbufpos++, &r, 1);
-	else if(downloaded){
+	if(downloaded){
 		while(termoutp == terminp){
 			cmdupdate();
 			if(patset)
