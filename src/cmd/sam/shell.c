@@ -10,6 +10,31 @@ void	checkerrs(void);
 Buffer	cmdbuf;
 int	cmdbufpos;
 
+static void
+updateenv(File *f)
+{
+	char buf[64], *p, *e;
+
+	if(f == nil){
+		putenv("samfile", "");
+		putenv("%", "");
+		putenv("%dot", "");
+		return;
+	}
+
+	p = Strtoc(&f->name);
+	putenv("samfile", p);
+	putenv("%", p);
+	free(p);
+
+	p = buf;
+	e = buf+sizeof(buf);
+	p = seprint(p, e, "%lud", 1+nlcount(f, 0, f->dot.r.p1));
+	p = seprint(p+1, e, "%lud", f->dot.r.p1);
+	p = seprint(p+1, e, "%lud", f->dot.r.p2);
+	putenv("%dot", buf);
+}
+
 void
 setname(File *f)
 {
@@ -18,8 +43,7 @@ setname(File *f)
 		snprint(buf, sizeof buf, "%.*S", f->name.n, f->name.s);
 	else
 		buf[0] = 0;
-	putenv("samfile", buf);
-	putenv("%", buf); // like acme
+	updateenv(f);
 }
 
 int
@@ -106,7 +130,8 @@ plan9(File *f, int type, String *s, int nest)
 		if(type=='<' || type=='^'){
 			close(0);	/* so it won't read from terminal */
 			open("/dev/null", 0);
-		}
+		}		
+		updateenv(f);
 		execl(SHPATH, SH, "-c", Strtoc(&plan9cmd), (char *)0);
 		exits("exec");
 	}
