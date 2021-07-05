@@ -498,6 +498,7 @@ flushtyping(int clearesc)
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
 #define	BACK	(Kcmd+'b')
+#define	LAST	(Kcmd+'g')
 
 int
 nontypingkey(int c)
@@ -517,6 +518,7 @@ nontypingkey(int c)
 	case COPY:
 	case PASTE:
 	case BACK:
+	case LAST:	
 		return 1;
 	}
 	return 0;
@@ -673,6 +675,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 			}
 		}
 	}else{
+		int i;
 		if(c==ESC && typeesc>=0){
 			l->p0 = typeesc;
 			l->p1 = a;
@@ -704,6 +707,22 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 			flsetselect(l, a, a);
 			center(l, a);
 			break;
+		case LAST:
+	 		if(work == nil)
+	 			return;
+	 		if(which != work){
+	 			current(work);
+	 			return;
+	 		}
+	 		t = (Text*)work->user1;
+	 		l = &t->l[t->front];
+	 		for(i=t->front; t->nwin>1 && (i = (i+1)%NL) != t->front; )
+	 			if(t->l[i].textfn != 0){
+	 				l = &t->l[i];
+	 				break;
+	 			}
+	 		current(l);
+	 		break;
 		}
 	}
 }
