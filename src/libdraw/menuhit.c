@@ -29,8 +29,8 @@ menucolors(void)
 {
 	/* Main tone is greenish, with negative selection */
 	back = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFFFF);
-	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xA4C2BDFF);	/* dark green */
-	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xA4C2BDFF);	/* not as dark green */
+	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* dark green */
+	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* not as dark green */
 	if(back==nil || high==nil || bord==nil)
 		goto Error;
 	text = display->black;

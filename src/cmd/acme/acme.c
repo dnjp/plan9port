@@ -1042,7 +1042,7 @@ iconinit(void)
 		/* Blue */
 		tagcols[BACK] = display->white;
 		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDADFE1FF);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
 		tagcols[TEXT] = display->black;
 		tagcols[HTEXT] = display->black;
 
@@ -1075,7 +1075,7 @@ iconinit(void)
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
