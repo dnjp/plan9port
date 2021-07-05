@@ -43,7 +43,7 @@ void	flupfront(Flayer*);
 Flayer	*flwhich(Point);
 int	flscale(Flayer*, int);
 
-#define	FLMARGIN(l)	flscale(l, 4)
+#define	FLMARGIN(l)	flscale(l, 2)
 #define	FLSCROLLWID(l)	flscale(l, 12)
 #define	FLGAP(l)		flscale(l, 4)
 
