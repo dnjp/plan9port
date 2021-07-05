@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "sam.h"
 Header	h;
 uchar	indata[DATASIZE];
@@ -459,10 +458,6 @@ inmesg(Tmesg type)
 
 	case Tdclick:
 	case Ttclick:
-		if(type == Ttclick)
-			printf("!!! ttclick\n");
-		if(type == Tdclick)
-			printf("!! tdclick\n");
 		f = whichfile(inshort());
 		p1 = inlong();
 		stretchsel(f, p1, type == Ttclick);
