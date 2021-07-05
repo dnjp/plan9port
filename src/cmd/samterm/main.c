@@ -40,7 +40,7 @@ notifyf(void *a, char *msg)
 void
 threadmain(int argc, char *argv[])
 {
-	int i, got, scr, w;
+	int i, got, nclick, scr, w;
 	Text *t;
 	Rectangle r;
 	Flayer *nwhich;
@@ -126,8 +126,12 @@ threadmain(int argc, char *argv[])
 						scroll(which, (mousep->buttons&8) ? 4 : 1);
 					else{
 						t=(Text *)which->user1;
-						if(flselect(which)){
-							outTsl(Tdclick, t->tag, which->p0);
+						nclick = flselect(which);
+						if(nclick > 0){
+							if(nclick > 1)
+								outTsl(Ttclick, t->tag, which->p0);
+							else
+								outTsl(Tdclick, t->tag, which->p0);
 							t->lock++;
 						}else if(t!=&cmd)
 							outcmd();
