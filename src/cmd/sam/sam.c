@@ -72,6 +72,9 @@ main(int _argc, char **_argv)
 	case 'a':
 		*ap++ = "-a";
 		break;
+	case 'i':
+		*ap++ = "-i";
+		break;
 	case 'W':
 		*ap++ = "-W";
 		*ap++ = EARGF(usage());
