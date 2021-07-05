@@ -16,14 +16,15 @@ updateenv(File *f)
 	char buf[64], *p, *e;
 
 	if(f == nil){
+		putenv("samfile", "");
 		putenv("%", "");
 		putenv("%dot", "");
 		return;
 	}
 
 	p = Strtoc(&f->name);
-	putenv("%", p);
 	putenv("samfile", p);
+	putenv("%", p);
 	free(p);
 
 	p = buf;
