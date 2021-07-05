@@ -26,7 +26,7 @@ int	maxtab = 8;
 int	chord;
 int	autoindent;
 
-#define chording 0	/* code here for reference but it causes deadlocks */
+#define chording 1	/* code here for reference but it causes deadlocks */
 
 void
 notifyf(void *a, char *msg)
