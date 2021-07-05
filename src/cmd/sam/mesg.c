@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "sam.h"
 Header	h;
 uchar	indata[DATASIZE];
@@ -30,25 +31,25 @@ void	setgenstr(File*, Posn, Posn);
 char *hname[] = {
 	[Hversion]	"Hversion",
 	[Hbindname]	"Hbindname",
-	[Hcurrent]	"Hcurrent",
+	[Hcurrent]		"Hcurrent",
 	[Hnewname]	"Hnewname",
 	[Hmovname]	"Hmovname",
 	[Hgrow]		"Hgrow",
 	[Hcheck0]	"Hcheck0",
-	[Hcheck]	"Hcheck",
-	[Hunlock]	"Hunlock",
+	[Hcheck]		"Hcheck",
+	[Hunlock]		"Hunlock",
 	[Hdata]		"Hdata",
-	[Horigin]	"Horigin",
+	[Horigin]		"Horigin",
 	[Hunlockfile]	"Hunlockfile",
-	[Hsetdot]	"Hsetdot",
+	[Hsetdot]		"Hsetdot",
 	[Hgrowdata]	"Hgrowdata",
 	[Hmoveto]	"Hmoveto",
-	[Hclean]	"Hclean",
-	[Hdirty]	"Hdirty",
+	[Hclean]		"Hclean",
+	[Hdirty]		"Hdirty",
 	[Hcut]		"Hcut",
-	[Hsetpat]	"Hsetpat",
+	[Hsetpat]		"Hsetpat",
 	[Hdelname]	"Hdelname",
-	[Hclose]	"Hclose",
+	[Hclose]		"Hclose",
 	[Hsetsnarf]	"Hsetsnarf",
 	[Hsnarflen]	"Hsnarflen",
 	[Hack]		"Hack",
@@ -57,24 +58,25 @@ char *hname[] = {
 };
 
 char *tname[] = {
-	[Tversion]	"Tversion",
+	[Tversion]		"Tversion",
 	[Tstartcmdfile]	"Tstartcmdfile",
-	[Tcheck]	"Tcheck",
+	[Tcheck]		"Tcheck",
 	[Trequest]	"Trequest",
-	[Torigin]	"Torigin",
+	[Torigin]		"Torigin",
 	[Tstartfile]	"Tstartfile",
 	[Tworkfile]	"Tworkfile",
 	[Ttype]		"Ttype",
 	[Tcut]		"Tcut",
-	[Tpaste]	"Tpaste",
-	[Tsnarf]	"Tsnarf",
+	[Tpaste]		"Tpaste",
+	[Tsnarf]		"Tsnarf",
 	[Tstartnewfile]	"Tstartnewfile",
-	[Twrite]	"Twrite",
-	[Tclose]	"Tclose",
+	[Twrite]		"Twrite",
+	[Tclose]		"Tclose",
 	[Tlook]		"Tlook",
-	[Tsearch]	"Tsearch",
+	[Tsearch]		"Tsearch",
 	[Tsend]		"Tsend",
-	[Tdclick]	"Tdclick",
+	[Tdclick]		"Tdclick",
+	[Ttclick]		"Ttclick",
 	[Tstartsnarf]	"Tstartsnarf",
 	[Tsetsnarf]	"Tsetsnarf",
 	[Tack]		"Tack",
@@ -456,9 +458,14 @@ inmesg(Tmesg type)
 		break;
 
 	case Tdclick:
+	case Ttclick:
+		if(type == Ttclick)
+			printf("!!! ttclick\n");
+		if(type == Tdclick)
+			printf("!! tdclick\n");
 		f = whichfile(inshort());
 		p1 = inlong();
-		doubleclick(f, p1);
+		stretchsel(f, p1, type == Ttclick);
 		f->tdot.p1 = f->tdot.p2 = p1;
 		telldot(f);
 		outTs(Hunlockfile, f->tag);
