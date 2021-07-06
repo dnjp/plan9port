@@ -128,6 +128,9 @@ inmesg(Hmesg type, int count)
 			break;
 		t = whichtext(m);
 		t->tabwidth = l;
+		lp = &t->l[t->front];
+		if(t->l[t->front].textfn!=0)
+			lp->f.maxtab = (unsigned short)l*stringwidth(lp->f.font, "0");
 		break;
 
 	case Hbindname:
@@ -347,6 +350,7 @@ void
 startnewfile(int type, Text *t)
 {
 	t->tag = Untagged;
+	t->tabwidth = maxtab;
 	outTv(type, (vlong)(uintptr)t);				/* for 64-bit pointers */
 }
 

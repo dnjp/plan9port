@@ -599,10 +599,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		if((spacesindent || l->tabexpand) && c == '\t'){
 			int i, col, n;
 			col = getcol(&t->rasp, a);
-			if(t->tabwidth > 0)
-				n = t->tabwidth - col % t->tabwidth;
-			else
-				n = maxtab - col % maxtab;
+			n = t->tabwidth - col % t->tabwidth;
 			for(i = 0; i < n && p < buf+nelem(buf); i++)
 				*p++ = ' ';
 		} else
