@@ -371,6 +371,20 @@ cd_cmd(File *f, Cmd *cp)
 }
 
 int
+te_cmd(File *f, Cmd *cp)
+{
+	USED(f);
+	int tabwidth;
+	if((tabwidth = atoi(Strtoc(cp->ctext))) == 0)
+		error(Ebadrhs);
+	if(downloaded){
+		outTsv(Htabwidth, f->tag, tabwidth);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+int
 append(File *f, Cmd *cp, Posn p)
 {
 	if(cp->ctext->n>0 && cp->ctext->s[cp->ctext->n-1]==0)

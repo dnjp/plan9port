@@ -122,6 +122,14 @@ inmesg(Hmesg type, int count)
 		hversion = m;
 		break;
 
+	case Htabwidth:
+		l = invlong(2);
+		if((i=whichmenu(m)) < 0)
+			break;
+		t = whichtext(m);
+		t->tabwidth = l;
+		break;
+
 	case Hbindname:
 		l = invlong(2);		/* for 64-bit pointers */
 		if((i=whichmenu(m)) < 0)

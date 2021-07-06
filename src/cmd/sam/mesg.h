@@ -69,6 +69,7 @@ typedef enum Hmesg
 	Hack,		/* request acknowledgement */
 	Hexit,
 	Hplumb,		/* return plumb message to terminal - version 1 */
+	Htabwidth,	/* tab width */
 	HMAX
 }Hmesg;
 typedef struct Header{
