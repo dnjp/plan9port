@@ -596,7 +596,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 				break;
 			}
 		}
-		if(spacesindent && c == '\t'){
+		if((spacesindent || l->tabexpand) && c == '\t'){
 			int i, col, n;
 			col = getcol(&t->rasp, a);
 			n = maxtab - col % maxtab;

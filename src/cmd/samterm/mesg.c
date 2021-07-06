@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <u.h>
 #include <libc.h>
 #include <draw.h>

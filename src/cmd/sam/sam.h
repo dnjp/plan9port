@@ -190,6 +190,7 @@ struct File
 	Range		prevmark;
 	long		prevseq;
 	int		prevmod;
+	int		tabexpand; 	/* 0 = disabled, 1 enabled */
 };
 /*File*		fileaddtext(File*, Text*); */
 void		fileclose(File*);

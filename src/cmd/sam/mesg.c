@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "sam.h"
 Header	h;
 uchar	indata[DATASIZE];
@@ -72,6 +73,7 @@ char *tname[] = {
 	[Twrite]		"Twrite",
 	[Tclose]		"Tclose",
 	[Tlook]		"Tlook",
+	[Texpand]	"Texpand",
 	[Tsearch]		"Tsearch",
 	[Tsend]		"Tsend",
 	[Tdclick]		"Tdclick",
@@ -207,7 +209,6 @@ inmesg(Tmesg type)
 		panic("inmesg");
 
 	journal(0, tname[type]);
-
 	inp = indata;
 	switch(type){
 	case -1:
@@ -426,6 +427,11 @@ inmesg(Tmesg type)
 		Straddc(&genstr, '\0');
 		nextmatch(f, &genstr, p1, 1);
 		moveto(f, sel.p[0]);
+		break;
+
+	case Texpand:
+		f = whichfile(inshort());
+		f->tabexpand = TRUE;
 		break;
 
 	case Tsearch:

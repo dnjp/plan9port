@@ -23,6 +23,7 @@ struct Flayer
 	Rectangle	scroll;
 	Rectangle	lastsr;	/* geometry of scrollbar when last drawn */
 	Vis		visible;
+	int		tabexpand;
 };
 
 void	flborder(Flayer*, int);

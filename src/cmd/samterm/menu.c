@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <u.h>
 #include <libc.h>
 #include <draw.h>
@@ -26,6 +27,7 @@ enum Menu2
 	Paste,
 	Snarf,
 	Plumb,
+	Tabexpand,
 	Look,
 	Exch,
 	Search,
@@ -49,6 +51,7 @@ char	*menu2str[] = {
 	"paste",
 	"snarf",
 	"plumb",
+	"tabexpand",
 	"look",
 	"<rio>",
 	0,		/* storage for last pattern */
@@ -95,6 +98,13 @@ menu2hit(void)
 	case Plumb:
 		if(hversion > 0)
 			outTsll(Tplumb, t->tag, which->p0, which->p1);
+		break;
+
+	case Tabexpand:
+		/* outT0(Texpand); */
+		outTsll(Texpand, t->tag, which->p0, which->p1);
+		which->tabexpand = TRUE;
+		/* setlock(); */
 		break;
 
 	case Exch:
