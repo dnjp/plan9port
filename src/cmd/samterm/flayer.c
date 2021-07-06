@@ -81,6 +81,7 @@ flinit(Flayer *l, Rectangle r, Font *ft, Image **cols)
 	l->f.display = display; // for FLMARGIN
 	frinit(&l->f, insetrect(flrect(l, r), FLMARGIN(l)), ft, screen, cols);
 	l->f.maxtab = maxtab*stringwidth(ft, "0");
+	l->tabexpand = FALSE;
 	newvisibilities(1);
 	draw(screen, l->entire, l->f.cols[BACK], nil, ZP);
 	scrdraw(l, 0L);

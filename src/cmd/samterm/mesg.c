@@ -133,6 +133,19 @@ inmesg(Hmesg type, int count)
 			lp->f.maxtab = (unsigned short)l*stringwidth(lp->f.font, "0");
 		break;
 
+	case Htabexpand:
+		if((i=whichmenu(m)) < 0)
+			break;
+		if((t=whichtext(m)) == 0)
+			break;
+		lp = &t->l[t->front];
+		if(t->l[t->front].textfn!=0)
+			if(lp->tabexpand)
+				lp->tabexpand = FALSE;
+			else
+				lp->tabexpand = TRUE;
+		break;
+
 	case Hbindname:
 		l = invlong(2);		/* for 64-bit pointers */
 		if((i=whichmenu(m)) < 0)

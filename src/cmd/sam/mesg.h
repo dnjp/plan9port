@@ -70,6 +70,7 @@ typedef enum Hmesg
 	Hexit,
 	Hplumb,		/* return plumb message to terminal - version 1 */
 	Htabwidth,	/* tab width */
+	Htabexpand,	/* tab expand */
 	HMAX
 }Hmesg;
 typedef struct Header{

@@ -26,7 +26,6 @@ enum Menu2
 	Paste,
 	Snarf,
 	Plumb,
-	Tabexpand,
 	Look,
 	Exch,
 	Search,
@@ -50,7 +49,6 @@ char	*menu2str[] = {
 	"paste",
 	"snarf",
 	"plumb",
-	"tabexpand",
 	"look",
 	"<rio>",
 	0,		/* storage for last pattern */
@@ -97,16 +95,6 @@ menu2hit(void)
 	case Plumb:
 		if(hversion > 0)
 			outTsll(Tplumb, t->tag, which->p0, which->p1);
-		break;
-
-	case Tabexpand:
-		if(which)
-			switch(which->tabexpand){
-			case TRUE:
-				which->tabexpand = FALSE;
-			case FALSE:
-				which->tabexpand = TRUE;
-			}
 		break;
 
 	case Exch:

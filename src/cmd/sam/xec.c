@@ -385,6 +385,17 @@ tw_cmd(File *f, Cmd *cp)
 }
 
 int
+te_cmd(File *f, Cmd *cp)
+{
+	USED(f);
+	if(downloaded){
+		outTs(Htabexpand, f->tag);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+int
 append(File *f, Cmd *cp, Posn p)
 {
 	if(cp->ctext->n>0 && cp->ctext->s[cp->ctext->n-1]==0)
