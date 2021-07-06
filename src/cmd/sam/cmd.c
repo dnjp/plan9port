@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "sam.h"
 #include "parse.h"
 

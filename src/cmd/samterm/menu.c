@@ -101,10 +101,13 @@ menu2hit(void)
 		break;
 
 	case Tabexpand:
-		/* outT0(Texpand); */
-		outTsll(Texpand, t->tag, which->p0, which->p1);
-		which->tabexpand = TRUE;
-		/* setlock(); */
+		if(which)
+			switch(which->tabexpand){
+			case TRUE:
+				which->tabexpand = FALSE;
+			case FALSE:
+				which->tabexpand = TRUE;
+			}
 		break;
 
 	case Exch:

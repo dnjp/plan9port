@@ -27,7 +27,6 @@ typedef enum Tmesg
 	Twrite,		/* write file */
 	Tclose,		/* terminal requests file close; check mod. status */
 	Tlook,		/* search for literal current text */
-	Texpand,		/* expand tabs to spaces */
 	Tsearch,	/* search for last regular expression */
 	Tsend,		/* pretend he typed stuff */
 	Tdclick,	/* double click */

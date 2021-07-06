@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "sam.h"
 
 #define	NSYSFILE	3
@@ -182,7 +181,6 @@ int	remotefd1 = 1;
 void
 bootterm(char *machine, char **argv)
 {
-	
 	int ph2t[2], pt2h[2];
 
 	if(machine){
@@ -219,7 +217,6 @@ bootterm(char *machine, char **argv)
 	close(ph2t[1]);
 	close(pt2h[0]);
 	close(pt2h[1]);
-	
 }
 
 void
