@@ -371,7 +371,7 @@ cd_cmd(File *f, Cmd *cp)
 }
 
 int
-te_cmd(File *f, Cmd *cp)
+tw_cmd(File *f, Cmd *cp)
 {
 	USED(f);
 	int tabwidth;
