@@ -31,6 +31,8 @@ struct Cmdtab cmdtab[]={
 	{'y',	0,	1,	0,	'p',	aDot,	0,	0,	x_cmd},
 	{'X',	0,	1,	0,	'f',	aNo,	0,	0,	X_cmd},
 	{'Y',	0,	1,	0,	'f',	aNo,	0,	0,	X_cmd},
+	{'z',	0,	0,	0,	0,	aNo,	0,	wordx,	tw_cmd},
+	{'Z',	0,	0,	0,	0,	aNo,	0,	0,	te_cmd},
 	{'!',	0,	0,	0,	0,	aNo,	0,	linex,	plan9_cmd},
 	{'>',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd},
 	{'<',	0,	0,	0,	0,	aDot,	0,	linex,	plan9_cmd},

@@ -122,6 +122,29 @@ inmesg(Hmesg type, int count)
 		hversion = m;
 		break;
 
+	case Htabwidth:
+		l = invlong(2);
+		if((i=whichmenu(m)) < 0)
+			break;
+		t = whichtext(m);
+		t->tabwidth = l;
+		lp = &t->l[t->front];
+		if(t->l[t->front].textfn!=0)
+			lp->f.maxtab = l*stringwidth(lp->f.font, "0");
+		break;
+
+	case Htabexpand:
+		if((i=whichmenu(m)) < 0 || (t=whichtext(m)) == 0)
+			break;
+		lp = &t->l[t->front];
+		if(t->l[t->front].textfn == 0)
+			break;
+		if(lp->tabexpand)
+			lp->tabexpand = FALSE;
+		else
+			lp->tabexpand = TRUE;
+		break;
+
 	case Hbindname:
 		l = invlong(2);		/* for 64-bit pointers */
 		if((i=whichmenu(m)) < 0)
@@ -339,6 +362,7 @@ void
 startnewfile(int type, Text *t)
 {
 	t->tag = Untagged;
+	t->tabwidth = maxtab;
 	outTv(type, (vlong)(uintptr)t);				/* for 64-bit pointers */
 }
 

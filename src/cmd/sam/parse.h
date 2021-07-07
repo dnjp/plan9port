@@ -54,7 +54,8 @@ enum Defaddr{	/* default addresses */
 };
 
 int	nl_cmd(File*, Cmd*), a_cmd(File*, Cmd*), b_cmd(File*, Cmd*);
-int	c_cmd(File*, Cmd*), cd_cmd(File*, Cmd*), d_cmd(File*, Cmd*);
+int	c_cmd(File*, Cmd*), cd_cmd(File*, Cmd*), d_cmd(File*, Cmd*),
+		tw_cmd(File*, Cmd*), te_cmd(File*, Cmd*);
 int	D_cmd(File*, Cmd*), e_cmd(File*, Cmd*);
 int	f_cmd(File*, Cmd*), g_cmd(File*, Cmd*), i_cmd(File*, Cmd*);
 int	k_cmd(File*, Cmd*), m_cmd(File*, Cmd*), n_cmd(File*, Cmd*);
