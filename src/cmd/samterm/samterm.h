@@ -40,7 +40,7 @@ struct Text
 	ushort	tag;
 	char	lock;
 	Flayer	l[NL];		/* screen storage */
-	long	tabwidth;
+	int	tabwidth;
 };
 
 struct Readbuf

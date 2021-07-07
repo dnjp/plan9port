@@ -373,8 +373,8 @@ cd_cmd(File *f, Cmd *cp)
 int
 tw_cmd(File *f, Cmd *cp)
 {
-	USED(f);
 	int tabwidth;
+	USED(f);
 	if((tabwidth = atoi(Strtoc(cp->ctext))) == 0)
 		error(Ebadrhs);
 	if(downloaded){
