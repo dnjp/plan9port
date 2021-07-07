@@ -130,20 +130,19 @@ inmesg(Hmesg type, int count)
 		t->tabwidth = l;
 		lp = &t->l[t->front];
 		if(t->l[t->front].textfn!=0)
-			lp->f.maxtab = (unsigned short)l*stringwidth(lp->f.font, "0");
+			lp->f.maxtab = l*stringwidth(lp->f.font, "0");
 		break;
 
 	case Htabexpand:
-		if((i=whichmenu(m)) < 0)
-			break;
-		if((t=whichtext(m)) == 0)
+		if((i=whichmenu(m)) < 0 || (t=whichtext(m)) == 0)
 			break;
 		lp = &t->l[t->front];
-		if(t->l[t->front].textfn!=0)
-			if(lp->tabexpand)
-				lp->tabexpand = FALSE;
-			else
-				lp->tabexpand = TRUE;
+		if(t->l[t->front].textfn == 0)
+			break;
+		if(lp->tabexpand)
+			lp->tabexpand = FALSE;
+		else
+			lp->tabexpand = TRUE;
 		break;
 
 	case Hbindname:
