@@ -95,7 +95,6 @@ rpc_shutdown(void)
 	NSImage *i;
 
 	LOG(@"applicationDidFinishLaunching");
-
 	sm = [NSMenu new];
 	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
@@ -104,8 +103,16 @@ rpc_shutdown(void)
 	[m addItemWithTitle:@"DEVDRAW" action:NULL keyEquivalent:@""];
 	[m setSubmenu:sm forItem:[m itemWithTitle:@"DEVDRAW"]];
 	[NSApp setMainMenu:m];
-
-	d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
+	
+	if (strcmp(argv0, "samterm") == 0) {
+		d = [[NSData alloc] initWithBytes:spaceglenda_png length:(sizeof spaceglenda_png)];
+	} else if (strcmp(argv0, "acme") == 0) {
+		d = [[NSData alloc] initWithBytes:anvil_png length:(sizeof anvil_png)];	
+	} else if (strcmp(argv0, "edwood") == 0) {
+		d = [[NSData alloc] initWithBytes:anvil_png length:(sizeof anvil_png)];
+	} else {
+		d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
+	}
 	i = [[NSImage alloc] initWithData:d];
 	[NSApp setApplicationIconImage:i];
 	[[NSApp dockTile] display];
