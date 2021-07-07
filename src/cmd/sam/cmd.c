@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "sam.h"
 #include "parse.h"
 
@@ -426,13 +425,10 @@ parsecmd(int nest)
 	if((c=getch())==-1)
 		return 0;
 	cmd.cmdc = c;
-
-	/* sleazy two-character cases */
-	if(cmd.cmdc=='c' && nextc()=='d'){	/* cd_cmd */
-		getch();			/* the 'd' */
+	if(cmd.cmdc=='c' && nextc()=='d'){	/* sleazy two-character case */
+		getch();		/* the 'd' */
 		cmd.cmdc='c'|0x100;
 	}
-
 	i = lookup(cmd.cmdc);
 	if(i >= 0){
 		if(cmd.cmdc == '\n')
