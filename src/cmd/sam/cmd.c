@@ -432,14 +432,6 @@ parsecmd(int nest)
 		getch();			/* the 'd' */
 		cmd.cmdc='c'|0x100;
 	}
-	if(cmd.cmdc=='t' && nextc()=='w'){	/* tw_cmd */
-		getch();			/* the 'w' */
-		cmd.cmdc='t'|0x77;
-	}
-	if(cmd.cmdc=='t' && nextc()=='e'){	/* te_cmd */
-		getch();			/* the 'e' */
-		cmd.cmdc='t'|0x65;
-	}
 
 	i = lookup(cmd.cmdc);
 	if(i >= 0){
