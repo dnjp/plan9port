@@ -273,7 +273,15 @@ rpc_attach(Client *c, char *label, char *winsize)
 		initWithContentRect:r
 		styleMask:Winstyle
 		backing:NSBackingStoreBuffered defer:NO];
-	[win setTitle:@"devdraw"];
+	if (strcmp(argv0, "samterm") == 0) {
+		[win setTitle:@"sam"];
+	} else if (strcmp(argv0, "acme") == 0) {
+		[win setTitle:@"acme"];
+	} else if (strcmp(argv0, "edwood") == 0) {
+		[win setTitle:@"acme"];
+	} else {
+		[win setTitle:@"devdraw"];
+	}
 
 	if(!set)
 		[win center];
