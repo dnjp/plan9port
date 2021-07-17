@@ -26,10 +26,10 @@ static
 void
 menucolors(void)
 {
-	/* Main tone is greenish, with negative selection */
-	back = allocimagemix(display, DPalegreen, DWhite);
-	high = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DDarkgreen);	/* dark green */
-	bord = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DMedgreen);	/* not as dark green */
+	/* Main tone is grey, with negative selection */
+	back = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xFFFFFFFF);
+	high = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x676B6BFF);	/* dark grey */
+	bord = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x676B6BFF);	/* dark grey */
 	if(back==nil || high==nil || bord==nil)
 		goto Error;
 	text = display->black;
@@ -151,7 +151,7 @@ menuscrollpaint(Rectangle scrollr, int off, int nitem, int nitemdrawn)
 		r.max.y = r.min.y+2;
 	border(screen, r, 1, bord, ZP);
 	if(menutxt == 0)
-		menutxt = allocimage(display, Rect(0, 0, 1, 1), CMAP8, 1, DDarkgreen);
+		menutxt = allocimage(display, Rect(0, 0, 1, 1), CMAP8, 1, 0x676B6BFF);
 	if(menutxt)
 		draw(screen, insetrect(r, 1), menutxt, nil, ZP);
 }
