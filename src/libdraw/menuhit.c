@@ -28,9 +28,9 @@ void
 menucolors(void)
 {
 	/* Main tone is greenish, with negative selection */
-	back = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFFFF);
-	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* dark grey */
-	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* dark grey */
+	back = display->white;
+	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);	/* dark green */
+	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);	/* not as dark green */
 	if(back==nil || high==nil || bord==nil)
 		goto Error;
 	text = display->black;
@@ -148,7 +148,7 @@ menuscrollpaint(Image *m, Rectangle scrollr, int off, int nitem, int nitemdrawn)
 		r.max.y = r.min.y+2;
 	border(m, r, 1, bord, ZP);
 	if(menutxt == 0)
-		menutxt = allocimage(display, Rect(0, 0, 1, 1), screen->chan, 1, 0x676B6BFF);	/* border color; BUG? */
+		menutxt = allocimage(display, Rect(0, 0, 1, 1), screen->chan, 1, DDarkgreen);	/* border color; BUG? */
 	if(menutxt)
 		draw(m, insetrect(r, 1), menutxt, nil, ZP);
 }

@@ -1037,21 +1037,25 @@ iconinit(void)
 {
 	Rectangle r;
 	Image *tmp;
+	Image *tmpb;
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = display->white;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+		tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DOffWhite);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
 		tagcols[TEXT] = display->black;
-		tagcols[HTEXT] = display->black;
+		tagcols[HTEXT] = display->white;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFF5FF);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE8EBE9FF);
-		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEEEEEEFF);
+		/* textcols[BACK] = allocimagemix(display, DPaleyellow, DWhite); */
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DOffWhite);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
+		textcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0x000000FF);
+		draw(textcols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
+		tmpb = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0xFFFFFFFF);
 		textcols[TEXT] = display->black;
-		textcols[HTEXT] = display->black;
+		textcols[HTEXT] = display->white;
 	}
 
 	r = Rect(0, 0, Scrollwid+ButtonBorder, font->height+1);
@@ -1075,12 +1079,13 @@ iconinit(void)
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
 	draw(modbutton, r, tmp, nil, ZP);
+
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xF3F1EFFF);
+	colbutton = tmpb;
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
 	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);

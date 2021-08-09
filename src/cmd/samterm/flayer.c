@@ -30,18 +30,20 @@ flstart(Rectangle r)
 	lDrect = r;
 
 	/* Main text is yellowish */
-	maincols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFEFEFAFF);
-	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE8EBE9FF);
-	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0x868787FF);
+	maincols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DOffWhite);
+	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
+	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0x000000FF);
+	draw(maincols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
 	maincols[TEXT] = display->black;
-	maincols[HTEXT] = display->black;
+	maincols[HTEXT] = display->white;
 
 	/* Command text is blueish */
-	cmdcols[BACK] = display->white;
-	cmdcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
-	cmdcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0x868787FF);
+	cmdcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DOffWhite);
+	cmdcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x000000FF);
+	cmdcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, 0x000000FF);
+	draw(cmdcols[BORD], Rect(1,1,2,2), display->white, nil, ZP);
 	cmdcols[TEXT] = display->black;
-	cmdcols[HTEXT] = display->black;
+	cmdcols[HTEXT] = display->white;
 }
 
 void
@@ -81,7 +83,6 @@ flinit(Flayer *l, Rectangle r, Font *ft, Image **cols)
 	l->f.display = display; // for FLMARGIN
 	frinit(&l->f, insetrect(flrect(l, r), FLMARGIN(l)), ft, screen, cols);
 	l->f.maxtab = maxtab*stringwidth(ft, "0");
-	l->tabexpand = FALSE;
 	newvisibilities(1);
 	draw(screen, l->entire, l->f.cols[BACK], nil, ZP);
 	scrdraw(l, 0L);
@@ -255,25 +256,21 @@ fldelete(Flayer *l, long p0, long p1)
 int
 flselect(Flayer *l)
 {
-	static int clickcount;
-	static Point clickpt = {-10, -10};
-	int dt, dx, dy;
-
+	int ret;
 	if(l->visible!=All)
 		flupfront(l);
-	dt = mousep->msec - l->click;
-	dx = abs(mousep->xy.x - clickpt.x);
-	dy = abs(mousep->xy.y - clickpt.y);
-	l->click = mousep->msec;
-	clickpt = mousep->xy;
-
-	if(dx < 3 && dy < 3 && dt < Clicktime && clickcount < 3)
-		return ++clickcount;
-	clickcount = 0;
-
 	frselect(&l->f, mousectl);
+	ret = 0;
+	if(l->f.p0==l->f.p1){
+		if(mousep->msec-l->click<Clicktime && l->f.p0+l->origin==l->p0){
+			ret = 1;
+			l->click = 0;
+		}else
+			l->click = mousep->msec;
+	}else
+		l->click = 0;
 	l->p0 = l->f.p0+l->origin, l->p1 = l->f.p1+l->origin;
-	return 0;
+	return ret;
 }
 
 void
@@ -282,6 +279,7 @@ flsetselect(Flayer *l, long p0, long p1)
 	ulong fp0, fp1;
 	int ticked;
 
+	l->click = 0;
 	if(l->visible==None || !flprepare(l)){
 		l->p0 = p0, l->p1 = p1;
 		return;

@@ -1,7 +1,7 @@
 #ifndef _DRAW_H_
 #define _DRAW_H_ 1
 #if defined(__cplusplus)
-extern "C" { 
+extern "C" {
 #endif
 
 AUTOLIB(draw)
@@ -32,6 +32,7 @@ extern	int	Pfmt(Fmt*);
 #define 	DTransparent	0x00000000		/* only useful for allocimage memfillcolor */
 #define 	DBlack		0x000000FF
 #define 	DWhite		0xFFFFFFFF
+#define 	DOffWhite	0xFAFAFAFF
 #define 	DRed		0xFF0000FF
 #define 	DGreen		0x00FF00FF
 #define 	DBlue		0x0000FFFF
@@ -110,7 +111,7 @@ typedef enum
 } Drawop;
 
 /*
- * image channel descriptors 
+ * image channel descriptors
  */
 enum {
 	CRed = 0,
@@ -205,7 +206,7 @@ struct Display
 	struct Mux	*mux;
 	int		srvfd;
 	int		dpi;
-	
+
 	Font	*firstfont;
 	Font	*lastfont;
 };
@@ -322,12 +323,12 @@ struct Font
 	Cachesubf	*subf;
 	Cachefont	**sub;	/* as read from file */
 	Image		*cacheimage;
-	
+
 	/* doubly linked list of fonts known to display */
 	int ondisplaylist;
 	Font *next;
 	Font *prev;
-	
+
 	/* on hi-dpi systems, one of these is set to f and the other is the other-dpi version of f */
 	Font	*lodpi;
 	Font	*hidpi;
@@ -504,7 +505,7 @@ extern void	loadhidpi(Font*);
 extern void	swapfont(Font*, Font**, Font**);
 
 /*
- * Predefined 
+ * Predefined
  */
 extern	Point		ZP;
 extern	Rectangle	ZR;

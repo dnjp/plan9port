@@ -475,7 +475,7 @@ enum
 #define Scrollgap scalesize(display, 4)
 #define Margin scalesize(display, 4)
 #define Border scalesize(display, 2)
-#define ButtonBorder scalesize(display, 2)
+#define ButtonBorder scalesize(display, 1)
 
 #define	QID(w,q)	((w<<8)|(q))
 #define	WIN(q)	((((ulong)(q).path)>>8) & 0xFFFFFF)
