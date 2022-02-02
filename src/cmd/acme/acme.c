@@ -1040,16 +1040,22 @@ iconinit(void)
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = display->white;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
+		/* tagcols[BACK] = display->white; */
+		tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF6F6F6FF);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x949494FF);
 		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
-		tagcols[TEXT] = display->black;
+		/* tagcols[TEXT] = display->black; */
+		/* tagcols[HTEXT] = display->black; */
+		tagcols[TEXT] = allocimage(display, Rect(0, 0, 1, 1), GREY1, 1, 0x404548FF);
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFEFEFAFF);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE8EBE9FF);
-		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEEEEEEFF);
+		/* textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFEFEFAFF); */
+		/* textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEAF4FFFF); */
+		/* textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEEEEEEFF); */
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFAFF);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEAF4FFFF);
+		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF6F6F6FF);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
 	}
