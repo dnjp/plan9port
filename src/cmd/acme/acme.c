@@ -1050,6 +1050,8 @@ iconinit(void)
 		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF7F7F7FF);
 		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xC9E9F4FF);
 		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
+		scrlcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFECF1FF);
+		scrlbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
 	}
@@ -1080,10 +1082,10 @@ iconinit(void)
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xC9E9F4FF);
+	colbutton = allocimage(display, r, screen->chan, 0, 0xD4D0D5FF);
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
-	but3col = allocimage(display, r, screen->chan, 1, 0x3A8156FF);
+	but3col = allocimage(display, r, screen->chan, 1, 0x5E8060FF);
 }
 
 /*

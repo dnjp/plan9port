@@ -548,6 +548,8 @@ char			*acmeshell;
 char			*fontnames[2];
 Image		*tagcols[NCOL];
 Image		*textcols[NCOL];
+Image		*scrlcol;
+Image		*scrlbar;
 extern char		wdir[]; /* must use extern because no dimension given */
 int			editing;
 int			erroutfd;
