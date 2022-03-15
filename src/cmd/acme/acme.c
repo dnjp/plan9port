@@ -1040,16 +1040,16 @@ iconinit(void)
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = display->white;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+		tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xECE8EFFF);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		tagcols[TEXT] = display->black;
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFEFEFAFF);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE8EBE9FF);
-		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEEEEEEFF);
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF7F7F7FF);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xC9E9F4FF);
+		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
 	}
@@ -1075,15 +1075,15 @@ iconinit(void)
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xAFD6EAFF);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xF3F1EFFF);
+	colbutton = allocimage(display, r, screen->chan, 0, 0xC9E9F4FF);
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
-	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);
+	but3col = allocimage(display, r, screen->chan, 1, 0x3A8156FF);
 }
 
 /*
