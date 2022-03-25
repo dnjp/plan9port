@@ -29,12 +29,12 @@ menucolors(void)
 {
 	/* Main tone is greenish, with negative selection */
 	back = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFFFFF);
-	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* dark green */
-	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x676B6BFF);	/* not as dark green */
+	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xC9E9F4FF);	/* dark green */
+	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFECF1FF);	/* not as dark green */
 	if(back==nil || high==nil || bord==nil)
 		goto Error;
 	text = display->black;
-	htext = back;
+	htext = display->black;
 	return;
 
     Error:

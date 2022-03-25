@@ -53,11 +53,13 @@ wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 		/* greys are multiples of 0x11111100+0xFF, 14* being palest */
 		grey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xEEEEEEFF);
 		darkgrey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x666666FF);
-		cols[BACK] = display->white;
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xCCCCCCFF);
-		cols[BORD] = darkgrey;
+		cols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF7F7F7FF);
+		cols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xC9E9F4FF);
+		cols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		cols[TEXT] = display->black;
 		cols[HTEXT] = display->black;
+		scrlcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFECF1FF);
+		scrlbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
 		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreygreen);
 		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreygreen);
 		holdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DMedblue);

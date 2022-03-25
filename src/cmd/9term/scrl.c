@@ -82,8 +82,8 @@ wscrdraw(Window *w)
 		/* move r1, r2 to (0,0) to avoid clipping */
 		r2 = rectsubpt(r2, r1.min);
 		r1 = rectsubpt(r1, r1.min);
-		draw(b, r1, w->f.cols[BORD], nil, ZP);
-		draw(b, r2, w->f.cols[BACK], nil, ZP);
+		draw(b, r1, scrlcol, nil, ZP);
+		draw(b, r2, scrlbar, nil, ZP);
 		r2.min.x = r2.max.x-1;
 		draw(b, r2, w->f.cols[BORD], nil, ZP);
 		draw(w->i, r, b, nil, Pt(0, r1.min.y));

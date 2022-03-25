@@ -15,6 +15,8 @@ typedef	struct	Mousestate	Mousestate;
 typedef	struct	Timer Timer;
 typedef	struct	Wctlmesg Wctlmesg;
 typedef	struct	Window Window;
+Image	*scrlbar;
+Image	*scrlcol;
 
 enum
 {

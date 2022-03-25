@@ -1040,7 +1040,8 @@ iconinit(void)
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xECE8EFFF);
+		/* tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xECE8EFFF); */
+		tagcols[BACK] = display->white;
 		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
 		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		tagcols[TEXT] = display->black;
