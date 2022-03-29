@@ -1047,10 +1047,10 @@ iconinit(void)
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFF6FF);
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFEAFF);
 		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDAEBFEFF);
 		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
-		scrlcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFECF1FF);
+		scrlcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFEFEFFF);
 		scrlbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
@@ -1067,7 +1067,7 @@ iconinit(void)
 	}
 
 	button = allocimage(display, r, screen->chan, 0, DNofill);
-	draw(button, r, tagcols[BACK], nil, r.min);
+	draw(button, r, tagcols[BORD], nil, r.min);
 	r.max.x -= ButtonBorder;
 	border(button, r, ButtonBorder, tagcols[BORD], ZP);
 
@@ -1075,14 +1075,14 @@ iconinit(void)
 	modbutton = allocimage(display, r, screen->chan, 0, DNofill);
 	draw(modbutton, r, tagcols[BACK], nil, r.min);
 	r.max.x -= ButtonBorder;
-	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
+	border(modbutton, r, ButtonBorder, textcols[HIGH], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE3F8FFFF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDAEBFEFF);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xFFFFF6FF);
+	colbutton = allocimage(display, r, screen->chan, 0, 0xEFEFEFFF);
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
 	but3col = allocimage(display, r, screen->chan, 1, 0x5E8060FF);
