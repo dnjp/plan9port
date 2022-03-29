@@ -16,6 +16,8 @@
 #include "a.h"
 
 extern void CGFontGetGlyphsForUnichars(CGFontRef, const UniChar[], const CGGlyph[], size_t);
+extern void CGContextSetFontSmoothingStyle(CGContextRef, int);
+extern int CGContextGetFontSmoothingStyle(CGContextRef);
 
 // In these fonts, it's too hard to distinguish U+2018 and U+2019,
 // so don't map the ASCII quotes there.
@@ -23,6 +25,64 @@ extern void CGFontGetGlyphsForUnichars(CGFontRef, const UniChar[], const CGGlyph
 static char *skipquotemap[] = {
 	"Courier",
 	"Osaka",
+};
+
+enum {
+	Zero = 1<<0,
+	Tab = 1<<1,
+	SS01 = 1<<2,
+	SS02 = 1<<3,
+	SS03 = 1<<4,
+	SS04 = 1<<5,
+	SS05 = 1<<6,
+	SS06 = 1<<7,
+	SS07 = 1<<8,
+	SS10 = 1<<9,
+	SS11 = 1<<10,
+	SS12 = 1<<11,
+	SS14 = 1<<12,
+	SS15 = 1<<13,
+	SS16 = 1<<14,
+	SS17 = 1<<15,
+
+	Dquote = 1<<16,
+	Lnum = 1<<17,
+	Pnum = 1<<18,
+	Salt = 1<<19,
+	Endash = 1<<20,
+};
+
+// Store a map of font features to use.
+static struct {
+	char *name;
+	int features;
+} featuremap[] = {
+	{"Vinkel", Dquote | Endash | Zero | Tab | SS02 },
+	{"MetaPro", Zero | Tab | Lnum | Endash },
+	{"Fago", Zero | Tab | Lnum },
+	{"Unit", Zero | Tab | Lnum },
+	{"Gintronic", Lnum | SS01 },
+	{"Operator", Zero | Tab | Lnum },
+	{"Lucida", Zero },
+	{"Plex", Zero | Endash },
+	{"Ideal", Zero | Tab | Lnum | Endash },
+	{"Whitney", Zero | Tab | Lnum |  SS11 |  SS15 | SS16 | SS17 | Endash },
+	{"Verb", Zero | Endash },
+	{"Metric", Tab | Endash },
+	{"Drive", Zero | Tab | Lnum |  Endash },
+	{"Fira", Zero | Tab | Lnum },
+	{"SF", Zero | Tab | Lnum | Endash },
+	{"Syntax", Zero | Tab | Lnum | Endash },
+	{"Consolas", Zero | Tab | Lnum | Endash },
+	{"Calibri", Zero | Tab | Lnum | Endash },
+	{"Bernino", Zero | Tab | Endash },
+	{"TynineSans", Endash },
+ 	{"MalloryMP-BookItalic", Tab | Zero | SS03 | SS04 | SS06 | SS07 | Endash },
+ 	{"Mallory", Tab | Zero | SS04 | SS06 | Endash },
+ 	{"Retina", SS02 | SS03 | Endash },
+	{"GTAmericaMono", SS01 | Endash },
+	{"Ringside", Tab | Zero | SS07 | Endash },
+	{"ISO", Endash },
 };
 
 int
@@ -41,6 +101,18 @@ mapUnicode(char *name, int i)
 		return 0x2019;
 	case '`':
 		return 0x2018;
+	case '"':
+	for(j=0; j<nelem(featuremap); j++) {
+		if(strstr(name, featuremap[j].name) && (featuremap[j].features & Dquote))
+			return 0x201d;
+	}
+	break;
+	case '-':
+	for(j=0; j<nelem(featuremap); j++) {
+		if(strstr(name, featuremap[j].name) && (featuremap[j].features & Endash))
+			return 0x2212;
+	}
+	break;
 	}
 	return i;
 }
@@ -120,7 +192,98 @@ static char *lines[] = {
 	"私はガラスを食べられます。それは私を傷つけません。",
 	"Aš galiu valgyti stiklą ir jis manęs nežeidžia",
 	"Môžem jesť sklo. Nezraní ma.",
+	"camel_Snake^case.",
 };
+
+static CTFontDescriptorRef
+fontfeature(CTFontDescriptorRef desc, CFStringRef feature, int value)
+{
+	CFNumberRef val = CFNumberCreate(CFAllocatorGetDefault(), kCFNumberIntType, &value);
+	CFTypeRef keys[] = { kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue };
+	CFTypeRef values[] = { feature, val };
+	CFDictionaryRef dict = CFDictionaryCreate(
+		CFAllocatorGetDefault(), keys, values, 2,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFRelease(val);
+
+	CFTypeRef settingsValues[] = { dict };
+	CFArrayRef featureSettings = CFArrayCreate(CFAllocatorGetDefault(), settingsValues, 1, &kCFTypeArrayCallBacks);
+	CFRelease(dict);
+
+	CFTypeRef descriptorKeys[] = { kCTFontFeatureSettingsAttribute };
+	CFTypeRef descriptorValues[] = { featureSettings };
+	CFDictionaryRef descriptorAttrs =  CFDictionaryCreate(CFAllocatorGetDefault(), descriptorKeys,
+		descriptorValues, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+	CTFontDescriptorRef desc2 = CTFontDescriptorCreateCopyWithAttributes(desc, descriptorAttrs);
+	CFRelease(descriptorAttrs);
+	CFRelease(desc);
+	return desc2;
+}
+
+static CTFontDescriptorRef
+fontfeatures(char *name, CTFontDescriptorRef desc)
+{
+	int i;
+	CTFontDescriptorRef tmp;
+	// Set up OpenType Attributes
+	CFAllocatorRef defaultAllocator = CFAllocatorGetDefault();
+
+	int numberSpacing = kNumberSpacingType;
+	int numberSpacingType = kMonospacedNumbersSelector;
+
+	CFNumberRef numberSpacingId = CFNumberCreate(defaultAllocator, kCFNumberIntType, &numberSpacing);
+	CFNumberRef monospacedNumbersSelector = CFNumberCreate(defaultAllocator, kCFNumberIntType, &numberSpacingType);
+	tmp = desc;
+	desc = CTFontDescriptorCreateCopyWithFeature(desc, numberSpacingId, monospacedNumbersSelector);
+	CFRelease(tmp);
+	CFRelease(numberSpacingId);
+	CFRelease(monospacedNumbersSelector);
+
+	int features = 0;
+	for(i=0; i<nelem(featuremap); i++)
+		if(strstr(name, featuremap[i].name)){
+			features = featuremap[i].features;
+			break;
+		}
+	if(features & Zero)
+		desc = fontfeature(desc, CFSTR("zero"), 1);
+	if(features & SS01)
+		desc = fontfeature(desc, CFSTR("ss01"), 1);
+	if(features & SS02)
+		desc = fontfeature(desc, CFSTR("ss02"), 1);
+	if(features & SS03)
+		desc = fontfeature(desc, CFSTR("ss03"), 1);
+	if(features & SS04)
+		desc = fontfeature(desc, CFSTR("ss04"), 1);
+	if(features & SS05)
+		desc = fontfeature(desc, CFSTR("ss05"), 1);
+	if(features & SS06)
+		desc = fontfeature(desc, CFSTR("ss06"), 1);
+	if(features & SS07)
+		desc = fontfeature(desc, CFSTR("ss07"), 1);
+	if(features & SS10)
+		desc = fontfeature(desc, CFSTR("ss10"), 1);
+	if(features & SS11)
+		desc = fontfeature(desc, CFSTR("ss11"), 1);
+	if(features & SS12)
+		desc = fontfeature(desc, CFSTR("ss12"), 1);
+	if(features & SS14)
+		desc = fontfeature(desc, CFSTR("ss14"), 1);
+	if(features & SS15)
+		desc = fontfeature(desc, CFSTR("ss15"), 1);
+	if(features & SS16)
+		desc = fontfeature(desc, CFSTR("ss16"), 1);
+	if(features & SS17)
+		desc = fontfeature(desc, CFSTR("ss17"), 1);
+	if(features & Salt)
+		desc = fontfeature(desc, CFSTR("salt"), 1);
+	if(features & Lnum)
+		desc = fontfeature(desc, CFSTR("lnum"), 1);
+	if(features & Pnum)
+		desc = fontfeature(desc, CFSTR("pnum"), 1);
+	return desc;
+}
 
 static void
 fontheight(XFont *f, int size, int *height, int *ascent)
@@ -138,8 +301,11 @@ fontheight(XFont *f, int size, int *height, int *ascent)
 	CFRelease(s);
 	if(desc == nil)
 		return;
+
+	desc = fontfeatures(f->name, desc);
 	font = CTFontCreateWithFontDescriptor(desc, 0, nil);
 	CFRelease(desc);
+
 	if(font == nil)
 		return;
 
@@ -234,6 +400,11 @@ mksubfont(XFont *f, char *name, int lo, int hi, int size, int antialias)
 	int i, height, ascent;
 	Fontchar *fc, *fc0;
 	Memsubfont *sf;
+	CGFloat whitef[] = { 1.0, 1.0 };
+	CGColorRef white;
+	char bufx[20];
+	CFStringRef baseString ;
+	CTGlyphInfoRef glyphInfo;
 	CGFloat blackf[] = { 0.0, 1.0 };
 	CGColorRef black;
 
@@ -242,10 +413,17 @@ mksubfont(XFont *f, char *name, int lo, int hi, int size, int antialias)
 	CFRelease(s);
 	if(desc == nil)
 		return nil;
+
+	desc = fontfeatures(name, desc);
 	font = CTFontCreateWithFontDescriptor(desc, 0, nil);
 	CFRelease(desc);
+
 	if(font == nil)
 		return nil;
+
+	sprint(bufx, "%C", (Rune)mapUnicode(name, 48));
+	baseString = c2mac(bufx);
+	glyphInfo = CTGlyphInfoCreateWithGlyph(1082, font, baseString);
 
 	bbox = CTFontGetBoundingBox(font);
 	x = (int)(bbox.size.width*2 + 0.99999999);
@@ -303,15 +481,21 @@ mksubfont(XFont *f, char *name, int lo, int hi, int size, int antialias)
 		CTLineRef line;
 		CGRect r;
 		CGPoint p1;
-		CFStringRef keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName };
-		CFTypeRef values[] = { font, black };
+
+		CFStringRef keys[] = { kCTFontAttributeName, kCTForegroundColorAttributeName, kCTGlyphInfoAttributeName };
+		CFTypeRef values[] = { font, black, glyphInfo };
+		int size = 2;
+
+		if(strlen(name) == 12 && strcmp(name, "LucidaGrande") == 0) {
+			size = 3;
+		}
 
 		sprint(buf, "%C", (Rune)mapUnicode(name, i));
  		str = c2mac(buf);
 
  		// See https://developer.apple.com/library/ios/documentation/StringsTextFonts/Conceptual/CoreText_Programming/LayoutOperations/LayoutOperations.html#//apple_ref/doc/uid/TP40005533-CH12-SW2
  		attrs = CFDictionaryCreate(kCFAllocatorDefault, (const void**)&keys,
-			(const void**)&values, sizeof(keys) / sizeof(keys[0]),
+			(const void**)&values, size,
 			&kCFTypeDictionaryKeyCallBacks,
 			&kCFTypeDictionaryValueCallBacks);
 		attrString = CFAttributedStringCreate(kCFAllocatorDefault, str, attrs);
@@ -371,6 +555,9 @@ mksubfont(XFont *f, char *name, int lo, int hi, int size, int antialias)
 	sf->ascent = Dy(m1->r) - y0;
 	sf->info = fc0;
 	sf->bits = m1;
+
+	CFRelease(baseString);
+//	CFRelease(glyphInfo);
 
 	return sf;
 }
