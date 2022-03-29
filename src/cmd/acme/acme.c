@@ -1040,16 +1040,15 @@ iconinit(void)
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		/* tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xECE8EFFF); */
 		tagcols[BACK] = display->white;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDAEBFEFF);
 		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		tagcols[TEXT] = display->black;
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xF7F7F7FF);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xC9E9F4FF);
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFFFFF6FF);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xDAEBFEFF);
 		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x8D8D8DFF);
 		scrlcol = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEFECF1FF);
 		scrlbar = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD4D0D5FF);
@@ -1078,12 +1077,12 @@ iconinit(void)
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xAFD6EAFF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE3F8FFFF);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xD4D0D5FF);
+	colbutton = allocimage(display, r, screen->chan, 0, 0xFFFFF6FF);
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
 	but3col = allocimage(display, r, screen->chan, 1, 0x5E8060FF);
