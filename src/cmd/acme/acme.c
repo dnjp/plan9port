@@ -1040,16 +1040,16 @@ iconinit(void)
 
 	if(tagcols[BACK] == nil) {
 		/* Blue */
-		tagcols[BACK] = display->white;
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xD2D7D3FF);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+		tagcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
 		tagcols[TEXT] = display->black;
 		tagcols[HTEXT] = display->black;
 
 		/* Yellow */
-		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xFEFEFAFF);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xE8EBE9FF);
-		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0xEEEEEEFF);
+		textcols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
+		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellowgreen);
 		textcols[TEXT] = display->black;
 		textcols[HTEXT] = display->black;
 	}
@@ -1075,12 +1075,12 @@ iconinit(void)
 	r.max.x -= ButtonBorder;
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, 0x868787FF);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DMedblue);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, 0xF3F1EFFF);
+	colbutton = allocimage(display, r, screen->chan, 0, DPurpleblue);
 
 	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
 	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);
