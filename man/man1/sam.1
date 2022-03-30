@@ -390,17 +390,6 @@ or copy
 the range to after
 .IR a1 .
 Set dot.
-.br
-.ns
-.TP
-.BI z " w
-Set tab width to
-.IR w .
-.br
-.ns
-.TP
-.BI Z
-Toggle tab expansion.
 .SS Display commands
 .PD 0
 .TP
@@ -499,19 +488,10 @@ Plan 9 command.
 Send the range to the standard input of the
 Plan 9 command.
 .TP
-.BI ^ " Plan 9-command
-Send the standard output of the Plan 9 command
-to the command window.
-.TP
 .BI | " Plan 9-command
 Send the range to the standard input, and replace it by
 the standard output, of the
 Plan 9 command.
-.TP
-.BI _ " Plan 9-command
-Send the range to the standard input, and send the
-standard output of the Plan 9 command to the command
-window.
 .TP
 .BI \*a! " Plan 9-command
 Run the
@@ -721,12 +701,6 @@ Text may be typed and edited as in
 .MR rio (1) ;
 also the escape key (ESC) selects (sets dot to) text typed
 since the last mouse button hit.
-.PP
-Ctrl+b switches to the command window and moves to the end
-of the text.
-Ctrl+g switches from to the last focused window.
-If the focused window is a text window, ctrl+g switches
-to the next zeroxed instance of that window.
 .PP
 The button 3 menu controls window operations.
 The top of the menu
