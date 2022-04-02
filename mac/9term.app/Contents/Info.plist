@@ -9,7 +9,7 @@
 	<key>CFBundleGetInfoString</key>
 	<string>0.1-1</string>
 	<key>CFBundleIconFile</key>
-	<string>spaceglenda.icns</string>
+	<string>glenda.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.swtch.9term</string>
 	<key>CFBundleInfoDictionaryVersion</key>

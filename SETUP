@@ -7,6 +7,8 @@ sudo mkdir -p /usr/local/plan9
 sudo cp -r ./* /usr/local/plan9/
 cd /usr/local/plan9
 sudo ./INSTALL
+cd mac
+../bin/mk install
 
 echo
 echo

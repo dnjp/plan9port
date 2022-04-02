@@ -1,4 +1,4 @@
-#!/Users/daniel/plan9/bin/rc
+#!/usr/local/plan9/bin/rc
 # joyless reimplementation of soelim
 # the $0 recursion is a bit ugly
 

@@ -1,0 +1,14 @@
+#!/bin/zsh -i
+
+cd $HOME
+
+export PLAN9=${PLAN9:-/usr/local/plan9}
+
+if [ -x /usr/libexec/path_helper ]; then
+	eval `/usr/libexec/path_helper -s`
+fi
+
+export NAMESPACE=$(9 namespace)
+
+$PLAN9/bin/startsam &
+exit 0
