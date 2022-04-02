@@ -5,23 +5,23 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>9term</string>
+	<string>sam</string>
 	<key>CFBundleGetInfoString</key>
 	<string>0.1-1</string>
 	<key>CFBundleIconFile</key>
-	<string>glenda.icns</string>
+	<string>spaceglenda.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.swtch.9term</string>
+	<string>com.swtch.sam</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>9term</string>
+	<string>sam</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1</string>
 	<key>CFBundleSignature</key>
-	<string>9term1</string>
+	<string>sam1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 </dict>

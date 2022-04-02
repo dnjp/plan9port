@@ -1,0 +1,6 @@
+
+install:
+	cp -r 9term.app /Applications/
+	cp -r Acme.app /Applications/
+	cp -r Plumb.app /Applications/
+	cp -r Sam.app /Applications/

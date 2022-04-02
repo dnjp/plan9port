@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/Applications/drawterm.app/drawterm -u glenda -a 50.116.59.85 -h 50.116.59.85 

@@ -1,0 +1,9 @@
+#!/bin/sh
+
+export INSIDE_ACME=true
+
+. $PLAN9/fonts
+
+$PLAN9/bin/fontsrv &
+$PLAN9/bin/plumber &
+$PLAN9/bin/9term -l -f $fixfont -s -W600x800

@@ -10,5 +10,5 @@ fi
 
 export NAMESPACE=$(9 namespace)
 
-$PLAN9/bin/start9term &
+$PLAN9/bin/startsam &
 exit 0

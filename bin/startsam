@@ -1,0 +1,11 @@
+#!/bin/sh
+
+. $PLAN9/fonts
+
+export tabstop=8
+export INSIDE_ACME=true
+export font=$fixfont
+
+$PLAN9/bin/plumber &
+$PLAN9/bin/fontsrv &
+$PLAN9/bin/sam
