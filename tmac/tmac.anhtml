@@ -1,4 +1,4 @@
-.so /Users/daniel/plan9/tmac/tmac.an
+.so /usr/local/plan9/tmac/tmac.an
 .de }H
 ..
 .de }F
