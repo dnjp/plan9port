@@ -1,6 +1,6 @@
 newwindow() {
 	winctl=$(9p read acme/new/ctl)
-	winid=$(echo $winctl | awk '{print $1}')
+	export winid=$(echo $winctl | awk '{print $1}')
 }
 
 winctl() {
