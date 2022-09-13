@@ -5,8 +5,6 @@
 export tabstop=8
 export INSIDE_ACME=true
 
-skhd --reload
 $PLAN9/bin/plumber &
 $PLAN9/bin/fontsrv &
-acmeutils &
 $PLAN9/bin/acme -a -f $varfont -F $fixfont
