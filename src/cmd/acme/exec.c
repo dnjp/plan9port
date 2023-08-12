@@ -697,17 +697,18 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 {
 	uint n, m;
 	Rune *r;
-	Biobuf *b;
+/*	Biobuf *b;*/
 	char *s, *name;
-	int i, fd, q, ret, retc;
+	int i, q, ret, retc;
 	Dir *d, *d1;
 	Window *w;
 	int isapp;
 	DigestState *h;
+	Vfd fd;
 
 	w = f->curtext->w;
 	name = runetobyte(namer, nname);
-	d = dirstat(name);
+	d = vdirstat(name);
 	if(d!=nil && runeeq(namer, nname, f->name, f->nname)){
 		if(f->dev!=d->dev || f->qidpath!=d->qid.path || f->mtime != d->mtime)
 			checksha1(name, f, d);
@@ -723,8 +724,8 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 		}
 	}
 
-	fd = create(name, OWRITE, 0666);
-	if(fd < 0){
+	fd = vcreate(name, OWRITE, 0666);
+	if(fd.which == Verr){
 		warning(nil, "can't create file %s: %r\n", name);
 		goto Rescue1;
 	}
@@ -733,12 +734,12 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 	// necessary; it works around some buggy underlying
 	// file systems that mishandle unaligned writes.
 	// https://codereview.appspot.com/89550043/
-	b = emalloc(sizeof *b);
-	Binit(b, fd, OWRITE);
+/*	b = emalloc(sizeof *b);*/
+/*	Binit(b, fd, OWRITE);*/
 	r = fbufalloc();
 	s = fbufalloc();
 	free(d);
-	d = dirfstat(fd);
+	d = vdirfstat(fd);
 	h = sha1(nil, 0, nil, nil);
 	isapp = (d!=nil && d->length>0 && (d->qid.type&QTAPPEND));
 	if(isapp){
@@ -753,19 +754,25 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 		bufread(&f->b, q, r, n);
 		m = snprint(s, BUFSIZE+1, "%.*S", n, r);
 		sha1((uchar*)s, m, nil, h);
-		if(Bwrite(b, s, m) != m){
+/*		if(Bwrite(b, s, m) != m){*/
+		if(vwrite(fd, s, m) != m){
 			warning(nil, "can't write file %s: %r\n", name);
 			goto Rescue2;
 		}
 	}
+/*
 	if(Bflush(b) < 0) {
 		warning(nil, "can't write file %s: %r\n", name);
 		goto Rescue2;
 	}
 	ret = Bterm(b);
-	retc = close(fd);
+*/
+	ret = 0;
+	retc = vclose(&fd);
+/*
 	free(b);
 	b = nil;
+*/
 	if(ret < 0 || retc < 0) {
 		warning(nil, "can't write file %s: %r\n", name);
 		goto Rescue2; // flush or close failed
@@ -786,9 +793,9 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 			// in case we don't have read permission.
 			// (The create above worked, so we probably
 			// still have write permission.)
-			fd = open(name, OWRITE);
-			d1 = dirfstat(fd);
-			close(fd);
+			fd = vopen(name, OWRITE);
+			d1 = vdirfstat(fd);
+			vclose(&fd);
 			if(d1 != nil){
 				free(d);
 				d = d1;
@@ -813,16 +820,18 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 	free(d);
 	free(namer);
 	free(name);
-	close(fd);
+	vclose(&fd);
 	winsettag(w);
 	return;
 
     Rescue2:
+/*
 	if(b != nil) {
 		Bterm(b);
 		free(b);
-		close(fd);
+		vclose(&fd);
 	}
+*/
 	free(h);
 	fbuffree(s);
 	fbuffree(r);
@@ -1501,10 +1510,10 @@ runproc(void *argvp)
 		char *argaddr;
 		char *arg;
 		Command *c;
-		Channel *cpid;
+		Channel *cvpid;
 		int iseditcmd;
 	/* end of args */
-	char *e, *t, *name, *filename, *dir, **av, *news;
+	char *e, *t, *name, *filename, *dir, **av, *news, *p;
 	Rune r, **incl;
 	int ac, w, inarg, i, n, fd, nincl, winid;
 	int sfd[3];
@@ -1516,6 +1525,8 @@ runproc(void *argvp)
 	void **argv;
 	CFsys *fs;
 	char *shell;
+	Remote *rem;
+	Vpid vp;
 
 	threadsetname("runproc");
 
@@ -1528,9 +1539,18 @@ runproc(void *argvp)
 	argaddr = argv[5];
 	arg = argv[6];
 	c = argv[7];
-	cpid = argv[8];
+	cvpid = argv[8];
 	iseditcmd = (uintptr)argv[9];
 	free(argv);
+
+	if(rdir){
+		dir = runetobyte(rdir, ndir);
+		rem = remote(dir);
+		free(dir);
+		dir = nil;
+	}else{
+		rem = nil;
+	}
 
 	t = s;
 	while(*t==' ' || *t=='\n' || *t=='\t')
@@ -1538,13 +1558,19 @@ runproc(void *argvp)
 	for(e=t; *e; e++)
 		if(*e==' ' || *e=='\n' || *e=='\t' )
 			break;
-	name = emalloc((e-t)+2);
+	n = e-t;
+	name = emalloc(e-t+2);
 	memmove(name, t, e-t);
 	name[e-t] = 0;
 	e = utfrrune(name, '/');
 	if(e)
 		memmove(name, e+1, strlen(e+1)+1);	/* strcpy but overlaps */
 	strcat(name, " ");	/* add blank here for ease in waittask */
+	if(rem){
+		p = smprint("%s:%s", rem->machine, name);
+		free(name);
+		name = p;
+	}
 	c->name = bytetorune(name, &c->nname);
 	free(name);
 	pipechar = 0;
@@ -1628,6 +1654,14 @@ runproc(void *argvp)
 		putenv("acmeaddr", argaddr);
 	if(acmeshell != nil)
 		goto Hard;
+	if(rdir != nil){
+		/* TODO: improve */
+		dir = runetobyte(rdir, ndir);
+		rem = remote(dir);
+		free(dir);
+		if(rem)
+			goto Hard;
+	}
 	if(strlen(t) > sizeof buf-10)	/* may need to print into stack */
 		goto Hard;
 	inarg = FALSE;
@@ -1670,9 +1704,13 @@ runproc(void *argvp)
 		dir = runetobyte(rdir, ndir);
 	ret = threadspawnd(sfd, av[0], av, dir);
 	free(dir);
+
 	if(ret >= 0){
-		if(cpid)
-			sendul(cpid, ret);
+		if(cvpid){
+			vp.sess = nil;
+			vp.id = ret;
+			send(cvpid, &vp);
+		}
 		threadexits("");
 	}
 /* libthread uses execvp so no need to do this */
@@ -1681,7 +1719,7 @@ runproc(void *argvp)
 	if(e[0]=='/' || (e[0]=='.' && e[1]=='/'))
 		goto Fail;
 	if(cputype){
-		sprint(buf, "%s/%s", cputype, av[0]);
+		sprint(buf, "%s/%s", cputydpe, av[0]);
 		procexec(cpid, sfd, buf, av);
 	}
 	sprint(buf, "/bin/%s", av[0]);
@@ -1720,19 +1758,33 @@ Hard:
 	dir = nil;
 	if(rdir != nil)
 		dir = runetobyte(rdir, ndir);
-	shell = acmeshell;
-	if(shell == nil)
-		shell = "rc";
-	rcarg[0] = shell;
-	rcarg[1] = "-c";
-	rcarg[2] = t;
-	rcarg[3] = nil;
-	ret = threadspawnd(sfd, rcarg[0], rcarg, dir);
-	free(dir);
-	if(ret >= 0){
-		if(cpid)
-			sendul(cpid, ret);
-		threadexits(nil);
+
+	if(rem){
+		shell = "remoterc";
+		vp = vshell(rem, sfd, t, dir);
+		if(vp.id >= 0){
+			if(cvpid)
+				send(cvpid, &vp);
+			threadexits(nil);
+		}
+	}else{
+		shell = acmeshell;
+		if(shell == nil)
+			shell = "rc";
+		rcarg[0] = shell;
+		rcarg[1] = "-c";
+		rcarg[2] = t;
+		rcarg[3] = nil;
+		ret = threadspawnd(sfd, rcarg[0], rcarg, dir);
+		free(dir);
+		if(ret >= 0){
+			if(cvpid){
+				vp.sess = nil;
+				vp.id = ret;
+				send(cvpid, &vp);
+			}
+			threadexits(nil);
+		}
 	}
 	warning(nil, "exec %s: %r\n", shell);
 
@@ -1742,7 +1794,9 @@ Hard:
 	close(sfd[1]);
 	if(sfd[2] != sfd[1])
 		close(sfd[2]);
-	sendul(cpid, 0);
+	vp.sess = nil;
+	vp.id = 0;
+	send(cvpid, &vp);
 	threadexits(nil);
 }
 
@@ -1750,19 +1804,19 @@ void
 runwaittask(void *v)
 {
 	Command *c;
-	Channel *cpid;
+	Channel *cvpid;
 	void **a;
 
 	threadsetname("runwaittask");
 	a = v;
 	c = a[0];
-	cpid = a[1];
+	cvpid = a[1];
 	free(a);
 	do
-		c->pid = recvul(cpid);
-	while(c->pid == ~0);
+		recv(cvpid, &c->vp);
+	while(c->vp.id == ~0); /* TODO: remoting */
 	free(c->av);
-	if(c->pid != 0)	/* successful exec */
+	if(c->vp.id != 0)	/* successful exec */
 		sendp(ccommand, c);
 	else{
 		if(c->iseditcmd)
@@ -1771,7 +1825,7 @@ runwaittask(void *v)
 		free(c->text);
 		free(c);
 	}
-	chanfree(cpid);
+	chanfree(cvpid);
 }
 
 void
@@ -1779,15 +1833,15 @@ run(Window *win, char *s, Rune *rdir, int ndir, int newns, char *argaddr, char *
 {
 	void **arg;
 	Command *c;
-	Channel *cpid;
+	Channel *cvpid;
 
 	if(s == nil)
 		return;
 
 	arg = emalloc(10*sizeof(void*));
 	c = emalloc(sizeof *c);
-	cpid = chancreate(sizeof(ulong), 0);
-	chansetname(cpid, "cpid %s", s);
+	cvpid = chancreate(sizeof(Vpid), 0);
+	chansetname(cvpid, "cvpid %s", s);
 	arg[0] = win;
 	arg[1] = s;
 	arg[2] = rdir;
@@ -1796,12 +1850,12 @@ run(Window *win, char *s, Rune *rdir, int ndir, int newns, char *argaddr, char *
 	arg[5] = argaddr;
 	arg[6] = xarg;
 	arg[7] = c;
-	arg[8] = cpid;
+	arg[8] = cvpid;
 	arg[9] = (void*)(uintptr)iseditcmd;
 	threadcreate(runproc, arg, STACK);
 	/* mustn't block here because must be ready to answer mount() call in run() */
 	arg = emalloc(2*sizeof(void*));
 	arg[0] = c;
-	arg[1] = cpid;
+	arg[1] = cvpid;
 	threadcreate(runwaittask, arg, STACK);
 }
