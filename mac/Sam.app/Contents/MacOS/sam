@@ -1,5 +1,6 @@
 #!/bin/bash
 INSIDE_ACME=true
+export tabstop=8
 fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
 SHELL=${fshell:-$SHELL}
 PLAN9=${PLAN9:-/usr/local/plan9}
@@ -32,10 +33,32 @@ if ! [[ :$PATH: =~ :$PLAN9/bin: ]]
 then
 	PATH=$PATH:$PLAN9/bin
 fi
-ARGS=
-if [[ ! -z "$FIXFONT" ]]; then
-	ARGS="-f $FIXFONT"
-fi
-arch -arch $arch $PLAN9/bin/9term -l -W600x800 $ARGS &
-exit 0
 
+NAMESPACE=$(9 namespace)
+
+# collect dependencies
+deps=("plumber" "fontsrv")
+
+# launch soft dependencies for sam
+for dep in "${deps[@]}"; do
+	if ! pgrep -x "$dep" > /dev/null; then
+		echo "launching $dep"
+		"$dep" &
+	fi
+done
+
+# append font arguments
+font=
+if [[ ! -z "$FIXFONT" ]]; then
+	font=$FIXFONT
+fi
+export font
+
+# start sam and capture pid
+arch -arch $arch $PLAN9/bin/sam &
+sampid=$!
+
+# wait for sam to finish before exiting
+wait $sampid
+
+exit 0
