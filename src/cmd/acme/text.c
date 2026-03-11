@@ -1049,6 +1049,13 @@ texttype(Text *t, Rune r)
 			comcmd(&t->w->tag, t, nil, FALSE, TRUE, nil, 0);
 		}
 		return;
+	case Kcmd+'+':	/* Cmd++: increase font size globally */
+	case Kcmd+'=':	/* Cmd++ (Shift+Cmd+=) on some keyboards */
+		globalfontplus();
+		return;
+	case Kcmd+'-':	/* Cmd+-: decrease font size globally */
+		globalfontminus();
+		return;
 	case 0x09:	/* tab: indent selection or fall through */
 		if(t->what == Body && t->q1 > t->q0){
 			typecommit(t);
