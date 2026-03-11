@@ -21,6 +21,15 @@ enum{
 	TABDIR = 3	/* width of tabs in directory windows */
 };
 
+static uint	textstartline(Text*, uint);
+static uint	textendline(Text*, uint);
+static uint	textcursorup(Text*, uint);
+static uint	textcursordown(Text*, uint);
+static uint	textstartofword(Text*, uint);
+static uint	textendofword(Text*, uint);
+static uint	textprevword_start(Text*, uint);
+static uint	textnextword_end(Text*, uint);
+
 void
 textinit(Text *t, File *f, Rectangle r, Reffont *rf, Image *cols[NCOL])
 {
@@ -691,9 +700,220 @@ texttype(Text *t, Rune r)
 		if(t->q1 < t->file->b.nc)
 			textshow(t, t->q1+1, t->q1+1, TRUE);
 		return;
+	case Kshiftleft: {
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 0;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 0;
+		atq1 = t->cursoratq1;
+		if(atq1)
+			{ if(q1 > 0) q1--; }
+		else
+			{ if(q0 > 0) q0--; }
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;	/* textshow clears it */
+		return;
+	}
+	case Kshiftright: {
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 1;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 1;
+		atq1 = t->cursoratq1;
+		if(atq1)
+			{ if(q1 < t->file->b.nc) q1++; }
+		else
+			{ if(q0 < t->file->b.nc) q0++; }
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kshiftup: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 0;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 0;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		cur = textcursorup(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kshiftdown: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 1;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 1;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		cur = textcursordown(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kaltleft: {
+		typecommit(t);
+		q0 = t->q0;
+		if(q0 == textstartofword(t, q0))
+			q0 = textprevword_start(t, q0);
+		else
+			q0 = textstartofword(t, q0);
+		textshow(t, q0, q0, TRUE);
+		return;
+	}
+	case Kaltright: {
+		typecommit(t);
+		q0 = t->q0;
+		if(q0 == textendofword(t, q0))
+			q0 = textnextword_end(t, q0);
+		else {
+			q0 = textendofword(t, q0);
+			if(q0 == t->q0)
+				q0 = textnextword_end(t, q0);
+		}
+		textshow(t, q0, q0, TRUE);
+		return;
+	}
+	case Kshiftaltleft: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 0;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 0;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		if(cur == textstartofword(t, cur))
+			cur = textprevword_start(t, cur);
+		else
+			cur = textstartofword(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kshiftaltright: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 1;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 1;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		if(cur == textendofword(t, cur))
+			cur = textnextword_end(t, cur);
+		else
+			cur = textendofword(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kcmdleft: {
+		typecommit(t);
+		q0 = textstartline(t, t->q0);
+		textshow(t, q0, q0, TRUE);
+		return;
+	}
+	case Kcmdright: {
+		typecommit(t);
+		q0 = textendline(t, t->q0);
+		textshow(t, q0, q0, TRUE);
+		return;
+	}
+	case Kshiftcmdleft: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 0;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 0;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		cur = textstartline(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
+	case Kshiftcmdright: {
+		uint anchor, cur;
+		int atq1;
+		typecommit(t);
+		q0 = t->q0;
+		q1 = t->q1;
+		if(t->q0 == t->q1)
+			t->cursoratq1 = 1;
+		else if(t->cursoratq1 < 0)
+			t->cursoratq1 = 1;
+		cur = t->cursoratq1 ? q1 : q0;
+		anchor = t->cursoratq1 ? q0 : q1;
+		cur = textendline(t, cur);
+		q0 = cur < anchor ? cur : anchor;
+		q1 = cur < anchor ? anchor : cur;
+		atq1 = (cur >= anchor);
+		textsetselect(t, q0, q1);
+		textshow(t, q0, q1, TRUE);
+		t->cursoratq1 = atq1;
+		return;
+	}
 	case Kdown:
 		if(t->what == Tag)
 			goto Tagdown;
+		if(t->what == Body){
+			typecommit(t);
+			q0 = textcursordown(t, t->q0);
+			textshow(t, q0, q0, TRUE);
+			return;
+		}
 		n = t->fr.maxlines/3;
 		goto case_Down;
 	case Kscrollonedown:
@@ -712,6 +932,12 @@ texttype(Text *t, Rune r)
 	case Kup:
 		if(t->what == Tag)
 			goto Tagup;
+		if(t->what == Body){
+			typecommit(t);
+			q0 = textcursorup(t, t->q0);
+			textshow(t, q0, q0, TRUE);
+			return;
+		}
 		n = t->fr.maxlines/3;
 		goto case_Up;
 	case Kscrolloneup:
@@ -1196,6 +1422,7 @@ textsetselect(Text *t, uint q0, uint q1)
 	/* t->fr.p0 and t->fr.p1 are always right; t->q0 and t->q1 may be off */
 	t->q0 = q0;
 	t->q1 = q1;
+	t->cursoratq1 = -1;	/* next shift+arrow infers direction */
 	/* compute desired p0,p1 from q0,q1 */
 	p0 = q0-t->org;
 	p1 = q1-t->org;
@@ -1585,6 +1812,190 @@ textclickhtmlmatch(Text *t, uint *q0, uint *q1)
 	}
 
 	return 0;
+}
+
+/* Start of line containing position q (position of first character of line). */
+static uint
+textstartline(Text *t, uint q)
+{
+	while(q > 0 && textreadc(t, q-1) != '\n')
+		q--;
+	return q;
+}
+
+/* End of line containing q (position after last character, at \n or file end). */
+static uint
+textendline(Text *t, uint q)
+{
+	uint nc = t->file->b.nc;
+	while(q < nc && textreadc(t, q) != '\n')
+		q++;
+	return q;
+}
+
+/* Start of the line that ends at newline_pos (newline_pos is the position of the line's \\n). */
+static uint
+textstartoflineendingat(Text *t, uint newline_pos)
+{
+	uint p = newline_pos;
+	while(p > 0 && textreadc(t, p-1) != '\n')
+		p--;
+	return p;
+}
+
+/* Display column from linestart to q: each char = 1 column, tab = tabstop columns (per Tab command). */
+static int
+textcolumnoffset(Text *t, uint linestart, uint q)
+{
+	int col = 0;
+	uint p;
+	Rune r;
+	int tw = t->tabstop;
+
+	for(p = linestart; p < q && p < t->file->b.nc; p++){
+		r = textreadc(t, p);
+		if(r == '\t')
+			col += tw;
+		else
+			col++;
+	}
+	return col;
+}
+
+/* Position on line at linestart at display column col (tab = tabstop). Returns cursor position
+ * after the character that ends at column col; if line is shorter, returns position of \\n (end of line). */
+static uint
+textqatcolumn(Text *t, uint linestart, int col)
+{
+	int c = 0;
+	uint p;
+	Rune r;
+	uint nc = t->file->b.nc;
+	int tw = t->tabstop;
+
+	if(col <= 0)
+		return linestart;
+	for(p = linestart; p < nc; p++){
+		r = textreadc(t, p);
+		if(r == '\n')
+			return p;
+		if(r == '\t')
+			c += tw;
+		else
+			c++;
+		if(c >= col)
+			return p + 1;	/* cursor after this character */
+	}
+	return p;
+}
+
+/* Cursor up one line: same display column (tab = tabstop); if target line shorter, end of line. */
+static uint
+textcursorup(Text *t, uint q)
+{
+	uint linestart, prev_newline, prev_line_start;
+	int col;
+
+	if(q == 0)
+		return 0;
+	linestart = textstartline(t, q);
+	if(linestart == 0)
+		return 0;
+	col = textcolumnoffset(t, linestart, q);
+	prev_newline = textbacknl(t, linestart, 1);
+	prev_line_start = textstartoflineendingat(t, prev_newline);
+	return textqatcolumn(t, prev_line_start, col);
+}
+
+/* Cursor down one line: same display column (tab = tabstop); if target line shorter, end of line. */
+static uint
+textcursordown(Text *t, uint q)
+{
+	uint linestart, nextlinestart, nc;
+	int col;
+
+	nc = t->file->b.nc;
+	if(q >= nc)
+		return nc;
+	linestart = textstartline(t, q);
+	col = textcolumnoffset(t, linestart, q);
+	nextlinestart = textendline(t, q);
+	if(nextlinestart >= nc)
+		return nc;
+	nextlinestart++;
+	return textqatcolumn(t, nextlinestart, col);
+}
+
+static int
+iswordrune(Rune r)
+{
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+		(r >= 0x80 && r <= 0xFFFF && isalnum(r));
+}
+
+/* Start of current word (TextEdit-style): position before first alphanumeric.
+ * Word = run of alphanumerics only; e.g. in "#include" start is before 'i'. */
+static uint
+textstartofword(Text *t, uint q)
+{
+	uint p;
+
+	if(q <= 0)
+		return 0;
+	p = q;
+	while(p > 0 && !iswordrune(textreadc(t, p-1)))
+		p--;
+	while(p > 0 && iswordrune(textreadc(t, p-1)))
+		p--;
+	return p;
+}
+
+/* End of current word (TextEdit-style): position after last alphanumeric. */
+static uint
+textendofword(Text *t, uint q)
+{
+	uint p, nc = t->file->b.nc;
+
+	if(q >= nc)
+		return nc;
+	p = q;
+	while(p < nc && !iswordrune(textreadc(t, p)))
+		p++;
+	while(p < nc && iswordrune(textreadc(t, p)))
+		p++;
+	return p;
+}
+
+/* Beginning of previous word: rightmost start-of-word (position before first alphanumeric)
+ * that is strictly left of q. */
+static uint
+textprevword_start(Text *t, uint q)
+{
+	uint p;
+
+	if(q <= 0)
+		return 0;
+	for(p = q; p > 0; p--){
+		if(iswordrune(textreadc(t, p-1)) && (p == 1 || !iswordrune(textreadc(t, p-2))))
+			return p - 1;
+	}
+	return 0;
+}
+
+/* End of next word: leftmost p > q such that char at p-1 is alphanumeric
+ * and (p>=nc or char at p is not). Returns position after last alphanumeric of that word. */
+static uint
+textnextword_end(Text *t, uint q)
+{
+	uint p, nc = t->file->b.nc;
+
+	if(q >= nc)
+		return nc;
+	for(p = q; p < nc; p++){
+		if(iswordrune(textreadc(t, p)) && (p+1 >= nc || !iswordrune(textreadc(t, p+1))))
+			return p + 1;
+	}
+	return nc;
 }
 
 uint
