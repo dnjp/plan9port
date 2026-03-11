@@ -913,12 +913,61 @@ rpc_setmouse(Client *c, Point p)
 
 	LOG(@"doCommandBySelector (%@)", NSStringFromSelector(s));
 
-	e = [NSApp currentEvent];
-	c = [[e characters] characterAtIndex:0];
-	k = keycvt(c);
-	LOG(@"keyDown: character0: 0x%x -> 0x%x", c, k);
-	m = [e modifierFlags];
+	/* Cocoa delivers Cmd+arrow and Option+arrow as selectors, not as key events.
+	 * Map the selector directly to our rune so we don't depend on the event's keyCode/character. */
+	if(s == @selector(moveToBeginningOfLine:) || s == @selector(moveToLeftEndOfLine:)){
+		gfx_keystroke(self.client, Kcmdleft);
+		return;
+	}
+	if(s == @selector(moveToEndOfLine:) || s == @selector(moveToRightEndOfLine:)){
+		gfx_keystroke(self.client, Kcmdright);
+		return;
+	}
+	if(s == @selector(moveToBeginningOfLineAndModifySelection:) || s == @selector(moveToLeftEndOfLineAndModifySelection:)){
+		gfx_keystroke(self.client, Kshiftcmdleft);
+		return;
+	}
+	if(s == @selector(moveToEndOfLineAndModifySelection:) || s == @selector(moveToRightEndOfLineAndModifySelection:)){
+		gfx_keystroke(self.client, Kshiftcmdright);
+		return;
+	}
+	if(s == @selector(moveWordLeft:) || s == @selector(moveWordBackward:)){
+		gfx_keystroke(self.client, Kaltleft);
+		return;
+	}
+	if(s == @selector(moveWordRight:) || s == @selector(moveWordForward:)){
+		gfx_keystroke(self.client, Kaltright);
+		return;
+	}
+	if(s == @selector(moveWordLeftAndModifySelection:) || s == @selector(moveWordBackwardAndModifySelection:)){
+		gfx_keystroke(self.client, Kshiftaltleft);
+		return;
+	}
+	if(s == @selector(moveWordRightAndModifySelection:) || s == @selector(moveWordForwardAndModifySelection:)){
+		gfx_keystroke(self.client, Kshiftaltright);
+		return;
+	}
 
+	e = [NSApp currentEvent];
+	m = [e modifierFlags];
+	switch([e keyCode]){
+	case NSLeftArrowFunctionKey: k = Kleft; break;
+	case NSRightArrowFunctionKey: k = Kright; break;
+	case NSUpArrowFunctionKey: k = Kup; break;
+	case NSDownArrowFunctionKey: k = Kdown; break;
+	default:
+		c = [[e characters] length] > 0 ? [[e characters] characterAtIndex:0] : 0;
+		k = keycvt(c);
+		break;
+	}
+	LOG(@"keyDown: keyCode %ld character0: 0x%x -> 0x%x", (long)[e keyCode], c, k);
+
+	if(m & NSEventModifierFlagShift){
+		if(k == Kleft) k = Kshiftleft;
+		else if(k == Kright) k = Kshiftright;
+		else if(k == Kup) k = Kshiftup;
+		else if(k == Kdown) k = Kshiftdown;
+	}
 	if(m & NSEventModifierFlagCommand){
 		if((m & NSEventModifierFlagShift) && 'a' <= k && k <= 'z')
 			k += 'A' - 'a';

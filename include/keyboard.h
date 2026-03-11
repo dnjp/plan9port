@@ -30,6 +30,24 @@ enum {
 	Kins=	KF|0x14,
 	Kend=	KF|0x18,
 
+	/* shift+arrow */
+	Kshiftleft=	KF|0x19,
+	Kshiftright=	KF|0x1A,
+	Kshiftup=	KF|0x1B,
+	Kshiftdown=	KF|0x1C,
+	/* alt+left/right */
+	Kaltleft=	KF|0x1D,
+	Kaltright=	KF|0x1E,
+	/* shift+alt+left/right */
+	Kshiftaltleft=	KF|0x1F,
+	Kshiftaltright=	KF|0x20,
+	/* cmd+left/right */
+	Kcmdleft=	KF|0x21,
+	Kcmdright=	KF|0x22,
+	/* shift+cmd+left/right */
+	Kshiftcmdleft=	KF|0x23,
+	Kshiftcmdright=	KF|0x24,
+
 	Kalt=		KF|0x15,
 	Kshift=	KF|0x16,
 	Kctl=		KF|0x17,

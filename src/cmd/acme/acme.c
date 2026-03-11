@@ -484,7 +484,7 @@ keyboardthread(void *v)
 		casekeyboard:
 			typetext = rowtype(&row, r, mouse->xy);
 			t = typetext;
-			if(t!=nil && t->col!=nil && !(r==Kdown || r==Kleft || r==Kright))	/* scrolling doesn't change activecol */
+			if(t!=nil && t->col!=nil && !(r==Kdown || r==Kup || r==Kleft || r==Kright))	/* scrolling/cursor move doesn't change activecol */
 				activecol = t->col;
 			if(t!=nil && t->w!=nil)
 				t->w->body.file->curtext = &t->w->body;

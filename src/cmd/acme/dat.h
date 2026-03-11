@@ -191,6 +191,7 @@ struct Text
 	uint	iq1;	/* last input position */
 	uint	eq0;	/* start of typing for ESC */
 	uint	cq0;	/* cache position */
+	int	cursoratq1;	/* -1 unset, 0 at q0, 1 at q1 */
 	int		ncache;	/* storage for insert */
 	int		ncachealloc;
 	Rune	*cache;
@@ -557,10 +558,11 @@ extern int			globalautoindent;
 extern int			dodollarsigns;
 extern char*		mtpt;
 
+/* Scroll key codes (0x20,0x21 used by Kshiftaltright,Kcmdleft in keyboard.h) */
 enum
 {
-	Kscrolloneup		= KF|0x20,
-	Kscrollonedown	= KF|0x21
+	Kscrolloneup		= KF|0x27,
+	Kscrollonedown	= KF|0x28
 };
 
 extern Channel	*cplumb;		/* chan(Plumbmsg*) */
