@@ -69,6 +69,14 @@ wininit(Window *w, Window *clone, Rectangle r)
 	f = fileaddtext(f, &w->body);
 	w->body.what = Body;
 	textinit(&w->body, f, r1, rf, textcols);
+	if(clone == nil){
+		w->body.tabexpand = tabexpand;
+		if(ncomfmt > 0){
+			runemove(w->body.comfmt, comfmt, ncomfmt);
+			w->body.ncomfmt = ncomfmt;
+		}else
+			w->body.ncomfmt = 0;
+	}
 	r1.min.y -= 1;
 	r1.max.y = r1.min.y+1;
 	draw(screen, r1, tagcols[BORD], nil, ZP);
@@ -85,6 +93,9 @@ wininit(Window *w, Window *clone, Rectangle r)
 		w->dirty = clone->dirty;
 		w->autoindent = clone->autoindent;
 		w->body.tabexpand = clone->body.tabexpand;
+		w->body.ncomfmt = clone->body.ncomfmt;
+		if(clone->body.ncomfmt > 0)
+			runemove(w->body.comfmt, clone->body.comfmt, clone->body.ncomfmt);
 		textsetselect(&w->body, clone->body.q0, clone->body.q1);
 		winsettag(w);
 	}

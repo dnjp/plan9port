@@ -1043,6 +1043,12 @@ texttype(Text *t, Rune r)
 		textshow(t, t->q0, t->q1, 1);
 		t->iq1 = t->q1;
 		return;
+	case Kcmd+'/':	/* cmd+/ */
+		if(t->what == Body){
+			typecommit(t);
+			comcmd(&t->w->tag, t, nil, FALSE, TRUE, nil, 0);
+		}
+		return;
 	}
 	if(t->q1 > t->q0){
 		if(t->ncache != 0)
