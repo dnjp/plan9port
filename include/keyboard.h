@@ -47,6 +47,8 @@ enum {
 	/* shift+cmd+left/right */
 	Kshiftcmdleft=	KF|0x23,
 	Kshiftcmdright=	KF|0x24,
+	/* Shift+Tab: unindent */
+	Kshifttab=	KF|0x25,
 
 	Kalt=		KF|0x15,
 	Kshift=	KF|0x16,

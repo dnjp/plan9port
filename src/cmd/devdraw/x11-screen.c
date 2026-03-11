@@ -1193,7 +1193,14 @@ _xtoplan9kbd(XEvent *e)
 	if(k&0xFF00){
 		switch(k){
 		case XK_BackSpace:
+			k &= 0x7F;
+			break;
 		case XK_Tab:
+			if(e->xkey.state & ShiftMask)
+				k = Kshifttab;
+			else
+				k &= 0x7F;
+			break;
 		case XK_Escape:
 		case XK_Delete:
 		case XK_KP_0:
