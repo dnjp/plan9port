@@ -148,6 +148,14 @@ threadmain(int argc, char *argv[])
 	if(p != nil && *p != '\0'){
 		tabexpand = TRUE;
 	}
+	p = getenv("comfmt");
+	if(p != nil && *p != '\0'){
+		Rune *r;
+		int nr;
+		r = bytetorune(p, &nr);
+		setcomfmt(r, nr);
+		free(r);
+	}
 	if(loadfile)
 		rowloadfonts(loadfile);
 	putenv("font", fontnames[0]);

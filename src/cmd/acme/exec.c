@@ -55,6 +55,8 @@ void	sendx(Text*, Text*, Text*, int, int, Rune*, int);
 void	sort(Text*, Text*, Text*, int, int, Rune*, int);
 void	tab(Text*, Text*, Text*, int, int, Rune*, int);
 void	tabexpandcmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	comcmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	comfmtcmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	zeroxx(Text*, Text*, Text*, int, int, Rune*, int);
 
 typedef struct Exectab Exectab;
@@ -95,6 +97,10 @@ static Rune LSnarf[] = { 'S', 'n', 'a', 'r', 'f', 0 };
 static Rune LSort[] = { 'S', 'o', 'r', 't', 0 };
 static Rune LTab[] = { 'T', 'a', 'b', 0 };
 static Rune LTabexpand[] = { 'T', 'a', 'b', 'e', 'x', 'p', 'a', 'n', 'd', 0 };
+static Rune LCom[] = { 'C', 'o', 'm', 0 };
+static Rune LComfmt[] = { 'C', 'o', 'm', 'f', 'm', 't', 0 };
+static Rune defaultcomfmt[] = { '/', '/', ' ', '%', 's' };
+#define ndefaultcomfmt (sizeof defaultcomfmt / sizeof defaultcomfmt[0])
 static Rune LUndo[] = { 'U', 'n', 'd', 'o', 0 };
 static Rune LZerox[] = { 'Z', 'e', 'r', 'o', 'x', 0 };
 
@@ -127,6 +133,8 @@ Exectab exectab[] = {
 	{ LSort,		sort,		FALSE,	XXX,		XXX		},
 	{ LTab,		tab,		FALSE,	XXX,		XXX		},
 	{ LTabexpand,	tabexpandcmd,	FALSE,	XXX,		XXX		},
+	{ LCom,		comcmd,		FALSE,	TRUE,	XXX		},
+	{ LComfmt,	comfmtcmd,	FALSE,	XXX,		XXX		},
 	{ LUndo,		undo,	FALSE,	TRUE,	XXX		},
 	{ LZerox,		zeroxx,	FALSE,	XXX,		XXX		},
 	{ nil, 			0,		0,		0,		0		}
@@ -155,6 +163,37 @@ isexecc(int c)
 	if(isfilec(c))
 		return 1;
 	return c=='<' || c=='|' || c=='>';
+}
+
+void
+setcomfmt(Rune *r, int nr)
+{
+	ncomfmt = 0;
+	if(r == nil || nr <= 0)
+		return;
+	if(nr > NCOMFMT)
+		nr = NCOMFMT;
+	runemove(comfmt, r, nr);
+	ncomfmt = nr;
+}
+
+/* parse comfmt (format with %s) into prefix and suffix; return 0 if no %s */
+static int
+parsecomfmt(Rune *fmt, int nfmt, Rune *pre, int *npre, Rune *suf, int *nsuf)
+{
+	int i;
+
+	*npre = 0;
+	*nsuf = 0;
+	for(i = 0; i + 1 < nfmt; i++)
+		if(fmt[i] == '%' && fmt[i+1] == 's'){
+			*npre = i;
+			runemove(pre, fmt, i);
+			*nsuf = nfmt - (i + 2);
+			runemove(suf, fmt + i + 2, *nsuf);
+			return 1;
+		}
+	return 0;
 }
 
 void
@@ -1512,6 +1551,209 @@ tabexpandcmd(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg
 	warning(nil, "%.*S: Tab: %d, Tabexpand %s\n",
 		w->body.file->nname, w->body.file->name,
 		w->body.tabstop, w->body.tabexpand ? "ON" : "OFF");
+}
+
+void
+comfmtcmd(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	Window *w;
+	Rune *r;
+	int len, i;
+
+	USED(_0);
+	USED(_1);
+	USED(_2);
+	USED(argt);
+
+	if(et == nil || et->w == nil)
+		return;
+	w = et->w;
+	/* format is rest of tag line after command name */
+	r = skipbl(arg, narg, &len);
+	/* trim trailing newlines/spaces so format has no newline suffix */
+	while(len > 0 && (r[len-1] == '\n' || r[len-1] == ' ' || r[len-1] == '\t'))
+		len--;
+	if(len > 0){
+		if(len > NCOMFMT)
+			len = NCOMFMT;
+		/* reset length first so shorter format doesn't leave stale ncomfmt */
+		w->body.ncomfmt = len;
+		runemove(w->body.comfmt, r, len);
+		for(i = len; i < NCOMFMT; i++)
+			w->body.comfmt[i] = 0;
+	}
+	warning(nil, "%.*S: Comfmt %.*S\n",
+		w->body.file->nname, w->body.file->name,
+		w->body.ncomfmt, w->body.comfmt);
+}
+
+/* return 1 if line is commented (prefix after ws; suffix before newline if nsuf>0) */
+static int
+lineiscommented(Rune *line, uint nline, Rune *pre, int npre, Rune *suf, int nsuf)
+{
+	uint nws, j;
+	uint i;
+
+	nws = 0;
+	while(nws < nline && (line[nws] == ' ' || line[nws] == '\t'))
+		nws++;
+	if(nws + npre > nline)
+		return 0;
+	for(i = 0; i < npre; i++)
+		if(line[nws + i] != pre[i])
+			return 0;
+	if(nsuf == 0)
+		return 1;
+	if((nline - nws - npre) < nsuf)
+		return 0;
+	j = nline;
+	if(j > 0 && line[j-1] == '\n')
+		j--;
+	if(j < nws + npre + nsuf)
+		return 0;
+	for(i = 0; i < nsuf; i++)
+		if(line[j - nsuf + i] != suf[i])
+			return 0;
+	return 1;
+}
+
+void
+comcmd(Text *et, Text *t, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	uint line0, line1, q0, q1;
+	Rune *fmt;
+	int nfmt;
+	Rune pre[32], suf[32];
+	int npre, nsuf;
+	Rune *buf;
+	uint nbuf, p, line0_off, line1_off, nws, contentend;
+	uint ncommented, nuncommented;
+	int docomment;
+	Rune *out;
+	uint nout, outalloc;
+	uint i;
+
+	USED(_1);
+	USED(_2);
+	USED(arg);
+	USED(narg);
+
+	if(et == nil || et->w == nil)
+		return;
+	t = &et->w->body;
+	q0 = t->q0;
+	q1 = t->q1;
+	if(q0 == q1)
+		return;
+	fmt = t->ncomfmt > 0 ? t->comfmt : comfmt;
+	nfmt = t->ncomfmt > 0 ? t->ncomfmt : ncomfmt;
+	if(nfmt <= 0){
+		fmt = defaultcomfmt;
+		nfmt = ndefaultcomfmt;
+	}
+	if(!parsecomfmt(fmt, nfmt, pre, &npre, suf, &nsuf))
+		return;
+	/* all lines overlapping [q0, q1) */
+	line0 = q0;
+	while(line0 > 0 && textreadc(t, line0 - 1) != '\n')
+		line0--;
+	line1 = q1 > 0 ? q1 - 1 : 0;
+	while(line1 < t->file->b.nc && textreadc(t, line1) != '\n')
+		line1++;
+	if(line1 < t->file->b.nc)
+		line1++;
+	nbuf = line1 - line0;
+	buf = runemalloc(nbuf);
+	bufread(&t->file->b, line0, buf, nbuf);
+	ncommented = 0;
+	nuncommented = 0;
+	for(p = 0; p < nbuf; ){
+		line0_off = p;
+		while(p < nbuf && buf[p] != '\n')
+			p++;
+		if(p < nbuf)
+			p++;
+		line1_off = p;
+		if(line1_off > line0_off){
+			if(lineiscommented(buf + line0_off, line1_off - line0_off, pre, npre, suf, nsuf))
+				ncommented++;
+			else
+				nuncommented++;
+		}
+	}
+	/* uncomment when at least half commented; tie favors uncomment */
+	docomment = nuncommented > ncommented;
+	outalloc = nbuf + 256 * (npre + nsuf);
+	out = runemalloc(outalloc);
+	nout = 0;
+	for(p = 0; p < nbuf; ){
+		line0_off = p;
+		while(p < nbuf && buf[p] != '\n')
+			p++;
+		if(p < nbuf)
+			p++;
+		line1_off = p;
+		if(line1_off == line0_off)
+			continue;
+		nws = 0;
+		while(nws < line1_off - line0_off && (buf[line0_off + nws] == ' ' || buf[line0_off + nws] == '\t'))
+			nws++;
+		if(docomment){
+			contentend = line1_off - line0_off;
+			if(contentend > 0 && buf[line0_off + contentend - 1] == '\n')
+				contentend--;
+			if(nout + nws + npre + contentend + nsuf + 2 > outalloc){
+				outalloc = nout + nws + npre + contentend + nsuf + 256;
+				out = runerealloc(out, outalloc);
+			}
+			for(i = 0; i < nws; i++)
+				out[nout++] = buf[line0_off + i];
+			for(i = 0; i < npre; i++)
+				out[nout++] = pre[i];
+			for(i = nws; i < contentend; i++)
+				out[nout++] = buf[line0_off + i];
+			for(i = 0; i < nsuf; i++)
+				out[nout++] = suf[i];
+			if(line1_off - line0_off > 0 && buf[line0_off + (line1_off - line0_off) - 1] == '\n')
+				out[nout++] = '\n';
+		}else{
+			if(lineiscommented(buf + line0_off, line1_off - line0_off, pre, npre, suf, nsuf)){
+				uint ln = line1_off - line0_off;
+				uint end = ln;
+				uint content_start, ncontent;
+				if(end > 0 && buf[line0_off + end - 1] == '\n')
+					end--;
+				content_start = nws + npre;
+				/* if prefix ends with space, skip one leading space in content */
+				if(npre > 0 && pre[npre-1] == ' ' && content_start < end - nsuf &&
+				    buf[line0_off + content_start] == ' ')
+					content_start++;
+				ncontent = (content_start < end - nsuf) ? (end - nsuf - content_start) : 0;
+				if(nout + nws + ncontent + 2 > outalloc){
+					outalloc = nout + nws + ncontent + 256;
+					out = runerealloc(out, outalloc);
+				}
+				for(i = 0; i < nws; i++)
+					out[nout++] = buf[line0_off + i];
+				for(i = content_start; i < end - nsuf; i++)
+					out[nout++] = buf[line0_off + i];
+				if(ln > 0 && buf[line0_off + ln - 1] == '\n')
+					out[nout++] = '\n';
+			}else{
+				for(i = line0_off; i < line1_off; i++)
+					out[nout++] = buf[i];
+			}
+		}
+	}
+	free(buf);
+	seq++;
+	filemark(t->file);
+	textdelete(t, line0, line1, TRUE);
+	textinsert(t, line0, out, nout, TRUE);
+	free(out);
+	textsetselect(t, line0, line0 + nout);
+	textscrdraw(t);
+	winsettag(et->w);
 }
 
 void
