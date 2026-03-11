@@ -1049,6 +1049,20 @@ texttype(Text *t, Rune r)
 			comcmd(&t->w->tag, t, nil, FALSE, TRUE, nil, 0);
 		}
 		return;
+	case 0x09:	/* tab: indent selection or fall through */
+		if(t->what == Body && t->q1 > t->q0){
+			typecommit(t);
+			indentlinescmd(&t->w->tag, t, nil, FALSE, TRUE, nil, 0);
+			return;
+		}
+		break;
+	case Kshifttab:	/* shift+tab */
+		if(t->what == Body && t->q1 > t->q0){
+			typecommit(t);
+			unindentlinescmd(&t->w->tag, t, nil, FALSE, TRUE, nil, 0);
+			return;
+		}
+		return;
 	}
 	if(t->q1 > t->q0){
 		if(t->ncache != 0)
@@ -1058,7 +1072,7 @@ texttype(Text *t, Rune r)
 	}
 	textshow(t, t->q0, t->q0, 1);
 	switch(r){
-	case 0x09:	/* ^I (Tab): expand to spaces if tabexpand, else insert '\t' */
+	case 0x09:	/* ^I (tab) */
 		if(t->what == Body && t->tabexpand){
 			typecommit(t);
 			nnb = t->tabstop;

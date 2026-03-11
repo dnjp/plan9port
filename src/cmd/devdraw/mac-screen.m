@@ -947,6 +947,10 @@ rpc_setmouse(Client *c, Point p)
 		gfx_keystroke(self.client, Kshiftaltright);
 		return;
 	}
+	if(s == @selector(insertBacktab:)){
+		gfx_keystroke(self.client, Kshifttab);
+		return;
+	}
 
 	e = [NSApp currentEvent];
 	m = [e modifierFlags];
