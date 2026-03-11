@@ -828,3 +828,14 @@ allwindows(void (*f)(Window*, void*), void *arg)
 			(*f)(c->w[j], arg);
 	}
 }
+
+void
+colallwindows(Column *c, void (*f)(Window*, void*), void *arg)
+{
+	int j;
+
+	if(c == nil)
+		return;
+	for(j = 0; j < c->nw; j++)
+		(*f)(c->w[j], arg);
+}

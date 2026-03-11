@@ -324,6 +324,7 @@ char *ignotes[] = {
 	"sys: ttin",
 	"sys: ttou",
 	"sys: tstp",
+	"sys: child",
 	nil
 };
 
@@ -943,6 +944,580 @@ rfget(int fix, int save, int setfont, char *name)
 	}
 	incref(&r->ref);
 	return r;
+}
+
+/*
+ * Find the last contiguous digit run in s (e.g. "5x10a" -> "10", "euro.8" -> "8").
+ * Returns start of digit run in *pdig, end (past last digit) in *pdigend.
+ * Returns 0 if no digit run, 1 on success.
+ */
+static int
+plan9lastdigits(char *s, char **pdig, char **pdigend)
+{
+	char *p, *lastdigit;
+
+	if(s == nil || *s == 0)
+		return 0;
+	p = s + strlen(s);
+	while(p > s && (*(p-1) < '0' || *(p-1) > '9'))
+		p--;
+	if(p <= s)
+		return 0;
+	lastdigit = p;	/* p already points past last digit (e.g. to '.' in "euro.8.font") */
+	while(p > s && *(p-1) >= '0' && *(p-1) <= '9')
+		p--;
+	*pdig = p;
+	*pdigend = lastdigit;	/* past last digit */
+	return 1;
+}
+
+/*
+ * For Plan 9 bitmap font path that doesn't exist, find nearest available size by
+ * listing the directory. Size is the last digit run (e.g. euro.8, 5x10a, 8x13).
+ * For names like unicode.8x13.font we use a broad prefix (unicode.) so we consider
+ * all unicode.*.font files and pick the next size by height (e.g. 8x13 -> 6x12).
+ * Returns path that exists or nil.
+ */
+static char*
+plan9fontnearest(char *desiredpath, int cursize, int delta)
+{
+	char *dirpath, *filename, *prefix, *suffix, *p, *q, *newpath, *bestname;
+	char *desired_var;
+	int fd, ndir, i, j, best, cur, nsizes, prefixlen, suffixlen, broadlen, desired_varlen;
+	Dir *darr;
+	static int sizes[64];
+	static char *names[64];
+
+	if(desiredpath == nil)
+		return nil;
+	p = strrchr(desiredpath, '/');
+	if(p == nil)
+		return nil;
+	dirpath = emalloc(p - desiredpath + 1);
+	memmove(dirpath, desiredpath, p - desiredpath);
+	dirpath[p - desiredpath] = '\0';
+	filename = p + 1;
+	if(strstr(filename, ".font") == nil){
+		free(dirpath);
+		return nil;
+	}
+	if(!plan9lastdigits(filename, &p, &q)){
+		free(dirpath);
+		return nil;
+	}
+	prefixlen = p - filename;
+	prefix = emalloc(prefixlen + 1);
+	memmove(prefix, filename, prefixlen);
+	prefix[prefixlen] = '\0';
+	suffix = q;
+	suffixlen = strlen(suffix);
+	/* Variant: part between size and ".font" (e.g. "" for 8x13, "B" for 8x13B, "O" for 8x13O). Prefer same variant when increasing. */
+	desired_var = q;
+	desired_varlen = (filename + strlen(filename) - 5) - q;
+	/* Broad prefix for listing: unicode.8x -> unicode. so we see 6x12, 8x13, etc. */
+	broadlen = prefixlen;
+	for(i = prefixlen - 1; i > 0; i--)
+		if(prefix[i] == 'x' && i > 0 && prefix[i-1] >= '0' && prefix[i-1] <= '9'){
+			broadlen = i - 1;	/* e.g. "unicode.8x" -> before '8' */
+			while(broadlen > 0 && prefix[broadlen-1] != '.')
+				broadlen--;
+			break;
+		}
+	fd = open(dirpath, OREAD);
+	if(fd < 0){
+		free(prefix);
+		free(dirpath);
+		return nil;
+	}
+	nsizes = 0;
+	while((ndir = dirread(fd, (Dir**)&darr)) > 0){
+		for(i = 0; i < ndir && nsizes < 64; i++){
+			int len = strlen(darr[i].name);
+			char *dig, *digend;
+			if(len < 5 || strcmp(darr[i].name + len - 5, ".font") != 0)
+				continue;
+			if(broadlen > 0 && (len < broadlen || strncmp(darr[i].name, prefix, broadlen) != 0))
+				continue;
+			if(suffixlen > 0 && (len < suffixlen || strcmp(darr[i].name + len - suffixlen, suffix) != 0))
+				continue;
+			if(plan9lastdigits(darr[i].name, &dig, &digend)){
+				cur = atoi(dig);
+				if(cur >= 1){
+					for(j = 0; j < nsizes && sizes[j] != cur; j++)
+						;
+					if(j >= nsizes){
+						sizes[nsizes] = cur;
+						names[nsizes] = estrdup(darr[i].name);
+						nsizes++;
+					}else{
+						/* duplicate size: when increasing prefer same variant (8x13 over 8x13O) then larger width; when decreasing prefer same width (prefix) */
+						if(delta > 0){
+							int new_varlen, stored_varlen, new_matches, stored_matches;
+							char *stordig, *stordigend;
+
+							new_varlen = (darr[i].name + len - 5) - digend;
+							new_matches = (new_varlen == desired_varlen && (desired_varlen == 0 || (memcmp(digend, desired_var, desired_varlen) == 0)));
+							stored_matches = 0;
+							if(plan9lastdigits(names[j], &stordig, &stordigend)){
+								stored_varlen = (names[j] + strlen(names[j]) - 5) - stordigend;
+								stored_matches = (stored_varlen == desired_varlen && (desired_varlen == 0 || (memcmp(stordigend, desired_var, desired_varlen) == 0)));
+							}
+							if((new_matches && (!stored_matches || strcmp(darr[i].name, names[j]) > 0)) ||
+							   (!new_matches && !stored_matches && strcmp(darr[i].name, names[j]) > 0)){
+								free(names[j]);
+								names[j] = estrdup(darr[i].name);
+							}
+						}else if(delta < 0 && prefixlen > 0 && strncmp(darr[i].name, prefix, prefixlen) == 0){
+							free(names[j]);
+							names[j] = estrdup(darr[i].name);
+						}
+					}
+				}
+			}
+		}
+		free(darr);
+	}
+	close(fd);
+	if(nsizes == 0){
+		free(prefix);
+		free(dirpath);
+		return nil;
+	}
+	best = -1;
+	if(delta > 0){
+		for(i = 0; i < nsizes; i++)
+			if(sizes[i] > cursize && (best < 0 || sizes[i] < best))
+				best = sizes[i];
+	}else{
+		for(i = 0; i < nsizes; i++)
+			if(sizes[i] < cursize && (best < 0 || sizes[i] > best))
+				best = sizes[i];
+	}
+	if(best < 0){
+		for(i = 0; i < nsizes; i++)
+			free(names[i]);
+		free(prefix);
+		free(dirpath);
+		return nil;
+	}
+	for(j = 0; j < nsizes && sizes[j] != best; j++)
+		;
+	bestname = names[j];
+	newpath = emalloc(strlen(dirpath) + 1 + strlen(bestname) + 1);
+	sprint(newpath, "%s/%s", dirpath, bestname);
+	for(i = 0; i < nsizes; i++)
+		free(names[i]);
+	free(prefix);
+	free(dirpath);
+	return newpath;
+}
+
+/*
+ * Return a new font name with size adjusted by delta (+1 or -1).
+ * Caller should pass the base font path (use f->lodpi->name so we never see "2*" scale).
+ * - Plan 9 bitmap: path ending in .N.font (e.g. .../euro.8.font) -> change N; if that
+ *   file doesn't exist, resolve to nearest available size in the same directory.
+ * - Mac /mnt/font: path ending in /N/font or /Na/font (e.g. .../Menlo-Regular/14a/font) -> change N.
+ * We never add or preserve a scale prefix; result is always a plain path. Caller frees result.
+ */
+char*
+fontnamesize(char *name, int delta)
+{
+	char *base, *p, *q, *fullbase;
+	int n, size, has_a;
+	char *out;
+	char *part1, *part2, *comma;
+
+	if(name == nil)
+		return nil;
+	base = name;
+	fullbase = nil;
+	/* strip leading scale prefix (e.g. "2*") so we only change point size */
+	while('0' <= *base && *base <= '9')
+		base++;
+	if(*base == '*' && base > name)
+		base++;
+	n = strlen(base);
+	if(n == 0)
+		return nil;
+	/* Mac lodpi,hidpi format: resize each part and return "new1,new2" */
+	comma = strchr(base, ',');
+	if(comma != nil){
+		char *first = smprint("%.*s", (int)(comma - base), base);
+		part1 = fontnamesize(first, delta);
+		free(first);
+		if(part1 == nil)
+			return nil;
+		part2 = fontnamesize(comma + 1, delta);
+		if(part2 == nil){
+			free(part1);
+			return nil;
+		}
+		out = smprint("%s,%s", part1, part2);
+		free(part1);
+		free(part2);
+		return out;
+	}
+
+	/* Mac: /mnt/font/Name/SIZE/font or .../SIZEa/font — size is last path component before "font" */
+	if(strncmp(base, "/mnt/font/", 10) == 0){
+		char *num_start;
+		int len_before;
+
+		if(n < 5 || strcmp(base + n - 4, "font") != 0)
+			return nil;
+		p = base + n - 5;	/* slash before "font" */
+		while(p > base && *p == '/')
+			p--;
+		if(p <= base)
+			return nil;
+		q = p + 1;
+		while(p > base && *p != '/')
+			p--;
+		if(*p == '/')
+			p++;
+		num_start = p;
+		has_a = (q > p && *(q-1) == 'a');
+		if(has_a)
+			q--;
+		if(q <= p)
+			return nil;
+		size = 0;
+		while(p < q && *p >= '0' && *p <= '9')
+			size = size*10 + *p++ - '0';
+		if(p != q)
+			return nil;
+		size += delta;
+		if(size < 1)
+			size = 1;
+		len_before = num_start - base;
+		out = emalloc((base - name) + n + 16);
+		if(base > name)
+			memmove(out, name, base - name);
+		p = out + (base - name);
+		memmove(p, base, len_before);
+		p += len_before;
+		p += sprint(p, "%d", size);
+		if(has_a)
+			*p++ = 'a';
+		/* suffix is "/font"; when has_a, q points to 'a' so skip it */
+		strcpy(p, base + (q - base) + (has_a ? 1 : 0));
+		return out;
+	}
+
+	/* Plan 9: path ending in "font" (with or without leading dot). Size is last digit run.
+	 * Always build new path with ".font" extension so we never produce "...Nfont".
+	 * Resolve #9/ to real path so open() and plan9fontnearest can list the directory. */
+	if(n >= 4 && strcmp(base + n - 4, "font") == 0){
+		int cursize, fd, use_dotfont;
+		char *dig, *digend, *alt;
+
+		if(strncmp(base, "#9/", 3) == 0){
+			fullbase = unsharp(base);
+			if(fullbase != nil){
+				base = fullbase;
+				n = strlen(base);
+			}
+		}
+		use_dotfont = (n >= 5 && base[n - 5] == '.');	/* ends with ".font" */
+		if(!plan9lastdigits(base, &dig, &digend))
+			goto plan9out;
+		cursize = atoi(dig);
+		size = cursize + delta;
+		if(size < 1)
+			size = 1;
+		if(use_dotfont){
+			out = emalloc((dig - base) + 16 + (base + n - digend) + 1);
+			memmove(out, base, dig - base);
+			p = out + (dig - base);
+			p += sprint(p, "%d", size);
+			memmove(p, digend, (base + n - digend) + 1);	/* suffix ".font" + '\0' */
+		}else{
+			/* stored name ends with "font" (no dot); build with ".font" */
+			out = emalloc((dig - base) + 16 + 6);
+			memmove(out, base, dig - base);
+			p = out + (dig - base);
+			p += sprint(p, "%d.font", size);
+		}
+		fd = open(out, OREAD);
+		if(fd >= 0){
+			close(fd);
+			/* When increasing, still ask plan9fontnearest so we prefer larger width (e.g. 8x13 over 6x13) when same size exists */
+			if(delta > 0){
+				alt = plan9fontnearest(out, cursize, delta);
+				if(alt != nil){
+					free(out);
+					if(fullbase != nil) free(fullbase);
+					return alt;
+				}
+			}
+			if(fullbase != nil) free(fullbase);
+			return out;
+		}
+		alt = plan9fontnearest(out, cursize, delta);
+		if(alt != nil){
+			free(out);
+			if(fullbase != nil) free(fullbase);
+			return alt;
+		}
+		/* No larger/smaller size in directory. Return nil so global resize can require both fonts to have a next size. */
+		free(out);
+		if(fullbase != nil) free(fullbase);
+		return nil;
+	}
+plan9out:
+	if(fullbase != nil) free(fullbase);
+
+	/* fallback: last digit sequence in string (optional trailing 'a') */
+	p = base + n - 1;
+	while(p >= base && (*p < '0' || *p > '9'))
+		p--;
+	if(p < base)
+		return nil;
+	q = p + 1;
+	while(p >= base && *p >= '0' && *p <= '9')
+		p--;
+	p++;
+	has_a = (q < base + n && *q == 'a');
+	if(has_a)
+		q++;
+	{
+		char *suffix_start = q;
+		size = atoi(p);
+		size += delta;
+		if(size < 1)
+			size = 1;
+		out = emalloc((base - name) + n + 16);
+		if(base > name)
+			memmove(out, name, base - name);
+		q = out + (base - name);
+		memmove(q, base, p - base);
+		q += p - base;
+		q += sprint(q, "%d", size);
+		if(has_a)
+			*q++ = 'a';
+		strcpy(q, suffix_start);
+		return out;
+	}
+}
+
+void
+resizebodyfont(Window *w, void *arg)
+{
+	Text *t;
+	Reffont *newfont;
+	char *newname, *aa;
+	int delta, from_global, i;
+	Dirlist *dp;
+
+	delta = ((struct resizebodyarg*)arg)->delta;
+	from_global = ((struct resizebodyarg*)arg)->from_global;
+	t = &w->body;
+	/* When from_global: we already updated reffont. Bodies that share &reffont
+	 * should get reffonts[0] so they display the new default; do not apply delta again.
+	 * When not from_global (e.g. column F+/-): always compute new size via fontnamesize. */
+	if(from_global && t->reffont == &reffont){
+		newfont = reffonts[0];
+		if(newfont == nil)
+			return;
+		draw(screen, w->r, textcols[BACK], nil, ZP);
+		/* do not rfclose(&reffont) */
+		incref(&newfont->ref);
+		t->reffont = newfont;
+		t->fr.font = newfont->f;
+		frinittick(&t->fr);
+		if(w->isdir){
+			t->all.min.x++;
+			for(i = 0; i < w->ndl; i++){
+				dp = w->dlp[i];
+				aa = runetobyte(dp->r, dp->nr);
+				dp->wid = stringwidth(newfont->f, aa);
+				free(aa);
+			}
+		}
+		textresize(t, t->all, TRUE);
+		colgrow(w->col, w, -1);
+		return;
+	}
+	newname = fontnamesize(t->reffont->f->lodpi->name, delta);
+	if(newname == nil)
+		return;
+	newfont = rfget(0, FALSE, FALSE, newname);
+	free(newname);
+	if(newfont == nil)
+		return;
+	draw(screen, w->r, textcols[BACK], nil, ZP);
+	rfclose(t->reffont);
+	t->reffont = newfont;
+	t->fr.font = newfont->f;
+	frinittick(&t->fr);
+	if(w->isdir){
+		t->all.min.x++;
+		for(i = 0; i < w->ndl; i++){
+			dp = w->dlp[i];
+			aa = runetobyte(dp->r, dp->nr);
+			dp->wid = stringwidth(newfont->f, aa);
+			free(aa);
+		}
+	}
+	textresize(t, t->all, TRUE);
+	colgrow(w->col, w, -1);
+}
+
+static void updatetagfont(Window*, void*);
+
+/*
+ * After changing the global tag font (reffont), update every tag's frame to use
+ * the new font and redraw: row tag, each column tag, each window tag.
+ */
+static void
+updatetagfonts(void)
+{
+	int i;
+	Column *c;
+	Text *t;
+
+	t = &row.tag;
+	t->fr.font = reffont.f;
+	frinittick(&t->fr);
+	textresize(t, t->all, TRUE);
+	for(i = 0; i < row.ncol; i++){
+		c = row.col[i];
+		t = &c->tag;
+		t->fr.font = reffont.f;
+		frinittick(&t->fr);
+		textresize(t, t->all, TRUE);
+	}
+	allwindows(updatetagfont, nil);
+}
+
+static void
+updatetagfont(Window *w, void *arg)
+{
+	Text *t;
+
+	USED(arg);
+	t = &w->tag;
+	t->fr.font = reffont.f;
+	frinittick(&t->fr);
+	textresize(t, t->all, TRUE);
+}
+
+/* Restore global tag font to f and refresh all tags (e.g. after window F+/- so tag font stays unchanged). */
+void
+restoretagfont(Font *f)
+{
+	if(reffont.f != f){
+		reffont.f = f;
+		updatetagfonts();
+	}
+}
+
+void
+globalfontplus(void)
+{
+	char *newname0, *newname1;
+	Reffont *r;
+	int delta = 1;
+	int have_two;
+
+	newname0 = fontnamesize(reffont.f->lodpi->name, delta);
+	if(newname0 == nil && fontnames[0] != nil)
+		newname0 = fontnamesize(fontnames[0], delta);	/* fallback when lodpi name differs */
+	have_two = (fontnames[1] != nil && strcmp(fontnames[0], fontnames[1]) != 0);
+	newname1 = nil;
+	if(have_two)
+		newname1 = fontnamesize(fontnames[1], delta);
+	/* default must succeed; second font only when non-nil */
+	if(newname0 == nil){
+		free(newname1);
+		return;
+	}
+	r = rfget(0, TRUE, TRUE, newname0);
+	free(newname0);
+	if(r != nil)
+		rfclose(r);
+	if(newname1 != nil){
+		r = rfget(1, TRUE, FALSE, newname1);
+		free(newname1);
+		if(r != nil)
+			rfclose(r);
+	}
+	updatetagfonts();
+	rowresize(&row, screen->clipr);
+	{ struct resizebodyarg a = { 1, 1 }; allwindows(resizebodyfont, &a); }
+}
+
+void
+globalfontminus(void)
+{
+	char *newname0, *newname1;
+	Reffont *r;
+	int delta = -1;
+	int have_two;
+
+	newname0 = fontnamesize(reffont.f->lodpi->name, delta);
+	if(newname0 == nil && fontnames[0] != nil)
+		newname0 = fontnamesize(fontnames[0], delta);	/* fallback when lodpi name differs */
+	have_two = (fontnames[1] != nil && strcmp(fontnames[0], fontnames[1]) != 0);
+	newname1 = nil;
+	if(have_two)
+		newname1 = fontnamesize(fontnames[1], delta);
+	/* default must succeed; second font only when non-nil */
+	if(newname0 == nil){
+		free(newname1);
+		return;
+	}
+	r = rfget(0, TRUE, TRUE, newname0);
+	free(newname0);
+	if(r != nil)
+		rfclose(r);
+	if(newname1 != nil){
+		r = rfget(1, TRUE, FALSE, newname1);
+		free(newname1);
+		if(r != nil)
+			rfclose(r);
+	}
+	updatetagfonts();
+	rowresize(&row, screen->clipr);
+	{ struct resizebodyarg a = { -1, 1 }; allwindows(resizebodyfont, &a); }
+}
+
+/*
+ * Update both default fonts (variable and fixed) by delta so that Font toggle
+ * keeps sizes in sync. Only applies if both fonts can be resized (when we have two).
+ */
+void
+updatebothdefaultfonts(int delta)
+{
+	char *newname0, *newname1;
+	Reffont *r;
+	int have_two;
+
+	newname0 = fontnamesize(reffonts[0]->f->lodpi->name, delta);
+	have_two = (fontnames[1] != nil && strcmp(fontnames[0], fontnames[1]) != 0);
+	newname1 = nil;
+	if(have_two)
+		newname1 = fontnamesize(fontnames[1], delta);
+	if(have_two && (newname0 == nil || newname1 == nil)){
+		free(newname0);
+		free(newname1);
+		return;
+	}
+	if(newname0 == nil)
+		return;
+	r = rfget(0, TRUE, TRUE, newname0);
+	free(newname0);
+	if(r != nil)
+		rfclose(r);
+	if(newname1 != nil){
+		r = rfget(1, TRUE, FALSE, newname1);
+		free(newname1);
+		if(r != nil)
+			rfclose(r);
+	}
+	updatetagfonts();
+	rowresize(&row, screen->clipr);
 }
 
 void

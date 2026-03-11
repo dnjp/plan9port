@@ -229,6 +229,11 @@ tag commands.
 .PP
 Command-/ (Mac) toggles comment on the selected lines, using the format set by
 .BR Comfmt .
+Command-+ and Command-\- (Mac) increase or decrease font size globally (same effect as
+.B F+
+or
+.B F-
+in the top tag; see the built-in commands below).
 .SS "Directory context
 Each window's tag names a directory: explicitly if the window
 holds a directory; implicitly if it holds a regular file
@@ -397,6 +402,18 @@ If the file name argument is prefixed by
 .RB ( fix ),
 also set the default proportional-spaced (fixed-spaced) font for future use to that font.
 Other existing windows are unaffected.
+.TP
+.B F+
+Increase font size.
+Executed in the top (row) tag or via Command-+ in the body, resizes the tag font and both default body fonts globally and updates all window bodies.
+Executed in a column tag, resizes the body font of every window in that column.
+Executed in a window tag or body, resizes only that window's body font; tag fonts are unchanged.
+.TP
+.B F-
+Decrease font size.
+Same context behavior as
+.BR F+ :
+row tag or Command-\- is global; column tag affects that column's bodies; window tag or body affects only that window's body.
 .TP
 .B Get
 Load file into window, replacing previous contents (after checking for dirtiness as in

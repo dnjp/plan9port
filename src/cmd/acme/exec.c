@@ -59,6 +59,8 @@ void	comcmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	comfmtcmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	indentlinescmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	unindentlinescmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	fpluscmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	fminuscmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	zeroxx(Text*, Text*, Text*, int, int, Rune*, int);
 
 typedef struct Exectab Exectab;
@@ -103,6 +105,8 @@ static Rune LCom[] = { 'C', 'o', 'm', 0 };
 static Rune LComfmt[] = { 'C', 'o', 'm', 'f', 'm', 't', 0 };
 static Rune LAplus[] = { 'A', '+', 0 };
 static Rune LAminus[] = { 'A', '-', 0 };
+static Rune LFplus[] = { 'F', '+', 0 };
+static Rune LFminus[] = { 'F', '-', 0 };
 static Rune defaultcomfmt[] = { '/', '/', ' ', '%', 's' };
 #define ndefaultcomfmt (sizeof defaultcomfmt / sizeof defaultcomfmt[0])
 static Rune LUndo[] = { 'U', 'n', 'd', 'o', 0 };
@@ -141,6 +145,8 @@ Exectab exectab[] = {
 	{ LComfmt,	comfmtcmd,	FALSE,	XXX,		XXX		},
 	{ LAplus,	indentlinescmd,	FALSE,	TRUE,	XXX		},
 	{ LAminus,	unindentlinescmd,	FALSE,	TRUE,	XXX		},
+	{ LFplus,	fpluscmd,	FALSE,	XXX,		XXX		},
+	{ LFminus,	fminuscmd,	FALSE,	XXX,		XXX		},
 	{ LUndo,		undo,	FALSE,	TRUE,	XXX		},
 	{ LZerox,		zeroxx,	FALSE,	XXX,		XXX		},
 	{ nil, 			0,		0,		0,		0		}
@@ -1393,6 +1399,120 @@ fontx(Text *et, Text *t, Text *argt, int _0, int _1, Rune *arg, int narg)
 	}
 	free(file);
 	free(flag);
+}
+
+void
+fpluscmd(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	Text *t;
+	Reffont *newfont;
+	char *newname, *aa;
+	int i;
+	Dirlist *dp;
+
+	USED(_0);
+	USED(argt);
+	USED(_1);
+	USED(_2);
+	USED(arg);
+	USED(narg);
+	if(et == nil)
+		return;
+	if(et->what == Rowtag){
+		globalfontplus();
+		return;
+	}
+	if(et->what == Columntag && et->col != nil){
+		{ struct resizebodyarg a = { 1, 0 }; colallwindows(et->col, resizebodyfont, &a); }
+		return;
+	}
+	if(et->w == nil)
+		return;
+	{
+		Font *tagfont = reffont.f;
+		t = &et->w->body;
+		newname = fontnamesize(t->reffont->f->lodpi->name, 1);
+		if(newname == nil)
+			return;
+		newfont = rfget(0, FALSE, FALSE, newname);
+		free(newname);
+		if(newfont == nil)
+			return;
+		draw(screen, t->w->r, textcols[BACK], nil, ZP);
+		if(t->reffont != &reffont)
+			rfclose(t->reffont);
+		t->reffont = newfont;
+		t->fr.font = newfont->f;
+		frinittick(&t->fr);
+		if(t->w->isdir){
+			t->all.min.x++;
+			for(i = 0; i < t->w->ndl; i++){
+				dp = t->w->dlp[i];
+				aa = runetobyte(dp->r, dp->nr);
+				dp->wid = stringwidth(newfont->f, aa);
+				free(aa);
+			}
+		}
+		colgrow(t->w->col, t->w, -1);
+		restoretagfont(tagfont);
+	}
+}
+
+void
+fminuscmd(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	Text *t;
+	Reffont *newfont;
+	char *newname, *aa;
+	int i;
+	Dirlist *dp;
+
+	USED(_0);
+	USED(argt);
+	USED(_1);
+	USED(_2);
+	USED(arg);
+	USED(narg);
+	if(et == nil)
+		return;
+	if(et->what == Rowtag){
+		globalfontminus();
+		return;
+	}
+	if(et->what == Columntag && et->col != nil){
+		{ struct resizebodyarg a = { -1, 0 }; colallwindows(et->col, resizebodyfont, &a); }
+		return;
+	}
+	if(et->w == nil)
+		return;
+	{
+		Font *tagfont = reffont.f;
+		t = &et->w->body;
+		newname = fontnamesize(t->reffont->f->lodpi->name, -1);
+		if(newname == nil)
+			return;
+		newfont = rfget(0, FALSE, FALSE, newname);
+		free(newname);
+		if(newfont == nil)
+			return;
+		draw(screen, t->w->r, textcols[BACK], nil, ZP);
+		if(t->reffont != &reffont)
+			rfclose(t->reffont);
+		t->reffont = newfont;
+		t->fr.font = newfont->f;
+		frinittick(&t->fr);
+		if(t->w->isdir){
+			t->all.min.x++;
+			for(i = 0; i < t->w->ndl; i++){
+				dp = t->w->dlp[i];
+				aa = runetobyte(dp->r, dp->nr);
+				dp->wid = stringwidth(newfont->f, aa);
+				free(aa);
+			}
+		}
+		colgrow(t->w->col, t->w, -1);
+		restoretagfont(tagfont);
+	}
 }
 
 void
