@@ -25,6 +25,9 @@ void	savemouse(Window*);
 int	restoremouse(Window*);
 void	clearmouse(void);
 void	allwindows(void(*)(Window*, void*), void*);
+void	colallwindows(Column*, void(*)(Window*, void*), void*);
+struct resizebodyarg { int delta; int from_global; };
+void	resizebodyfont(Window*, void*);
 uint seqof(Window*, int);
 
 uint loadfile(int, uint, int*, int(*)(void*, uint, Rune*, int), void*, DigestState*);
@@ -59,6 +62,11 @@ void	get(Text*, Text*, Text*, int, int, Rune*, int);
 void	put(Text*, Text*, Text*, int, int, Rune*, int);
 void	putfile(File*, int, int, Rune*, int);
 void	fontx(Text*, Text*, Text*, int, int, Rune*, int);
+char*	fontnamesize(char*, int);
+void	globalfontplus(void);
+void	globalfontminus(void);
+void	updatebothdefaultfonts(int);
+void	restoretagfont(Font*);
 #undef isalnum
 #define isalnum acmeisalnum
 int	isalnum(Rune);
