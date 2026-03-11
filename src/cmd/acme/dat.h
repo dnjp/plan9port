@@ -181,6 +181,7 @@ struct Text
 	uint	q1;
 	int	what;
 	int	tabstop;
+	int	tabexpand;	/* expand tab to spaces when typing */
 	Window	*w;
 	Rectangle scrollr;
 	Rectangle lastsr;
@@ -513,6 +514,7 @@ enum	/* editing */
 extern uint		globalincref;
 extern uint		seq;
 extern uint		maxtab;	/* size of a tab, in units of the '0' character */
+extern int		tabexpand;	/* expand tab to spaces when typing (env tabexpand) */
 
 extern Display		*display;
 extern Image		*screen;

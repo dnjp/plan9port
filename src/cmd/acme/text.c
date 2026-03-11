@@ -43,6 +43,7 @@ textinit(Text *t, File *f, Rectangle r, Reffont *rf, Image *cols[NCOL])
 	t->ncache = 0;
 	t->reffont = rf;
 	t->tabstop = maxtab;
+	t->tabexpand = tabexpand;
 	memmove(t->fr.cols, cols, sizeof t->fr.cols);
 	textredraw(t, r, rf->f, screen, -1);
 }
@@ -1051,6 +1052,20 @@ texttype(Text *t, Rune r)
 	}
 	textshow(t, t->q0, t->q0, 1);
 	switch(r){
+	case 0x09:	/* ^I (Tab): expand to spaces if tabexpand, else insert '\t' */
+		if(t->what == Body && t->tabexpand){
+			typecommit(t);
+			nnb = t->tabstop;
+			if(nnb > 0){
+				rp = runemalloc(nnb);
+				for(i = 0; i < nnb; i++)
+					rp[i] = ' ';
+				nr = nnb;
+				break;
+			}
+		}
+		/* not expanding: break so we hit the ordinary-char path below with r='\t', rp=&r, nr=1 */
+		break;
 	case 0x06:	/* ^F: complete */
 	case Kins:
 		typecommit(t);

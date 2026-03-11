@@ -84,6 +84,7 @@ wininit(Window *w, Window *clone, Rectangle r)
 	if(clone){
 		w->dirty = clone->dirty;
 		w->autoindent = clone->autoindent;
+		w->body.tabexpand = clone->body.tabexpand;
 		textsetselect(&w->body, clone->body.q0, clone->body.q1);
 		winsettag(w);
 	}
