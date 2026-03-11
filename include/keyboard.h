@@ -1,7 +1,7 @@
 #ifndef _KEYBOARD_H_
 #define _KEYBOARD_H_ 1
 #if defined(__cplusplus)
-extern "C" { 
+extern "C" {
 #endif
 typedef struct 	Keyboardctl Keyboardctl;
 
