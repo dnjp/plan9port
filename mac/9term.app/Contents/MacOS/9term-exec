@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper so the real 9term process is exec'd with argv[0]="9term", for menu bar/skhd.
+PLAN9=${PLAN9:-/usr/local/plan9}
+exec -a 9term "$PLAN9/bin/9term" "$@"

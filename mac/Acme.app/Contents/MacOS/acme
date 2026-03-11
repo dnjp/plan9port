@@ -1,5 +1,5 @@
 #!/bin/bash
-INSIDE_ACME=true
+export INSIDE_ACME=true
 export tabstop=8
 fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
 SHELL=${fshell:-$SHELL}
@@ -66,10 +66,13 @@ fi
 if [[ ! -z "$VARFONT" ]]; then
 	ARGS+=("-f $VARFONT")
 fi
-fontargs="${ARGS[*]}" 
+if [[ ! -z "$ACME_DUMP" && -f "$ACME_DUMP" ]]; then
+	ARGS+=("-l $ACME_DUMP")
+fi
+args="${ARGS[*]}" 
 
-# start acme and capture pid
-arch -arch $arch $PLAN9/bin/acme -a $fontargs &
+# start acme and capture pid (via wrapper so process name is "acme" for menu bar/skhd)
+arch -arch $arch "$(dirname "$0")/acme-exec" -a $args &
 acmepid=$!
 
 # wait for acme to launch
