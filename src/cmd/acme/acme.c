@@ -144,6 +144,10 @@ threadmain(int argc, char *argv[])
 	}
 	if(maxtab == 0)
 		maxtab = 4;
+	p = getenv("tabexpand");
+	if(p != nil && *p != '\0'){
+		tabexpand = TRUE;
+	}
 	if(loadfile)
 		rowloadfonts(loadfile);
 	putenv("font", fontnames[0]);

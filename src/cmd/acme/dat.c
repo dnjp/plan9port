@@ -14,6 +14,7 @@
 uint		globalincref;
 uint		seq;
 uint		maxtab;	/* size of a tab, in units of the '0' character */
+int		tabexpand;	/* default: expand tab to spaces when typing (env tabexpand) */
 
 Mouse		*mouse;
 Mousectl		*mousectl;
