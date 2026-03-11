@@ -1225,19 +1225,47 @@ _xtoplan9kbd(XEvent *e)
 			break;
 		case XK_Left:
 		case XK_KP_Left:
-			k = Kleft;
+			if((e->xkey.state & Mod4Mask) && (e->xkey.state & ShiftMask))
+				k = Kshiftcmdleft;
+			else if(e->xkey.state & Mod4Mask)
+				k = Kcmdleft;
+			else if((e->xkey.state & Mod1Mask) && (e->xkey.state & ShiftMask) && !(e->xkey.state & ControlMask))
+				k = Kshiftaltleft;
+			else if((e->xkey.state & Mod1Mask) && !(e->xkey.state & ControlMask))
+				k = Kaltleft;
+			else if(e->xkey.state & ShiftMask)
+				k = Kshiftleft;
+			else
+				k = Kleft;
 			break;
 		case XK_Up:
 		case XK_KP_Up:
-			k = Kup;
+			if(e->xkey.state & ShiftMask)
+				k = Kshiftup;
+			else
+				k = Kup;
 			break;
 		case XK_Down:
 		case XK_KP_Down:
-			k = Kdown;
+			if(e->xkey.state & ShiftMask)
+				k = Kshiftdown;
+			else
+				k = Kdown;
 			break;
 		case XK_Right:
 		case XK_KP_Right:
-			k = Kright;
+			if((e->xkey.state & Mod4Mask) && (e->xkey.state & ShiftMask))
+				k = Kshiftcmdright;
+			else if(e->xkey.state & Mod4Mask)
+				k = Kcmdright;
+			else if((e->xkey.state & Mod1Mask) && (e->xkey.state & ShiftMask) && !(e->xkey.state & ControlMask))
+				k = Kshiftaltright;
+			else if((e->xkey.state & Mod1Mask) && !(e->xkey.state & ControlMask))
+				k = Kaltright;
+			else if(e->xkey.state & ShiftMask)
+				k = Kshiftright;
+			else
+				k = Kright;
 			break;
 		case XK_Page_Down:
 		case XK_KP_Page_Down:
