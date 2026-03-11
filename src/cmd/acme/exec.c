@@ -57,6 +57,8 @@ void	tab(Text*, Text*, Text*, int, int, Rune*, int);
 void	tabexpandcmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	comcmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	comfmtcmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	indentlinescmd(Text*, Text*, Text*, int, int, Rune*, int);
+void	unindentlinescmd(Text*, Text*, Text*, int, int, Rune*, int);
 void	zeroxx(Text*, Text*, Text*, int, int, Rune*, int);
 
 typedef struct Exectab Exectab;
@@ -99,6 +101,8 @@ static Rune LTab[] = { 'T', 'a', 'b', 0 };
 static Rune LTabexpand[] = { 'T', 'a', 'b', 'e', 'x', 'p', 'a', 'n', 'd', 0 };
 static Rune LCom[] = { 'C', 'o', 'm', 0 };
 static Rune LComfmt[] = { 'C', 'o', 'm', 'f', 'm', 't', 0 };
+static Rune LAplus[] = { 'A', '+', 0 };
+static Rune LAminus[] = { 'A', '-', 0 };
 static Rune defaultcomfmt[] = { '/', '/', ' ', '%', 's' };
 #define ndefaultcomfmt (sizeof defaultcomfmt / sizeof defaultcomfmt[0])
 static Rune LUndo[] = { 'U', 'n', 'd', 'o', 0 };
@@ -135,6 +139,8 @@ Exectab exectab[] = {
 	{ LTabexpand,	tabexpandcmd,	FALSE,	XXX,		XXX		},
 	{ LCom,		comcmd,		FALSE,	TRUE,	XXX		},
 	{ LComfmt,	comfmtcmd,	FALSE,	XXX,		XXX		},
+	{ LAplus,	indentlinescmd,	FALSE,	TRUE,	XXX		},
+	{ LAminus,	unindentlinescmd,	FALSE,	TRUE,	XXX		},
 	{ LUndo,		undo,	FALSE,	TRUE,	XXX		},
 	{ LZerox,		zeroxx,	FALSE,	XXX,		XXX		},
 	{ nil, 			0,		0,		0,		0		}
@@ -1744,6 +1750,167 @@ comcmd(Text *et, Text *t, Text *argt, int _1, int _2, Rune *arg, int narg)
 					out[nout++] = buf[i];
 			}
 		}
+	}
+	free(buf);
+	seq++;
+	filemark(t->file);
+	textdelete(t, line0, line1, TRUE);
+	textinsert(t, line0, out, nout, TRUE);
+	free(out);
+	textsetselect(t, line0, line0 + nout);
+	textscrdraw(t);
+	winsettag(et->w);
+}
+
+void
+indentlinescmd(Text *et, Text *t, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	uint line0, line1, q0, q1;
+	Rune *buf, *out;
+	uint nbuf, p, line0_off, line1_off, nout, outalloc;
+	uint i, nins;
+	int tabexpand, tabstop;
+
+	USED(_1);
+	USED(_2);
+	USED(arg);
+	USED(narg);
+	USED(argt);
+
+	if(et == nil || et->w == nil)
+		return;
+	if(t == nil || t->what != Body)
+		return;
+	/* use body passed in so tabexpand/tabstop are correct */
+	q0 = t->q0;
+	q1 = t->q1;
+	if(q0 == q1)
+		return;
+	tabexpand = t->tabexpand;
+	tabstop = t->tabstop;
+	if(tabstop <= 0)
+		tabstop = 4;
+	line0 = q0;
+	while(line0 > 0 && textreadc(t, line0 - 1) != '\n')
+		line0--;
+	line1 = q1 > 0 ? q1 - 1 : 0;
+	while(line1 < t->file->b.nc && textreadc(t, line1) != '\n')
+		line1++;
+	if(line1 < t->file->b.nc)
+		line1++;
+	nbuf = line1 - line0;
+	buf = runemalloc(nbuf);
+	bufread(&t->file->b, line0, buf, nbuf);
+	nins = tabexpand ? tabstop : 1;
+	outalloc = nbuf + 256 * nins;
+	out = runemalloc(outalloc);
+	nout = 0;
+	for(p = 0; p < nbuf; ){
+		line0_off = p;
+		while(p < nbuf && buf[p] != '\n')
+			p++;
+		if(p < nbuf)
+			p++;
+		line1_off = p;
+		if(line1_off == line0_off)
+			continue;
+		if(nout + nins + (line1_off - line0_off) + 2 > outalloc){
+			outalloc = nout + nins + (line1_off - line0_off) + 256;
+			out = runerealloc(out, outalloc);
+		}
+		if(tabexpand){
+			for(i = 0; i < tabstop; i++)
+				out[nout++] = ' ';
+		}else
+			out[nout++] = '\t';
+		for(i = line0_off; i < line1_off; i++)
+			out[nout++] = buf[i];
+	}
+	free(buf);
+	seq++;
+	filemark(t->file);
+	textdelete(t, line0, line1, TRUE);
+	textinsert(t, line0, out, nout, TRUE);
+	free(out);
+	textsetselect(t, line0, line0 + nout);
+	textscrdraw(t);
+	winsettag(et->w);
+}
+
+void
+unindentlinescmd(Text *et, Text *t, Text *argt, int _1, int _2, Rune *arg, int narg)
+{
+	uint line0, line1, q0, q1;
+	Rune *buf, *out;
+	uint nbuf, p, line0_off, line1_off, nws, nremove;
+	uint nout, outalloc;
+	uint i;
+	int tabexpand, tabstop;
+
+	USED(_1);
+	USED(_2);
+	USED(arg);
+	USED(narg);
+	USED(argt);
+
+	if(et == nil || et->w == nil)
+		return;
+	if(t == nil || t->what != Body)
+		return;
+	/* use body passed in so tabexpand/tabstop are correct */
+	q0 = t->q0;
+	q1 = t->q1;
+	if(q0 == q1)
+		return;
+	tabexpand = t->tabexpand;
+	tabstop = t->tabstop;
+	if(tabstop <= 0)
+		tabstop = 4;
+	line0 = q0;
+	while(line0 > 0 && textreadc(t, line0 - 1) != '\n')
+		line0--;
+	line1 = q1 > 0 ? q1 - 1 : 0;
+	while(line1 < t->file->b.nc && textreadc(t, line1) != '\n')
+		line1++;
+	if(line1 < t->file->b.nc)
+		line1++;
+	nbuf = line1 - line0;
+	buf = runemalloc(nbuf);
+	bufread(&t->file->b, line0, buf, nbuf);
+	outalloc = nbuf + 256;
+	out = runemalloc(outalloc);
+	nout = 0;
+	for(p = 0; p < nbuf; ){
+		line0_off = p;
+		while(p < nbuf && buf[p] != '\n')
+			p++;
+		if(p < nbuf)
+			p++;
+		line1_off = p;
+		if(line1_off == line0_off)
+			continue;
+		nws = 0;
+		while(nws < line1_off - line0_off && (buf[line0_off + nws] == ' ' || buf[line0_off + nws] == '\t'))
+			nws++;
+		if(tabexpand){
+			nremove = nws;
+			if(nremove > tabstop)
+				nremove = tabstop;
+		}else{
+			if(nws > 0 && buf[line0_off] == '\t')
+				nremove = 1;
+			else{
+				nremove = nws;
+				if(nremove > tabstop)
+					nremove = tabstop;
+			}
+		}
+		if(nout + (line1_off - line0_off) - nremove + 2 > outalloc){
+			outalloc = nout + (line1_off - line0_off) - nremove + 256;
+			out = runerealloc(out, outalloc);
+		}
+		for(i = line0_off + nremove; i < line1_off; i++)
+			out[nout++] = buf[i];
 	}
 	free(buf);
 	seq++;

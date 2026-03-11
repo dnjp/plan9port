@@ -203,6 +203,32 @@ The option
 .B -a
 causes each window to start in
 autoindent mode.
+.SS Keyboard
+When the body has the focus, the following keys move the cursor or alter the selection.
+With no selection, arrow keys move by one character or line;
+Shift with the arrows extends the selection.
+On Mac systems, Command-Left and Command-Right move to the beginning and end of the current line;
+with Shift they extend the selection to that position.
+Option-Left and Option-Right (Alt on other systems) move by word;
+with Shift they extend the selection by word.
+.PP
+If one or more lines are selected in the body,
+Tab indents those lines by one level and Shift-Tab unindents them.
+Indenting inserts either a tab character or
+.I tabstop
+spaces at the start of each line according to the
+.B Tabexpand
+setting
+.RI ( q.v. );
+unindenting removes one level of leading tabs or spaces accordingly.
+The same operations are available as the
+.B A+
+and
+.B A-
+tag commands.
+.PP
+Command-/ (Mac) toggles comment on the selected lines, using the format set by
+.BR Comfmt .
 .SS "Directory context
 Each window's tag names a directory: explicitly if the window
 holds a directory; implicitly if it holds a regular file
@@ -281,6 +307,32 @@ Some commands, all by convention starting with a capital letter, are
 .I built-ins
 that are executed directly by
 .IR acme :
+.TP
+.B Com
+Toggle comment on the selected lines in the body.
+When a majority of the selected lines are already commented,
+.I acme
+uncomments them; otherwise it comments them.
+The comment format is set by
+.BR Comfmt .
+.TP
+.B Comfmt
+Set the comment format for this window to the argument, which must contain
+.B %s
+as a placeholder for the line content.
+For example,
+.B "Comfmt // %s"
+produces line comments like
+.BR "// text" ;
+.B "Comfmt /* %s */"
+produces block comments like
+.BR "/* text */" .
+The format is used by the
+.B Com
+command and by Command-/ when the body has the focus.
+If the environment variable
+.B $comfmt
+is set at startup, it supplies the default format for new windows.
 .TP
 .B Cut
 Delete most recently selected text and place in snarf buffer.
@@ -473,12 +525,37 @@ order based on their names.
 Set the width of tab stops for this window to the value of the argument, in units of widths of the zero
 character.
 With no arguments, it prints the current value.
+When lines are selected in the body, typing Tab indents them
+(see the Keyboard section).
+.TP
+.B Tabexpand
+Toggle whether tab characters are expanded to spaces when typing in the body.
+When expansion is on, each tab is rendered as
+.I tabstop
+spaces (see
+.BR Tab );
+when off, a literal tab character is inserted.
+This setting also controls whether the
+.B A+
+and
+.B A-
+commands (and Tab and Shift-Tab with a selection) indent and unindent using spaces or tab characters.
 .TP
 .B Undo
 Undo last textual change or set of changes.
 .TP
 .B Zerox
 Create a copy of the window containing most recently selected text.
+.TP
+.B A+
+Indent the selected lines in the body by one level.
+Requires a selection.
+Equivalent to Tab with a selection (see the Keyboard section).
+.TP
+.B A-
+Unindent the selected lines in the body by one level.
+Requires a selection.
+Equivalent to Shift-Tab with a selection (see the Keyboard section).
 .TP
 .B <|>
 If a regular shell command is preceded by a
@@ -671,6 +748,7 @@ Command-C, -V, -X, and -Z invoke
 copy, paste, cut, and undo,
 and Command-Shift-Z invokes redo,
 as in other programs.
+Command-/ toggles comment on the selection (see the Keyboard section).
 Especially on Mac laptops, these keyboard shortcuts are
 typically much less awkward than the equivalent chords.
 .SS "Support programs
