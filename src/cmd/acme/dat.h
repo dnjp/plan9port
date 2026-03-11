@@ -182,6 +182,8 @@ struct Text
 	int	what;
 	int	tabstop;
 	int	tabexpand;	/* expand tab to spaces when typing */
+	Rune	comfmt[64];	/* comment format with %s placeholder */
+	int	ncomfmt;
 	Window	*w;
 	Rectangle scrollr;
 	Rectangle lastsr;
@@ -515,6 +517,9 @@ extern uint		globalincref;
 extern uint		seq;
 extern uint		maxtab;	/* size of a tab, in units of the '0' character */
 extern int		tabexpand;	/* expand tab to spaces when typing (env tabexpand) */
+#define NCOMFMT 64
+extern Rune		comfmt[NCOMFMT];
+extern int		ncomfmt;
 
 extern Display		*display;
 extern Image		*screen;
