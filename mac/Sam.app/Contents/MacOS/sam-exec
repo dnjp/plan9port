@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper so the real sam process is exec'd with argv[0]="sam", for menu bar/skhd.
+PLAN9=${PLAN9:-/usr/local/plan9}
+exec -a sam "$PLAN9/bin/sam" "$@"

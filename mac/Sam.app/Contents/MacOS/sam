@@ -1,5 +1,5 @@
 #!/bin/bash
-INSIDE_ACME=true
+export INSIDE_ACME=true
 export tabstop=8
 fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
 SHELL=${fshell:-$SHELL}
@@ -54,8 +54,8 @@ if [[ ! -z "$FIXFONT" ]]; then
 fi
 export font
 
-# start sam and capture pid
-arch -arch $arch $PLAN9/bin/sam &
+# start sam and capture pid (via wrapper so process name is "sam" for menu bar/skhd)
+arch -arch $arch "$(dirname "$0")/sam-exec" &
 sampid=$!
 
 # wait for sam to finish before exiting

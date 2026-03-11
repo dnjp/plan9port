@@ -1,5 +1,5 @@
 #!/bin/bash
-INSIDE_ACME=true
+export INSIDE_ACME=true
 fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
 SHELL=${fshell:-$SHELL}
 PLAN9=${PLAN9:-/usr/local/plan9}
@@ -36,6 +36,6 @@ ARGS=
 if [[ ! -z "$FIXFONT" ]]; then
 	ARGS="-f $FIXFONT"
 fi
-arch -arch $arch $PLAN9/bin/9term -l -W600x800 $ARGS &
+arch -arch $arch "$(dirname "$0")/9term-exec" -l -W600x800 $ARGS &
 exit 0
 

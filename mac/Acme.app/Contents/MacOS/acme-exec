@@ -1,0 +1,5 @@
+#!/bin/bash
+# Wrapper so the real acme process is exec'd with argv[0]="acme", so the
+# menu bar and skhd see "acme" instead of "/usr/local/plan9/bin/acme".
+PLAN9=${PLAN9:-/usr/local/plan9}
+exec -a acme "$PLAN9/bin/acme" "$@"
