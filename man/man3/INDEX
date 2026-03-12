@@ -960,6 +960,7 @@ plumbunmount plumb.3
 plumbunpack plumb.3
 plumbunpackattr plumb.3
 plumbunpackpartial plumb.3
+ruler ruler.3
 post9pservice post9pservice.3
 postnote postnote.3
 DSAprimes prime.3
