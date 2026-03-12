@@ -1,0 +1,55 @@
+.TH ACMEADDR 1
+.SH NAME
+acmeaddr \- print current selection address of an Acme window
+.SH SYNOPSIS
+.B acmeaddr
+[
+.I winid
+]
+.SH DESCRIPTION
+.I Acmeaddr
+prints the current selection address of an
+.MR acme 1
+window to standard output:
+the two rune offsets
+.I q0
+and
+.I q1
+(selection start and end), separated by a space.
+.PP
+It uses a single 9p connection to Acme: it writes
+.B addr=dot
+to the window's
+.B ctl
+file so that the window's
+.B addr
+file reflects the current dot (selection), then reads and prints
+.IR addr .
+This ensures the output matches the selection even when run from a script
+invoked by
+.B Run
+in Acme.
+.PP
+.I Winid
+is the Acme window id.
+If omitted,
+.I acmeaddr
+uses the
+.B $winid
+environment variable, which Acme sets when you
+.B Run
+a command from a window's tag.
+.SH EXAMPLE
+From an Acme window tag, run a script that needs the current selection:
+.IP
+.EX
+% acmeaddr
+0 2048
+.EE
+.PP
+With a selection in the body, the same command prints the rune range of the selection.
+.SH SOURCE
+.B \*9/src/cmd/acmeaddr.c
+.SH SEE ALSO
+.MR acme 1 ,
+.MR acme 4
