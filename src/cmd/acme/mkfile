@@ -19,6 +19,7 @@ OFILES=\
 	look.$O\
 	regx.$O\
 	rows.$O\
+	ruler.$O\
 	scrl.$O\
 	text.$O\
 	time.$O\

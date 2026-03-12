@@ -623,6 +623,7 @@ zeroxx(Text *et, Text *t, Text *_1, int _2, int _3, Rune *_4, int _5)
 		nw = coladd(t->w->col, nil, t->w, -1);
 		/* ugly: fix locks so w->unlock works */
 		winlock1(nw, t->w->owner);
+		rulerapply(nw);
 		xfidlog(nw, "zerox");
 	}
 	if(locked)
@@ -719,6 +720,7 @@ get(Text *et, Text *t, Text *argt, int flag1, int _0, Rune *arg, int narg)
 		textscrdraw(u);
 	}
 	free(addr);
+	rulerapply(w);
 	xfidlog(w, "get");
 }
 
