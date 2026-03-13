@@ -1,6 +1,6 @@
 <$PLAN9/src/mkhdr
 
-TARG=9term win
+TARG=9term.bin win
 
 OFILES=\
 	rcstart.$O\
@@ -12,5 +12,5 @@ HFILES=dat.h fns.h term.h
 
 Darwin.$O Linux.$O FreeBSD.$O DragonFly.$O: bsdpty.c
 
-$O.9term: data.$O scrl.$O time.$O util.$O wind.$O
+$O.9term.bin: data.$O scrl.$O time.$O util.$O wind.$O
 

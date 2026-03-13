@@ -1,64 +1,8 @@
 #!/bin/bash
-export INSIDE_ACME=true
+export INSIDE_P9P=true
+export INSIDE_SAM=true
 export tabstop=8
-fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
-SHELL=${fshell:-$SHELL}
+
 PLAN9=${PLAN9:-/usr/local/plan9}
-cd $HOME
-arch=x86_64
-if arch -arch arm64 date >/dev/null 2>&1; then
-	arch=arm64
-fi
-case "$SHELL" in
-*/rc)
-	echo '
-		if(! ~ $PLAN9/bin $path)
-			path=($path $PLAN9/bin)
-		arch -arch '$arch' $PLAN9/bin/9term -l -W600x800 &
-	' | $SHELL -l
-	exit 0
-	;;
-*/bash)
-	. ~/.bash_profile
-	;;
-*/zsh)
-	. ~/.zprofile
-	;;
-*)
-	. ~/.profile
-	;;
-esac
 
-if ! [[ :$PATH: =~ :$PLAN9/bin: ]]
-then
-	PATH=$PATH:$PLAN9/bin
-fi
-
-NAMESPACE=$(9 namespace)
-
-# collect dependencies
-deps=("plumber" "fontsrv")
-
-# launch soft dependencies for sam
-for dep in "${deps[@]}"; do
-	if ! pgrep -x "$dep" > /dev/null; then
-		echo "launching $dep"
-		"$dep" &
-	fi
-done
-
-# append font arguments
-font=
-if [[ ! -z "$FIXFONT" ]]; then
-	font=$FIXFONT
-fi
-export font
-
-# start sam and capture pid (via wrapper so process name is "sam" for menu bar/skhd)
-arch -arch $arch "$(dirname "$0")/sam-exec" &
-sampid=$!
-
-# wait for sam to finish before exiting
-wait $sampid
-
-exit 0
+exec "$PLAN9/bin/sam"

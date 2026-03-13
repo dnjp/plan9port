@@ -1,0 +1,45 @@
+# p9p-session.sh — shell session setup for interactive shells running inside
+# a plan9port application (acme, sam, 9term).
+#
+# Source this from your ~/.bashrc or ~/.zshrc to get the right behaviour when
+# your shell is a child of a p9p app, and normal interactive behaviour otherwise.
+#
+# Usage (place after sourcing plan9.sh):
+#
+#   if [ -n "$INSIDE_P9P" ]; then
+#       . /usr/local/plan9/shell/p9p-session.sh
+#   else
+#       # normal interactive shell setup (completions, plugins, etc.)
+#   fi
+#
+# What this does inside a p9p session:
+#   - Calls awd to set the acme window title to the current directory.
+#   - Overrides cd so every directory change updates the window title via awd.
+#   - Sets TERM=dumb (acme/sam terminals are not ANSI-compatible).
+#   - Sets PAGER and MANPAGER to nobs (no backspace-bold escape sequences).
+#   - Disables readline/line-editor modes that conflict with plan9 key bindings.
+#   - Turns on allexport so variable assignments are automatically exported,
+#     matching plan9port's rc shell convention.
+
+# Update the window label to the current directory.
+awd
+
+# Override cd to keep the window label in sync.
+_p9p_cd() {
+    \cd "$@" && awd
+}
+alias cd=_p9p_cd
+
+# Dumb terminal: acme and sam render text directly; ANSI codes produce garbage.
+export TERM=dumb
+
+# nobs strips backspace-bold sequences that man/less emit on dumb terminals.
+export PAGER=nobs
+export MANPAGER=nobs
+
+# Disable readline editing modes — p9p apps handle input themselves.
+set +o emacs 2>/dev/null || true
+set +o vi    2>/dev/null || true
+
+# Auto-export new variable assignments, matching rc shell convention.
+set -a
