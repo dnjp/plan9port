@@ -1,0 +1,33 @@
+#!/usr/local/plan9/bin/rc
+# editinacme - open a file in acme and wait until its window is deleted.
+# Intended for use as $EDITOR in environments where acme is running.
+# Usage: editinacme file
+
+if(~ $#PLAN9 0)
+	PLAN9=/usr/local/plan9
+path=($PLAN9/bin $path)
+
+if(! ~ $#* 1) {
+	echo 'usage: editinacme file' >[1=2]
+	exit usage
+}
+
+file=`{realpath $1}
+file=$file(1)
+
+echo 'editinacme: editing '$file >[1=2]
+
+plumb -s editinacme -d edit $file
+if(! ~ $status '') {
+	echo 'editinacme: plumb failed' >[1=2]
+	exit 'plumb failed'
+}
+
+# Keep one 9p connection open and read log events one line at a time.
+# Each line: winid op name
+9p read acme/log | while(event=`{read}) {
+	op=`{echo $event | awk '{print $2}'}
+	name=`{echo $event | awk '{print $3}'}
+	if(~ $op del && ~ $name $file)
+		exit 0
+}
