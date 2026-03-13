@@ -3,31 +3,88 @@
 rule \- query the ruler service
 .SH SYNOPSIS
 .B rule
+[
+.B -q
+.I query
+] [
+.B -c
+.I client
+] [
+.B -e
+.I event
+] [
+.B -i
+.I id
+]
+.PP
+.B rule
 .SH DESCRIPTION
 .I Rule
-reads a request from standard input, writes it to the
-.B ruler/query
-9P file, and prints the response to standard output.
+sends a request to the
+.MR ruler 4
+daemon and prints the response to standard output.
 .PP
-The request format is described in
-.MR ruler 7 .
-Each attribute is written on its own line:
+When called with flags,
+.I rule
+composes the request from the supplied arguments.
+If
+.B -q
+is omitted but other flags are given, the query is read from standard input
+(one line, trailing newline stripped), so a file path may be piped in:
 .EX
-	query=\fIpath\fP
-	client=\fIname\fP
-	event=\fIname\fP
-	id=\fIvalue\fP
+	echo /home/user/src/main.go | rule -c acme -e open -i 7
 .EE
 .PP
-The
-.MR ruler 4
-daemon must be running before
+When called with no flags at all,
 .I rule
-is invoked.
-.SH EXAMPLE
-Query the ruler for a Go file opened in acme:
+reads the complete raw request from standard input
+(one
+.IB attribute = value
+line per field) and forwards it verbatim to the daemon.
+This form is useful in scripts that construct the full request themselves:
 .EX
 	printf 'query=/home/user/src/main.go\nclient=acme\nevent=open\nid=1\n' | rule
+.EE
+.PP
+The options are:
+.TP
+.B -q
+Set the
+.B query
+field (e.g. an absolute file path).
+.TP
+.B -c
+Set the
+.B client
+field (e.g.
+.BR acme ,
+.BR sam ).
+.TP
+.B -e
+Set the
+.B event
+field (e.g.
+.BR open ,
+.BR save ).
+.TP
+.B -i
+Set the
+.B id
+field (e.g. a window id).
+.PP
+Unset fields default to the empty string.
+The request format is described in
+.MR ruler 7 .
+.PP
+A matching rule responds with one or more
+.IB key = value
+lines.
+If no rule matches, the response is empty and a diagnostic is printed to
+standard error.
+.SH EXAMPLE
+Query for a Go file opened in acme:
+.EX
+	rule -q /home/user/src/main.go -c acme -e open -i 7
 .EE
 A matching rule might respond:
 .EX
