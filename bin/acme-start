@@ -9,15 +9,23 @@ if arch -arch arm64 date >/dev/null 2>&1; then
 	arch=arm64
 fi
 
+# Apply defaults for font and dump settings if not set by the environment.
+# These use fontsrv-served macOS system fonts with HiDPI (Retina) variants.
+# Users can override by setting these variables before launching acme.
+# fixfont/varfont match the naming used by startacme, start9term, and acme(1).
+: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
+: "${varfont:=/mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font}"
+: "${acmedump:=$HOME/acme.dump}"
+
 ARGS=()
-if [[ -n "$FIXFONT" ]]; then
-	ARGS+=(-F "$FIXFONT")
+if [[ -n "$fixfont" ]]; then
+	ARGS+=(-F "$fixfont")
 fi
-if [[ -n "$VARFONT" ]]; then
-	ARGS+=(-f "$VARFONT")
+if [[ -n "$varfont" ]]; then
+	ARGS+=(-f "$varfont")
 fi
-if [[ -n "$ACME_DUMP" && -f "$ACME_DUMP" ]]; then
-	ARGS+=(-l "$ACME_DUMP")
+if [[ -n "$acmedump" && -f "$acmedump" ]]; then
+	ARGS+=(-l "$acmedump")
 fi
 
 # If acme is already mounted in the current namespace, create a fresh one.
