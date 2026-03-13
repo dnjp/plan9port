@@ -1,0 +1,134 @@
+.TH GITLINK 1
+.SH NAME
+gitlink \- print a web URL for a file or directory in a Git repository
+.SH SYNOPSIS
+.B gitlink
+[
+.I file
+[
+.I line1
+[
+.I line2
+]]]
+.SH DESCRIPTION
+.I Gitlink
+prints a URL for
+.I file
+in its Git repository's web interface.
+When run from an
+.MR acme 1
+window with no arguments, it uses the current window's path and,
+if text is selected, includes a line range in the URL.
+.PP
+The hosting provider is detected from the repository's
+.B origin
+remote URL.
+GitHub, GitLab, and Bitbucket are supported;
+self-hosted instances are matched by hostname.
+.PP
+The URL points to the file or directory at the current branch,
+or at the commit hash if the repository is in detached HEAD state.
+.SS "Running from Acme"
+With no arguments,
+.I gitlink
+reads the current window's path from its tag
+and the selection from
+.MR acmeaddr 1 .
+.PP
+If the window's path is a
+.IR directory ,
+.I gitlink
+produces a URL for the directory itself.
+If text is selected in the window,
+the first non-empty line of the selection is taken as the name
+of a file or subdirectory under the window's path,
+and the URL points to that entry instead.
+No line numbers are ever added for directory windows.
+.PP
+If the window's path is a
+.IR file ,
+.I gitlink
+produces a URL for that file.
+If text is selected, the URL includes a line range fragment
+corresponding to the selected lines.
+.SS "Line range fragments"
+Line range fragments are formatted according to the hosting provider:
+.TP
+GitHub and GitLab
+.B #L
+.I n
+for a single line,
+.BI #L n -L m
+for a range.
+.TP
+Bitbucket
+.BI # filename - n
+for a single line,
+.BI # filename - n - m
+for a range.
+.SS "Command-line use"
+When invoked with a
+.I file
+argument,
+.I gitlink
+prints the URL for that file.
+Relative paths and paths containing
+.B ..
+are resolved to absolute paths before use.
+.PP
+An optional
+.I line1
+argument adds a single-line fragment to the URL.
+An optional
+.I line2
+argument extends the fragment to a range from
+.I line1
+to
+.IR line2 .
+.SH EXAMPLES
+Print the URL for a file on the current branch:
+.IP
+.EX
+% gitlink src/cmd/acme/acme.c
+https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c
+.EE
+.PP
+Print the URL for lines 10 through 20 of a file:
+.IP
+.EX
+% gitlink src/cmd/acme/acme.c 10 20
+https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c#L10-L20
+.EE
+.PP
+From an Acme window showing a source file with lines 42\(en48 selected,
+executing
+.B gitlink
+from the tag prints:
+.IP
+.EX
+https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c#L42-L48
+.EE
+.PP
+From an Acme directory window with
+.B acme.c
+selected, executing
+.B gitlink
+from the tag prints:
+.IP
+.EX
+https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c
+.EE
+.SH SOURCE
+.B \*9/bin/gitlink
+.SH SEE ALSO
+.MR acme 1 ,
+.MR acmeaddr 1 ,
+.MR acmeevent 1
+.SH BUGS
+Only the first non-empty line of a selection is used when resolving
+a name in a directory window.
+Multi-component relative paths in a directory selection
+(e.g.
+.BR subdir/file )
+are used as-is and may not resolve correctly if the intermediate
+directory does not exist under the window's path.
