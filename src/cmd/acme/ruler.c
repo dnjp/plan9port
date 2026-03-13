@@ -142,7 +142,7 @@ applydirective(Window *w, char *key, char *val)
 			w->body.reffont = rf;
 			w->body.fr.font = rf->f;
 			frinittick(&w->body.fr);
-			colgrow(w->col, w, -1);
+			winresize(w, w->r, FALSE, TRUE);
 		} else {
 			rulerlog("rfget failed for font=%s (fix=%d)", buf, fix);
 		}
@@ -234,31 +234,24 @@ rulerapply(Window *w)
 	if(getenv("rulerdebug") != nil)
 		rulerdebug = 1;
 	if(w == nil || w->body.file == nil || w->body.file->nname == 0){
-		if(rulerdebug)
-			rulerlog("skip: no file name (win %p)", w);
+		rulerlog("skip: no file name");
 		return;
 	}
 	if(w->isdir){
-		rulerlog("skip: window is directory");
+		rulerlog("skip: directory");
 		return;
 	}
 	if(w->isscratch){
-		rulerlog("skip: window is scratch");
+		rulerlog("skip: scratch");
 		return;
 	}
 	path = runetobyte(w->body.file->name, w->body.file->nname);
-	if(path == nil){
-		if(rulerdebug)
-			rulerlog("skip: runetobyte failed");
+	if(path == nil || path[0] == '\0'){
+		free(path);
+		rulerlog("skip: empty path");
 		return;
 	}
 	pathlen = strlen(path);
-	if(pathlen == 0){
-		free(path);
-		if(rulerdebug)
-			rulerlog("skip: empty path");
-		return;
-	}
 	if(path[0] != '/'){
 		abspath = emalloc(pathlen + strlen(wdir) + 2);
 		snprint(abspath, pathlen + strlen(wdir) + 2, "%s/%s", wdir, path);
@@ -266,7 +259,7 @@ rulerapply(Window *w)
 		querypath = abspath;
 		free(path);
 		path = nil;
-	}else{
+	} else {
 		abspath = nil;
 		querypath = path;
 		path = nil;
@@ -286,22 +279,20 @@ rulerapply(Window *w)
 			RulerQuery, querypath,
 			RulerClient, RulerEvent, RulerId, w->id,
 			RulerType, wtype);
+		free(querypath);
 		if(n >= (int)sizeof req){
 			rulerlog("skip: request too long");
-			free(querypath);
 			return;
 		}
 		fs = nsmount("ruler", nil);
 		if(fs == nil){
 			rulerlog("nsmount ruler failed: %r");
-			free(querypath);
 			return;
 		}
 		fid = fsopen(fs, RulerQueryFile, ORDWR);
 		if(fid == nil){
 			rulerlog("fsopen query: %r");
 			fsunmount(fs);
-			free(querypath);
 			return;
 		}
 		rulerlog("request %ld bytes", n);
@@ -321,7 +312,6 @@ rulerapply(Window *w)
 			rulerlog("fswrite: %r (wrote %ld/%ld)", nw, n);
 			fsclose(fid);
 			fsunmount(fs);
-			free(querypath);
 			return;
 		}
 		fsseek(fid, 0, 0);
@@ -335,18 +325,14 @@ rulerapply(Window *w)
 		fsunmount(fs);
 		if(nr <= 0){
 			rulerlog("no match for path=%s type=%s", querypath, wtype);
-			free(querypath);
 			return;
 		}
-		free(querypath);
 		resp[nr] = '\0';
 		if(rulerdebug){
 			char *nl = memchr(resp, '\n', nr);
-			if(nl != nil)
-				*nl = '\0';
+			if(nl != nil) *nl = '\0';
 			rulerlog("response %ld bytes: %s", nr, resp);
-			if(nl != nil)
-				*nl = '\n';
+			if(nl != nil) *nl = '\n';
 		}
 		applyresponse(w, resp, nr);
 	}
