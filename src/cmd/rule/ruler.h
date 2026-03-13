@@ -26,6 +26,7 @@ struct Rulerule
 	Pathpat		*pats;
 	char		*client;	/* nil = match any */
 	char		*event;		/* nil = match any */
+	char		*type;		/* nil = match any; e.g. "file", "win" */
 	char		*directives;	/* space-separated key=value; returned as newline-separated */
 	Rulerule	*next;
 };
@@ -45,7 +46,7 @@ void		printinputstack(void);
 int		popinput(void);
 
 /* match.c */
-char*		matchquery(char *query, char *client, char *event);
+char*		matchquery(char *query, char *client, char *event, char *type);
 
 /* 9p.c */
 void		startfsys(int);

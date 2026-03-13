@@ -108,7 +108,13 @@ threadmain(int argc, char *argv[])
 		}
 	}
 
-	dlog("rulerfile=%s rules loaded", rulerfile ? rulerfile : "(none)");
+	{
+		int n = 0;
+		if(rules != nil)
+			for(; rules[n] != nil; n++)
+				;
+		dlog("rulerfile=%s %d rules loaded", rulerfile ? rulerfile : "(none)", n);
+	}
 	atnotify(sighup, 1);
 	dlog("posting service ruler");
 	startfsys(foreground);

@@ -78,12 +78,41 @@ with arguments, or
 queries the
 .MR ruler 4
 service for configuration directives; if the ruler returns a matching rule,
-its directives (e.g.\ 
+its directives are applied to the window before the window is shown.
+Directives understood by
+.I acme
+are:
 .BR comfmt ,
-tab width,
+.BR tabstop ,
 .BR tabexpand ,
-.BR indent )
-are applied to the window before the window is shown.
+.BR indent ,
+and
+.B font
+.RB ( fix
+or
+.BR var ,
+to select the fixed-width or proportional font for the window body).
+.PP
+The query includes a
+.B type
+field:
+.B file
+for ordinary file windows and
+.B win
+for
+.MR win 1
+terminal windows.
+Rules can match on this using
+.B "type is win"
+or
+.B "type is file"
+(see
+.MR ruler 7 ).
+.PP
+If the environment variable
+.B rulerdebug
+is set, ruler queries and responses are logged to standard error.
+.PP
 Otherwise defaults from environment variables apply (see below).
 .PP
 The
@@ -425,6 +454,14 @@ If the file name argument is prefixed by
 .RB ( fix ),
 also set the default proportional-spaced (fixed-spaced) font for future use to that font.
 Other existing windows are unaffected.
+When a file is opened, the font may be set by the
+.MR ruler 4
+service using the
+.B font
+directive (values
+.B fix
+or
+.BR var ).
 .TP
 .B F+
 Increase font size.

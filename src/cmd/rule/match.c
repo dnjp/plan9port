@@ -60,6 +60,9 @@ rulepathmatch(Rulerule *r, char *query)
 {
 	Pathpat *p;
 
+	/* no path patterns means match any path (used for type-only rules like "type is win") */
+	if(r->pats == nil)
+		return 1;
 	for(p = r->pats; p != nil; p = p->next)
 		if(patmatch(p, query))
 			return 1;
@@ -198,25 +201,44 @@ directives_to_lines(char *directives)
 }
 
 char*
-matchquery(char *query, char *client, char *event)
+matchquery(char *query, char *client, char *event, char *type)
 {
-	int i;
+	int i, nrules;
 	Rulerule *r;
 
-	if(rules == nil)
+	if(rules == nil){
+		dlog("matchquery: no rules loaded");
 		return nil;
+	}
 	if(query == nil)
 		return nil;
 
+	for(nrules = 0; rules[nrules] != nil; nrules++)
+		;
+	dlog("matchquery: query=%s client=%s event=%s type=%s nrules=%d",
+		query, client?client:"(nil)", event?event:"(nil)", type?type:"(nil)", nrules);
+
 	for(i = 0; rules[i] != nil; i++){
 		r = rules[i];
-		if(!rulepathmatch(r, query))
+		if(!rulepathmatch(r, query)){
+			dlog("  rule[%d]: no path match (client=%s)", i, r->client?r->client:"*");
 			continue;
-		if(r->client != nil && (client == nil || strcmp(client, r->client) != 0))
+		}
+		if(r->client != nil && (client == nil || strcmp(client, r->client) != 0)){
+			dlog("  rule[%d]: path matched but client mismatch (want %s got %s)", i, r->client, client?client:"(nil)");
 			continue;
-		if(r->event != nil && (event == nil || strcmp(event, r->event) != 0))
+		}
+		if(r->event != nil && (event == nil || strcmp(event, r->event) != 0)){
+			dlog("  rule[%d]: path+client matched but event mismatch (want %s got %s)", i, r->event, event?event:"(nil)");
 			continue;
+		}
+		if(r->type != nil && (type == nil || strcmp(type, r->type) != 0)){
+			dlog("  rule[%d]: path+client+event matched but type mismatch (want %s got %s)", i, r->type, type?type:"(nil)");
+			continue;
+		}
+		dlog("  rule[%d]: MATCH -> %s", i, r->directives);
 		return directives_to_lines(r->directives);
 	}
+	dlog("matchquery: no rule matched");
 	return nil;
 }
