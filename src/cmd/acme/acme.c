@@ -316,6 +316,7 @@ readfile(Column *c, char *s)
 	winresize(w, w->r, FALSE, TRUE);
 	textscrdraw(&w->body);
 	textsetselect(&w->tag, w->tag.file->b.nc, w->tag.file->b.nc);
+	rulerapply(w);
 	xfidlog(w, "new");
 }
 

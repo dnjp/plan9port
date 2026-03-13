@@ -1,0 +1,223 @@
+.TH RULER 7
+.SH NAME
+ruler \- ruler request, response, and rulerfile format
+.SH SYNOPSIS
+.B #include <ruler.h>
+.SH DESCRIPTION
+The
+.MR ruler 4
+daemon matches requests against a rulerfile and returns configuration directives.
+Clients write a request to the 9P file
+.B ruler/query
+and read the response from the same fid.
+.SS "Request format
+The request is textual, one attribute per line (newline-separated).
+All four attributes are required; ruler may return an empty response if any is missing.
+.RS
+.TP
+.B query
+The subject to match against rules.
+For editors the query is typically the absolute path of the file being opened.
+Ruler does not interpret the value; it is matched as a string against rulerfile patterns.
+.TP
+.B client
+Client identifier (e.g.\ 
+.BR acme ,
+.BR sam ).
+Used when a rule includes a client scope.
+.TP
+.B event
+Event name (e.g.\ 
+.BR open ,
+.BR save ).
+Used when a rule includes an event scope.
+.TP
+.B id
+Identity of the calling component (e.g. window id); not used for matching.
+.RE
+.PP
+Example:
+.EX
+	query=/home/user/src/main.go
+	client=acme
+	event=open
+	id=7
+.EE
+.SS "Response format
+The response is zero or more lines of the form
+.IB key = value .
+The first
+.B =
+on a line separates the key from the value; the rest of the line is the value, so values may contain additional
+.B =
+characters.
+No match or empty rules yield an empty response (zero bytes).
+.PP
+Ruler does not interpret the response; it returns the directive lines from the matching rule verbatim.
+Clients apply only the keys they understand; unknown keys are ignored.
+.SS "Rulerfile format
+The rulerfile is a sequence of rule sets.
+See
+.MR ruler 4
+for the rulerfile lookup order.
+A blank line terminates each rule set.
+Lines beginning with
+.B #
+are comments and are treated as blank.
+.PP
+A line of the form
+.EX
+	include \f2file\fP
+.EE
+substitutes the contents of
+.I file
+for the line, as in a C
+.B #include .
+The file name is not quoted.
+If
+.I file
+is an absolute path it is opened directly.
+Otherwise ruler searches the following locations in order:
+.IP 1.
+.BR \*9/rule/ file
+(where the built-in
+.B initial.rules
+lives).
+.IP 2.
+.BR \*9/ruler/ file
+(for user-installed rule libraries).
+.IP 3.
+.BR $HOME/lib/ruler/ file .
+.PP
+Include depth is limited to 10 to prevent recursion.
+.PP
+Rules are matched in order; the first matching rule set wins and the rest are ignored.
+To override a rule from an included file, place the overriding rule set
+.I before
+the include line.
+A typical user rulerfile at
+.B $HOME/lib/rules
+that overrides the Go rule and then falls back to the built-in defaults:
+.EX
+# override Go settings
+client is acme
+event is open
+query matches '*.go'
+rule set tabstop 4
+rule set tabexpand on
+
+include initial.rules
+.EE
+.SS "Patterns
+Each rule set contains one or more pattern lines and one or more
+.B rule set
+directive lines.
+Pattern lines have the form
+.IR object verb argument .
+.RS
+.TP
+.B "client is \fIvalue\fP"
+The rule applies only when the request
+.B client
+equals
+.IR value .
+.TP
+.B "event is \fIvalue\fP"
+The rule applies only when the request
+.B event
+equals
+.IR value .
+.TP
+.B "query matches \fIpattern\fP"
+The request
+.B query
+must match
+.IR pattern .
+Multiple
+.B query matches
+lines in a rule set are ORed: the rule matches if any one matches.
+Patterns may be a suffix (e.g.\ 
+.BR '*.c' ,
+.BR '*.go' ),
+a prefix, an exact string, or a regular expression in single quotes.
+.RE
+.SS "Directives
+Directive lines have the form
+.EX
+	rule set \fIkey\fP \fIvalue\fP
+.EE
+The
+.I key
+is a single word (e.g.\ 
+.BR comfmt ,
+.BR tabstop ,
+.BR tabexpand );
+.I value
+is the rest of the line and may contain spaces; it may be quoted in single quotes.
+Multiple
+.B rule set
+lines in a rule set define the directive set for that rule.
+.PP
+If
+.I value
+for
+.B tabstop
+is empty, it defaults to
+.BR 8 .
+.SS "Directive names (Acme)
+The following keys are understood by
+.MR acme 1
+when it queries ruler; others are ignored.
+.RS
+.TP
+.B comfmt
+Comment format string (e.g.\ 
+.BR '// %s' ).
+.TP
+.B tabstop
+Tab width in character units.
+.TP
+.B tabexpand
+.B on
+or
+.BR off .
+.TP
+.B indent
+.B on
+or
+.BR off .
+.RE
+.SH EXAMPLE
+.EX
+# Go files
+client is acme
+event is open
+query matches '*.go'
+rule set comfmt '// %s'
+rule set tabstop 8
+rule set tabexpand off
+
+# Makefiles
+client is acme
+event is open
+query matches '*Makefile'
+rule set comfmt '# %s'
+rule set tabstop 8
+rule set tabexpand off
+.EE
+.SH FILES
+.TF \*9/rule/initial.rules
+.TP
+.B $HOME/lib/rules
+user rulerfile; used when present
+.TP
+.B \*9/rule/initial.rules
+built-in default rulerfile
+.TP
+.B ruler
+service name for
+.MR ruler 4 .
+.SH "SEE ALSO"
+.MR ruler 4 ,
+.MR ruler 3 ,
+.MR rule 1

@@ -1,0 +1,51 @@
+.TH RULER 3
+.SH NAME
+ruler \- ruler protocol and request format
+.SH SYNOPSIS
+.B #include <ruler.h>
+.SH DESCRIPTION
+The header
+.B <ruler.h>
+defines the ruler protocol used by clients and the
+.MR ruler 4
+daemon.
+.PP
+Clients write a request to the 9P file
+.B query
+(one attribute per line, newline-separated), then read the response (newline-separated
+.IB key = value
+lines).
+All four request attributes are required.
+.PP
+Request attribute names:
+.TP
+.B RulerQuery
+The subject to match against rules (e.g. absolute file path).
+.TP
+.B RulerClient
+Client identifier (e.g.\ 
+.BR acme ,
+.BR sam ).
+.TP
+.B RulerEvent
+Event name (e.g.\ 
+.BR open ,
+.BR save ).
+.TP
+.B RulerId
+Identity of the caller (e.g. window id); not used for matching.
+.PP
+The 9P file used for request and response is
+.BR RulerQueryFile ,
+the string
+.BR query .
+.PP
+The
+.B Rulerreq
+structure may be used to hold the four attributes before formatting; all fields must be set before use.
+.SH SOURCE
+.B \*9/include/ruler.h
+.SH "SEE ALSO"
+.MR ruler 4 ,
+.MR ruler 7 ,
+.MR 9pclient 3

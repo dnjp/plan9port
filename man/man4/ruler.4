@@ -1,0 +1,88 @@
+.TH RULER 4
+.SH NAME
+ruler \- file system for rule-based configuration
+.SH SYNOPSIS
+.B ruler
+[
+.B -f
+]
+[
+.B -v
+]
+[
+.B -r
+.I rulerfile
+]
+.SH DESCRIPTION
+The
+.I ruler
+is a user-level file server that matches requests against a
+.I rulerfile
+and returns configuration directives.
+Its behavior is programmed by a
+.I rulerfile
+in the format of
+.MR ruler 7 .
+.PP
+Its services are posted via
+.MR 9pserve 4
+as
+.BR ruler ,
+and consist of two files,
+.B ruler/query
+and
+.BR ruler/rules .
+.PP
+Clients open
+.B ruler/query
+for read and write, write a request (query, client, event, and id, one attribute per line), then read the response: zero or more directive lines from the matching rule.
+One request and one response are consumed per open; each fid is independent.
+If no rule matches, the response is empty.
+.PP
+The file
+.B ruler/rules
+may be read to inspect the rules as currently loaded and parsed.
+Writing to
+.B ruler/rules
+reloads the rule set from the written content; for example,
+.B "9p write ruler/rules"
+with the rulerfile contents replaces the in-memory rules.
+The daemon also reloads from the file on SIGHUP.
+.PP
+The
+.B -f
+option causes the process to run in the foreground.
+The
+.B -v
+option enables verbose logging to standard error.
+The
+.B -r
+option specifies the path to the rulerfile, overriding all other locations.
+.PP
+If
+.B -r
+is not given, ruler looks for a rulerfile in the following order:
+.IP 1.
+.B $HOME/lib/rules
+if that file exists.
+.IP 2.
+.BR \*9/rule/initial.rules ,
+the built-in default.
+.SH FILES
+.TF \*9/rule/initial.rules
+.TP
+.B $HOME/lib/rules
+user rulerfile; used when present
+.TP
+.B \*9/rule/initial.rules
+built-in default rulerfile
+.TP
+.B ruler
+mount name for
+.MR ruler 4 .
+.SH SOURCE
+.B \*9/src/cmd/rule
+.SH "SEE ALSO"
+.MR ruler 7 ,
+.MR ruler 3 ,
+.MR rule 1

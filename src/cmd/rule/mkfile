@@ -1,0 +1,14 @@
+<$PLAN9/src/mkhdr
+
+TARG=ruler rule
+
+<$PLAN9/src/mkmany
+
+RULER=ruler.$O 9p.$O rules.$O match.$O
+RULE=rule.$O
+
+$RULER:	$HFILES ruler.h
+$RULE:	$HFILES
+
+$O.ruler:	$RULER
+$O.rule:	$RULE
