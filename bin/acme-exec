@@ -1,0 +1,5 @@
+#!/bin/bash
+# Wrapper so acme is exec'd with argv[0]="acme".
+# The macOS menu bar and skhd see the process name, not the binary path.
+PLAN9=${PLAN9:-/usr/local/plan9}
+exec -a acme "$PLAN9/bin/acme" "$@"

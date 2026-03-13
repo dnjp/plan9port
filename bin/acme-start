@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# acme-start — launch acme with the correct architecture and font settings.
+# Used by Acme.app and by the plumber's start rule when acme is not running.
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+
+arch=x86_64
+if arch -arch arm64 date >/dev/null 2>&1; then
+	arch=arm64
+fi
+
+ARGS=()
+if [[ -n "$FIXFONT" ]]; then
+	ARGS+=(-F "$FIXFONT")
+fi
+if [[ -n "$VARFONT" ]]; then
+	ARGS+=(-f "$VARFONT")
+fi
+if [[ -n "$ACME_DUMP" && -f "$ACME_DUMP" ]]; then
+	ARGS+=(-l "$ACME_DUMP")
+fi
+
+# If acme is already mounted in the current namespace, create a fresh one.
+if "$PLAN9/bin/9p" stat acme >/dev/null 2>&1; then
+	ns=/tmp/ns.$USER.$RANDOM
+	mkdir -p "$ns"
+	export NAMESPACE="$ns"
+else
+	rm -f "$(namespace 2>/dev/null)"/acme 2>/dev/null || true
+fi
+
+# acme-exec wraps the binary with exec -a acme so the process is named "acme"
+# (not the full path), which is what the macOS menu bar and skhd expect.
+exec arch -arch "$arch" "$PLAN9/bin/acme-exec" -a "${ARGS[@]}"

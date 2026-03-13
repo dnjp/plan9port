@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Show status and log locations for plan9port LaunchAgents.
+# Usage: 9p-status [tail|logs]
+LOG_DIR="${HOME}/.local/var/log/plan9port"
+AGENTS=(com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler)
+
+status() {
+	echo "=== plan9port LaunchAgents (gui/$(id -u)) ==="
+	echo ""
+	for label in "${AGENTS[@]}"; do
+		if launchctl print "gui/$(id -u)/$label" &>/dev/null; then
+			echo "  $label: loaded"
+			launchctl print "gui/$(id -u)/$label" 2>/dev/null \
+				| grep -E '^\s+(state|pid)' | sed 's/^/    /' || true
+		else
+			echo "  $label: not loaded"
+		fi
+		echo ""
+	done
+	echo "Logs: $LOG_DIR/"
+	ls -la "$LOG_DIR" 2>/dev/null \
+		|| echo "  (not created yet; run 'mk install' then 'mk load')"
+}
+
+logs_tail() {
+	if [[ ! -d "$LOG_DIR" ]]; then
+		echo "No log dir yet: $LOG_DIR"
+		exit 1
+	fi
+	tail -f "$LOG_DIR"/*.log
+}
+
+case "${1:-}" in
+	tail) logs_tail ;;
+	*)    status ;;
+esac

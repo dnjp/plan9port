@@ -1,6 +1,61 @@
+PLAN9=$PLAN9
+HOME=$HOME
+LAUNCH_AGENTS=$HOME/Library/LaunchAgents
+LOG_DIR=$HOME/.local/var/log/plan9port
+# Absolute path to this daemons/ directory (scripts referenced directly from plists).
+DAEMONDIR=`pwd`/daemons
 
-install:
+DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler
+
+all:V: install
+
+# Install .app bundles and daemons.
+install:V: apps daemons
+
+# Copy .app bundles to /Applications.
+apps:V:
 	cp -r 9term.app /Applications/
 	cp -r Acme.app /Applications/
 	cp -r Plumb.app /Applications/
 	cp -r Sam.app /Applications/
+
+# Expand plist templates and install LaunchAgents.
+# Scripts (run-with-env.sh, 9p-status) are referenced in-place from the source
+# tree so no root-owned directories need to be written.
+daemons:V:
+	mkdir -p $LOG_DIR $LAUNCH_AGENTS
+	chmod +x daemons/run-with-env.sh daemons/9p-status
+	for d in $DAEMONS; do \
+		sed \
+			-e 's|@HOME@|'$HOME'|g' \
+			-e 's|@PLAN9@|'$PLAN9'|g' \
+			-e 's|@DAEMONDIR@|'$DAEMONDIR'|g' \
+			daemons/$d.plist.template > $LAUNCH_AGENTS/$d.plist; \
+		echo installed $LAUNCH_AGENTS/$d.plist; \
+	done
+	echo 'Daemons installed. Run mk load to start them.'
+
+# Load (start) all LaunchAgents.
+load:V:
+	for d in $DAEMONS; do \
+		launchctl load $LAUNCH_AGENTS/$d.plist; \
+		echo loaded $d; \
+	done
+
+# Unload (stop) all LaunchAgents.
+unload:V:
+	for d in $DAEMONS; do \
+		launchctl unload $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
+		echo unloaded $d; \
+	done
+
+# Unload then load (restart after editing plists or run-with-env.sh).
+reload:V: unload load
+
+# Show status of all LaunchAgents.
+status:V:
+	sh daemons/9p-status
+
+# Tail all plan9port daemon logs.
+logs:V:
+	sh daemons/9p-status tail
