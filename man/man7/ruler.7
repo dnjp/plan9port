@@ -56,9 +56,10 @@ No match or empty rules yield an empty response (zero bytes).
 Ruler does not interpret the response; it returns the directive lines from the matching rule verbatim.
 Clients apply only the keys they understand; unknown keys are ignored.
 .SS "Rulerfile format
-The rulerfile (default
-.BR $HOME/lib/rulerfile )
-is a sequence of rule sets.
+The rulerfile is a sequence of rule sets.
+See
+.MR ruler 4
+for the rulerfile lookup order.
 A blank line terminates each rule set.
 Lines beginning with
 .B #
@@ -75,24 +76,38 @@ for the line, as in a C
 The file name is not quoted.
 If
 .I file
-is not an absolute path and does not begin with
-.B ./
-or
-.BR ../ ,
-.I file
-is sought in the directory of the current file and then in a library directory (e.g.\ 
-.BR $home/lib/ruler ).
-Include depth is limited to prevent recursion.
+is an absolute path it is opened directly.
+Otherwise ruler searches the following locations in order:
+.IP 1.
+.BR \*9/rule/ file
+(where the built-in
+.B initial.rules
+lives).
+.IP 2.
+.BR \*9/ruler/ file
+(for user-installed rule libraries).
+.IP 3.
+.BR $HOME/lib/ruler/ file .
 .PP
-When a request is received, rule sets are examined in order.
-The first rule set that matches the request
-.B query ,
-and (if the rule set specifies them)
-.B client
-and
-.B event ,
-is used; its directives are returned and the rest are ignored.
-If none matches, the response is empty.
+Include depth is limited to 10 to prevent recursion.
+.PP
+Rules are matched in order; the first matching rule set wins and the rest are ignored.
+To override a rule from an included file, place the overriding rule set
+.I before
+the include line.
+A typical user rulerfile at
+.B $HOME/lib/rules
+that overrides the Go rule and then falls back to the built-in defaults:
+.EX
+# override Go settings
+client is acme
+event is open
+query matches '*.go'
+rule set tabstop 4
+rule set tabexpand on
+
+include initial.rules
+.EE
 .SS "Patterns
 Each rule set contains one or more pattern lines and one or more
 .B rule set
@@ -191,10 +206,13 @@ rule set tabstop 8
 rule set tabexpand off
 .EE
 .SH FILES
-.TF $HOME/lib/rulerfile
+.TF \*9/rule/initial.rules
 .TP
-.B $HOME/lib/rulerfile
-default rulerfile
+.B $HOME/lib/rules
+user rulerfile; used when present
+.TP
+.B \*9/rule/initial.rules
+built-in default rulerfile
 .TP
 .B ruler
 service name for
@@ -202,4 +220,4 @@ service name for
 .SH "SEE ALSO"
 .MR ruler 4 ,
 .MR ruler 3 ,
-.MR rulerquery 1
+.MR rule 1

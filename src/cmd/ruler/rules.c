@@ -111,8 +111,15 @@ getline(void)
 	i = 0;
 	for(;;){
 		c = getc();
-		if(c < 0)
-			return nil;
+		if(c < 0){
+			/* EOF on current input: pop to parent and keep reading */
+			if(popinput())
+				continue;
+			/* no more input */
+			if(i == 0)
+				return nil;
+			break;
+		}
 		if(i == n){
 			n += 256;
 			s = erealloc(s, n);
@@ -133,10 +140,16 @@ doinclude(char *t)
 
 	fd = open(t, OREAD);
 	if(fd < 0 && t[0] != '/' && strncmp(t, "./", 2) != 0 && strncmp(t, "../", 3) != 0){
+		/* check $PLAN9/rule/ first (where initial.rules lives) */
+		snprint(buf, sizeof buf, "#9/rule/%s", t);
+		fd = open(unsharp(buf), OREAD);
+	}
+	if(fd < 0 && t[0] != '/' && strncmp(t, "./", 2) != 0 && strncmp(t, "../", 3) != 0){
+		/* also check $PLAN9/ruler/ for user-installed rule libraries */
 		snprint(buf, sizeof buf, "#9/ruler/%s", t);
 		fd = open(unsharp(buf), OREAD);
 	}
-	if(fd < 0 && home != nil){
+	if(fd < 0 && home != nil && t[0] != '/' && strncmp(t, "./", 2) != 0 && strncmp(t, "../", 3) != 0){
 		snprint(buf, sizeof buf, "%s/lib/ruler/%s", home, t);
 		fd = open(buf, OREAD);
 	}

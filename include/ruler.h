@@ -5,7 +5,7 @@ extern "C" {
 #endif
 
 /*
- * Ruler protocol (see ruler_spec.md).
+ * Ruler protocol
  *
  * Clients write a request to the 9P file "query" (one attribute per line,
  * newline-separated), then read the response (newline-separated key=value

@@ -1,7 +1,7 @@
 /*
  * Ruler client for Acme: query ruler service for directives when a window
  * is associated with a file; apply comfmt, tabstop, tabexpand.
- * See ruler_spec.md and include/ruler.h.
+ * See include/ruler.h.
  */
 #include <u.h>
 #include <libc.h>

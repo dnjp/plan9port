@@ -85,15 +85,15 @@ threadmain(int argc, char *argv[])
 	if(user == nil)
 		user = "nobody";
 
-	if(rulerfile == nil)
-		rulerfile = getenv("rulerfile");
-	if(rulerfile == nil && home != nil){
-		snprint(buf, sizeof buf, "%s/lib/rulerfile", home);
+	if(user==nil || home==nil)
+		error("can't initialize $user or $home: %r");
+	if(rulerfile == nil){
+		sprint(buf, "%s/lib/rules", home);
 		if(access(buf, 0) >= 0)
 			rulerfile = estrdup(buf);
+		else
+			rulerfile = unsharp("#9/rule/initial.rules");
 	}
-	if(rulerfile == nil && home != nil)
-		rulerfile = estrdup(buf);
 
 	rules = emalloc(sizeof(Rulerule*));
 	rules[0] = nil;

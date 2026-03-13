@@ -21,8 +21,6 @@ is a user-level file server that matches requests against a
 and returns configuration directives.
 Its behavior is programmed by a
 .I rulerfile
-(default
-.BR $HOME/lib/rulerfile )
 in the format of
 .MR ruler 7 .
 .PP
@@ -49,9 +47,7 @@ Writing to
 reloads the rule set from the written content; for example,
 .B "9p write ruler/rules"
 with the rulerfile contents replaces the in-memory rules.
-The daemon also reloads from the file at
-.B $rulerfile
-on SIGHUP.
+The daemon also reloads from the file on SIGHUP.
 .PP
 The
 .B -f
@@ -61,19 +57,25 @@ The
 option enables verbose logging to standard error.
 The
 .B -r
-option specifies the path to the rulerfile; otherwise
-.B $rulerfile
-is used, or
-.BR $HOME/lib/rulerfile
+option specifies the path to the rulerfile, overriding all other locations.
+.PP
+If
+.B -r
+is not given, ruler looks for a rulerfile in the following order:
+.IP 1.
+.B $HOME/lib/rules
 if that file exists.
+.IP 2.
+.BR \*9/rule/initial.rules ,
+the built-in default.
 .SH FILES
-.TF $HOME/lib/rulerfile
+.TF \*9/rule/initial.rules
 .TP
-.B $HOME/lib/rulerfile
-default rulerfile
+.B $HOME/lib/rules
+user rulerfile; used when present
 .TP
-.B $rulerfile
-path to rulerfile when set
+.B \*9/rule/initial.rules
+built-in default rulerfile
 .TP
 .B ruler
 mount name for
@@ -83,4 +85,4 @@ mount name for
 .SH "SEE ALSO"
 .MR ruler 7 ,
 .MR ruler 3 ,
-.MR rulerquery 1
+.MR rule 1

@@ -1,0 +1,41 @@
+.TH RULE 1
+.SH NAME
+rule \- query the ruler service
+.SH SYNOPSIS
+.B rule
+.SH DESCRIPTION
+.I Rule
+reads a request from standard input, writes it to the
+.B ruler/query
+9P file, and prints the response to standard output.
+.PP
+The request format is described in
+.MR ruler 7 .
+Each attribute is written on its own line:
+.EX
+	query=\fIpath\fP
+	client=\fIname\fP
+	event=\fIname\fP
+	id=\fIvalue\fP
+.EE
+.PP
+The
+.MR ruler 4
+daemon must be running before
+.I rule
+is invoked.
+.SH EXAMPLE
+Query the ruler for a Go file opened in acme:
+.EX
+	printf 'query=/home/user/src/main.go\nclient=acme\nevent=open\nid=1\n' | rule
+.EE
+A matching rule might respond:
+.EX
+	tabstop=4
+	tabexpand=on
+.EE
+.SH SOURCE
+.B \*9/src/cmd/rule.c
+.SH "SEE ALSO"
+.MR ruler 4 ,
+.MR ruler 7
