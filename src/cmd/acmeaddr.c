@@ -36,20 +36,19 @@ threadmain(int argc, char **argv)
 		threadexitsall("no winid");
 	}
 
-	fs = nsmount("acme", winid);
+	fs = nsmount("acme", nil);
 	if(fs == nil)
 		sysfatal("mount acme: %r");
 
-	// open file descriptor and discard the output
+	// open addr before writing addr=dot
 	snprint(path, sizeof path, "%s/addr", winid);
 	fid = fsopen(fs, path, OREAD);
 	if(fid == nil){
 		fsunmount(fs);
 		sysfatal("open acme/%s/addr: %r", winid);
 	}
-	while((n = fsread(fid, buf, sizeof buf)) > 0)
 
-	/* write addr=dot to set the current selection addr */
+	// write addr=dot to set the current selection addr
 	snprint(path, sizeof path, "%s/ctl", winid);
 	ctl = fsopen(fs, path, OWRITE);
 	if(ctl == nil){
