@@ -155,12 +155,12 @@ if $dobuild; then
 	mk clean
 	mk libs-nuke
 	mk all || exit 1
-	if [ ! -x $PLAN9/src/cmd/o.cleanname -o ! -x $PLAN9/src/cmd/acme/o.acme ]; then
+	if [ ! -x $PLAN9/src/cmd/o.cleanname -o ! -x $PLAN9/src/cmd/acme/o.acme.bin ]; then
 		echo "* Warning: not all binaries built successfully."
 	fi
 	echo "* Installing everything in $PLAN9/bin..."
 	mk -k install || exit 1
-	if [ ! -x $PLAN9/bin/cleanname -o ! -x $PLAN9/bin/acme -o ! -x $PLAN9/bin/sam ]; then
+	if [ ! -x $PLAN9/bin/cleanname -o ! -x $PLAN9/bin/acme.bin -o ! -x $PLAN9/bin/sam.bin ]; then
 		echo " "
 		echo "* Warning: not all binaries built successfully."
 	fi

@@ -1,6 +1,7 @@
 #!/usr/local/plan9/bin/rc
 # editinacme - open a file in acme and wait until its window is deleted.
 # Intended for use as $EDITOR in environments where acme is running.
+# If acme is not running it is started automatically.
 # Usage: editinacme file
 
 if(~ $#PLAN9 0)
@@ -16,6 +17,21 @@ file=`{realpath $1}
 file=$file(1)
 
 echo 'editinacme: editing '$file >[1=2]
+
+# Start acme if it is not already running.
+if(! 9p stat acme >/dev/null >[2]/dev/null) {
+	acme &
+	# Wait up to 10 seconds for acme's 9p port to appear.
+	i=0
+	while(! 9p stat acme >/dev/null >[2]/dev/null) {
+		if(~ $i 20) {
+			echo 'editinacme: timed out waiting for acme' >[1=2]
+			exit 'acme timeout'
+		}
+		sleep 0.5
+		i=`{echo $i | awk '{print $1+1}'}
+	}
+}
 
 plumb -s editinacme -d edit $file
 if(! ~ $status '') {

@@ -1,0 +1,25 @@
+#!/bin/bash
+# plumb-edit — open a file in acme, starting acme first if needed.
+# Called by the plumber's start rule when no editor client is listening.
+# Usage: plumb-edit file [addr]
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+file="$1"
+addr="$2"
+
+# Start acme if not running.
+if ! pgrep -x acme > /dev/null 2>&1; then
+	"$PLAN9/bin/acme" &
+	# Wait for acme's 9p port to appear (up to 10 seconds).
+	for i in $(seq 1 20); do
+		sleep 0.5
+		"$PLAN9/bin/9p" stat acme > /dev/null 2>&1 && break
+	done
+fi
+
+# Re-plumb the file now that acme is running.
+if [ -n "$addr" ]; then
+	"$PLAN9/bin/plumb" -a "addr=$addr" "$file"
+else
+	"$PLAN9/bin/plumb" "$file"
+fi
