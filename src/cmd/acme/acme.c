@@ -671,8 +671,11 @@ mousethread(void *v)
 					wincommit(w, t);
 				else
 					textcommit(t, TRUE);
-				if(m.buttons & 1){
-					textselect(t);
+				if(m.buttons & (1|(1<<Shift))){
+					if(m.buttons & (1<<Shift))
+						textselectextend(t);
+					else
+						textselect(t);
 					if(w)
 						winsettag(w);
 					argtext = t;
