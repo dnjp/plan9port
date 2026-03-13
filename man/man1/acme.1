@@ -69,6 +69,22 @@ Plain files display as text; directories display as columnated lists of the
 names of their components, as in
 .B "ls -p directory|mc
 except that the names of subdirectories have a slash appended.
+When a window is associated with a file (by loading named files,
+.B Get ,
+.B New
+with arguments, or
+.BR Zerox ),
+.I acme
+queries the
+.MR ruler 4
+service for configuration directives; if the ruler returns a matching rule,
+its directives (e.g.\ 
+.BR comfmt ,
+tab width,
+.BR tabexpand ,
+.BR indent )
+are applied to the window before the window is shown.
+Otherwise defaults from environment variables apply (see below).
 .PP
 The
 .B -f
@@ -338,7 +354,11 @@ produces block comments like
 The format is used by the
 .B Com
 command and by Command-/ when the body has the focus.
-If the environment variable
+When a file is opened, the format may be set by the
+.MR ruler 4
+service from the rulerfile (see
+.MR ruler 7 );
+otherwise, if the environment variable
 .B $comfmt
 is set at startup, it supplies the default format for new windows.
 .TP
@@ -463,6 +483,9 @@ set the mode for the current window;
 and
 .B OFF
 set the mode for all existing and future windows.
+When a file is opened, the mode may be set by the
+.MR ruler 4
+service.
 .TP
 .B Kill
 Send a
@@ -545,6 +568,11 @@ order based on their names.
 Set the width of tab stops for this window to the value of the argument, in units of widths of the zero
 character.
 With no arguments, it prints the current value.
+When a file is opened, the tab width may be set by the
+.MR ruler 4
+service; otherwise
+.B $tabstop
+at startup sets the default.
 When lines are selected in the body, typing Tab indents them
 (see the Keyboard section).
 .TP
@@ -555,6 +583,11 @@ When expansion is on, each tab is rendered as
 spaces (see
 .BR Tab );
 when off, a literal tab character is inserted.
+When a file is opened, this setting may be set by the
+.MR ruler 4
+service; otherwise
+.B $tabexpand
+at startup sets the default (on if set).
 This setting also controls whether the
 .B A+
 and
@@ -877,7 +910,9 @@ MIPS-specific binaries for applications
 .br
 .B \*9/bin/awd
 .SH SEE ALSO
-.MR acme 4
+.MR acme 4 ,
+.MR ruler 4 ,
+.MR ruler 7
 .br
 Rob Pike,
 .I

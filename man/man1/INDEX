@@ -174,6 +174,7 @@ whatis rc.1
 readcons readcons.1
 resample resample.1
 rio rio.1
+rulerquery rulerquery.1
 rm rm.1
 asn12dsa rsa.1
 asn12rsa rsa.1
