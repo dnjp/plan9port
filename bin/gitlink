@@ -15,7 +15,7 @@ fn usage {
 	exit usage
 }
 
-fn offset_to_lines {
+fn offsettolines {
 	# args: body_file, q0, q1 (rune/character offsets from acme).
 	# output: start_line end_line
 	# count by line: each line has length($0)+1 chars (newline)
@@ -34,7 +34,7 @@ END { if(end==1) end=line; print start; print end }
 }
 
 # args: body_file, offset (0-based). output: the full line containing that offset (cursor line).
-fn line_at_offset {
+fn lineatoffset {
 	awk -v pos=$2 '
 		BEGIN { pos+=0; r=0 }
 		{ runes = length($0)+1; if (r <= pos && pos < r+runes) { print; exit }; r += runes }
@@ -42,7 +42,7 @@ fn line_at_offset {
 }
 
 # args: body_file, q0, q1 (rune/byte offsets, 0-based). output: exact substring from q0 to q1.
-fn offset_to_text {
+fn offsettotext {
 	# q0(1), q1(1) at call site; coerce to number; strip \r so positions match acme
 	awk -v q0=$2 -v q1=$3 '
 		BEGIN { q0+=0; q1+=0 }
@@ -53,7 +53,7 @@ fn offset_to_text {
 
 # output: provider (github|gitlab|bitbucket), base url, repo path (owner/repo).
 # Parse inside awk so the URL is never split by rc. Use git config (portable).
-fn git_remote_info {
+fn gitremoteinfo {
 	cd $1
 	urlfile=/tmp/gitlinkurl.$pid
 	# write URL to file directly (never capture in rc or it gets word-split)
@@ -101,22 +101,29 @@ fn git_remote_info {
 
 # args: provider, startline, endline, relpath
 # print line fragment (empty, #Ln, #Ln-Lm, or Bitbucket form). no fragment if no line number.
-fn line_fragment {
-	if(~ $2 '' || ! ~ $2 [0-9]*) { echo ''; return }
-	if(~ $3 '' || ~ $2 $3) {
-		if(~ $1 bitbucket)
-			echo '#'^`{echo $4 | awk -F/ '{print $NF}'}^'-'^$2
-		if(! ~ $1 bitbucket)
-			echo '#L'^$2
-		return
+fn linefragment {
+	# args: provider startline endline relpath
+	# no 'return' — use if/if not to avoid return failures in plan9 rc
+	if(~ $2 '' || ! ~ $2 [0-9]*) {
+		echo ''
 	}
-	if(~ $1 bitbucket)
-		echo '#'^`{echo $4 | awk -F/ '{print $NF}'}^'-'^$2^'-'^$3
-	if(! ~ $1 bitbucket)
-		echo '#L'^$2^'-L'^$3
+	if(! ~ $2 '' && ~ $2 [0-9]*) {
+		if(~ $3 '' || ~ $2 $3) {
+			if(~ $1 bitbucket)
+				echo '#'^`{echo $4 | awk -F/ '{print $NF}'}^'-'^$2
+			if(! ~ $1 bitbucket)
+				echo '#L'^$2
+		}
+		if(! ~ $3 '' && ! ~ $2 $3) {
+			if(~ $1 bitbucket)
+				echo '#'^`{echo $4 | awk -F/ '{print $NF}'}^'-'^$2^'-'^$3
+			if(! ~ $1 bitbucket)
+				echo '#L'^$2^'-L'^$3
+		}
+	}
 }
 
-fn git_ref {
+fn gitref {
 	# in $1 (repo root dir), print ref for blob (branch or commit), but prefer branch name
 	cd $1
 	branch=`{git rev-parse --abbrev-ref HEAD >[2]/dev/null}
@@ -130,18 +137,13 @@ fn git_ref {
 }
 
 fn git_relpath {
-	# args: repo_root, absolute_file_path. output: path relative to repo root.
-	# write args to a file so rc never word-splits paths passed to awk -v.
-	_rpfile=/tmp/gitlinkrp.$pid
-	echo $1 > $_rpfile
-	echo $2 >> $_rpfile
+	# args: file containing repo_root on line 1, absolute_file_path on line 2.
 	awk 'NR==1{root=$0; sub(/\/*$/,"",root)}
 	     NR==2{path=$0; sub(/\/*$/,"",path);
 	           if(path==root){print ""; exit}
 	           prefix=root "/";
 	           if(substr(path,1,length(prefix))==prefix) print substr(path,length(prefix)+1);
-	           else print path}' $_rpfile
-	rm -f $_rpfile
+	           else print path}' $1
 }
 
 if(~ $#* 0) {
@@ -160,8 +162,13 @@ if(~ $#* 0) {
 		echo 'window has no file name in tag' >[1=2]
 		exit 'no path'
 	}
-	if(! ~ $filepath /*)
-		filepath=`{pwd}/^$filepath
+	if(! ~ $filepath /*) {
+		_pwdfile=/tmp/gitlinkpwd.$pid
+		pwd > $_pwdfile
+		_pwd=`{sed -n '1p' $_pwdfile}
+		rm -f $_pwdfile
+		filepath=$_pwd^'/'^$filepath
+	}
 	if(~ $q0 '') q0=0
 	if(~ $q1 '') q1=0
 	dirwindow=0
@@ -172,7 +179,7 @@ if(~ $#* 0) {
 		bodyfile=/tmp/gitlinkbody.$pid
 		9p read acme/$winid/body > $bodyfile
 		selfile=/tmp/gitlinksel.$pid
-		offset_to_text $bodyfile $q0(1) $q1(1) | sed 's/^ *//;s/ *$//' | awk 'NF>0{print;exit}' > $selfile
+		offsettotext $bodyfile $q0(1) $q1(1) | sed 's/^ *//;s/ *$//' | awk 'NF>0{print;exit}' > $selfile
 		rm -f $bodyfile
 		if(test -s $selfile) {
 			fpfile=/tmp/gitlinkfp.$pid
@@ -190,13 +197,15 @@ if(~ $#* 0) {
 		startline=''; endline=''
 	}
 	if(! ~ $dirwindow 1) {
-		if(~ $q0 $q1)
-			startline=''; endline=''
+		if(~ $q0 $q1) {
+			startline=''
+			endline=''
+		}
 		if(! ~ $q0 $q1) {
 			bodyfile=/tmp/gitlinkbody.$pid
 			linesfile=/tmp/gitlinklines.$pid
 			9p read acme/$winid/body > $bodyfile
-			offset_to_lines $bodyfile $q0 $q1 > $linesfile
+			offsettolines $bodyfile $q0 $q1 > $linesfile
 			startline=`{sed -n '1p' $linesfile}
 			endline=`{sed -n '2p' $linesfile}
 			rm -f $bodyfile $linesfile
@@ -205,15 +214,43 @@ if(~ $#* 0) {
 }
 if(! ~ $#* 0) {
 	# CLI: file [line1 [line2]]
-	filepath=$1
-	if(! ~ $filepath /*)
-		filepath=`{pwd}/^$filepath
-	if(~ $#* 1)
-		startline=''; endline=''
-	if(~ $#* 2)
-		startline=$2; endline=''
-	if(~ $#* 3)
-		startline=$2; endline=$3
+	# resolve to absolute canonical path via cd+pwd so ../ and ./ are eliminated
+	_fpfile=/tmp/gitlinkfp.$pid
+	if(test -d $1) {
+		cd $1 >[2]/dev/null && pwd > $_fpfile
+	}
+	if(! test -d $1) {
+		_dirfile=/tmp/gitlinkdir.$pid
+		_basefile=/tmp/gitlinkbase.$pid
+		dirname $1 > $_dirfile
+		basename $1 > $_basefile
+		_dir=`{sed -n '1p' $_dirfile}
+		rm -f $_dirfile
+		cd $_dir >[2]/dev/null
+		pwd > $_fpfile
+		# join absdir and basename entirely in awk to avoid rc word-splitting
+		awk 'NR==1{d=$0} NR==2{print d "/" $0}' $_fpfile $_basefile > $_dirfile
+		if(test -s $_dirfile)
+			cp $_dirfile $_fpfile
+		rm -f $_dirfile $_basefile
+	}
+	if(test -s $_fpfile) {
+		filepath=`{sed -n '1p' $_fpfile}
+		filepath=$filepath(1)
+	}
+	if(! test -s $_fpfile)
+		filepath=$1
+	rm -f $_fpfile
+	startline=''
+	endline=''
+	if(~ $#* 2) {
+		startline=$2
+		endline=''
+	}
+	if(~ $#* 3) {
+		startline=$2
+		endline=$3
+	}
 }
 
 # run git from the path itself if it's a directory, else from the file's directory
@@ -223,33 +260,40 @@ if(! test -d $filepath)
 	filedir=`{dirname $filepath}
 filedir=$filedir(1)
 rootfile=/tmp/gitlinkroot.$pid
+fpathfile=/tmp/gitlinkfpath.$pid
 cd $filedir(1) >[2]/dev/null
 git rev-parse --show-toplevel > $rootfile >[2]/dev/null
 if(! test -s $rootfile) { rm -f $rootfile; root='' }
-if(test -s $rootfile) {
+if(test -s $rootfile)
 	root=`{sed -n '1p' $rootfile}
-	rm -f $rootfile
-}
 
 if(~ $root '') {
+	rm -f $rootfile
 	echo 'not inside a git repo: '"$filepath" >[1=2]
 	exit 'not a repo'
 }
 
-info=(`{git_remote_info $root})
+info=(`{gitremoteinfo $root})
 if(~ $#info 0 || ~ $#info 1 || ~ $#info 2) {
+	rm -f $rootfile
 	echo 'could not parse remote URL' >[1=2]
 	exit 'parse'
 }
 provider=$info(1)
 base=$info(2)
 repopath=$info(3)
-ref=`{git_ref $root}
-rel=`{git_relpath $root(1) $filepath(1)}
+ref=`{gitref $root}
+# build relpath input file: line1=root (from rootfile), line2=filepath
+# write filepath via echo into fpathfile — single path, no spaces expected
+echo $filepath > $fpathfile
+_rpfile=/tmp/gitlinkrp.$pid
+cat $rootfile $fpathfile > $_rpfile
+rel=`{git_relpath $_rpfile}
+rm -f $rootfile $fpathfile $_rpfile
 if(~ $dirwindow 1 || test -d $filepath)
 	linefrag=''
 if(! ~ $dirwindow 1 && ! test -d $filepath)
-	linefrag=`{line_fragment $provider $startline $endline $rel}
+	linefrag=`{linefragment $provider $startline $endline $rel}
 # ensure no null list in concatenation
 if(~ $#provider 0) provider=github
 if(~ $#base 0) base=''
