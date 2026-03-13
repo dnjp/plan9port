@@ -1,23 +1,8 @@
 #!/bin/bash
+export INSIDE_P9P=true
 export INSIDE_ACME=true
 export tabstop=8
 
 PLAN9=${PLAN9:-/usr/local/plan9}
-cd "$HOME"
 
-# Source the user's login environment so PLAN9, PATH, fonts etc. are set.
-fshell=$(finger "$(whoami)" | sed -n 's/.*Shell: //p' | sed 1q)
-SHELL=${fshell:-$SHELL}
-
-case "$SHELL" in
-*/bash)  . ~/.bash_profile ;;
-*/zsh)   . ~/.zprofile ;;
-*)       . ~/.profile ;;
-esac
-
-if ! [[ :$PATH: =~ :$PLAN9/bin: ]]; then
-	PATH=$PATH:$PLAN9/bin
-fi
-
-# Delegate to the shared launcher and wait for acme to exit.
-exec "$PLAN9/bin/acme-start"
+exec "$PLAN9/bin/acme"

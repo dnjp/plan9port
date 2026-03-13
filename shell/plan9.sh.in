@@ -37,3 +37,14 @@ export fixfont varfont
 # Path to an acme dump file to restore on startup.
 : "${acmedump:=$HOME/acme.dump}"
 export acmedump
+
+# Interactive shell setup inside a plan9port app (acme, sam, 9term).
+# When $INSIDE_P9P is set, source p9p-session.sh from your ~/.bashrc or
+# ~/.zshrc to get the right terminal behaviour (TERM=dumb, awd, PAGER=nobs,
+# cd override, etc.).  Example:
+#
+#   if [ -n "$INSIDE_P9P" ]; then
+#       . $PLAN9/shell/p9p-session.sh
+#   else
+#       # normal interactive shell setup (completions, plugins, etc.)
+#   fi

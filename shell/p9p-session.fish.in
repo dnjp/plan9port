@@ -1,0 +1,16 @@
+# p9p-session.fish — fish session setup for shells running inside a plan9port app.
+# Source from config.fish:
+#
+#   if set -q INSIDE_P9P
+#       source /usr/local/plan9/shell/p9p-session.fish
+#   end
+
+awd
+
+function cd
+    builtin cd $argv; and awd
+end
+
+set -gx TERM dumb
+set -gx PAGER nobs
+set -gx MANPAGER nobs
