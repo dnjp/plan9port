@@ -1,6 +1,8 @@
 /*
  * Ruler client for Acme: query ruler service for directives when a window
- * is associated with a file; apply comfmt, tabstop, tabexpand.
+ * is associated with a file; apply comfmt, tabstop, tabexpand, font.
+ * The request includes a "type" field: "win" for win(1) terminal windows
+ * (name contains "/-"), "file" for ordinary file windows.
  * See include/ruler.h.
  */
 #include <u.h>
@@ -34,7 +36,7 @@ rulerlog(char *fmt, ...)
 	va_start(a, fmt);
 	vseprint(buf, buf+sizeof buf, fmt, a);
 	va_end(a);
-	fprint(2, "ruler: %s", buf);
+	fprint(2, "acme/ruler: %s", buf);
 	if(buf[0] != '\0' && buf[strlen(buf)-1] != '\n')
 		fprint(2, "\n");
 }
@@ -123,6 +125,29 @@ applydirective(Window *w, char *key, char *val)
 		rulerlog("apply indent=%s", w->autoindent ? "on" : "off");
 		return;
 	}
+	if(strcmp(key, "font") == 0){
+		Reffont *rf;
+		int fix;
+
+		parsevalue(val, buf, sizeof buf);
+		fix = (strcmp(buf, "fix") == 0);
+		rulerlog("font directive: val=%s fix=%d fontnames[0]=%s fontnames[1]=%s",
+			buf, fix,
+			fontnames[0] ? fontnames[0] : "(nil)",
+			fontnames[1] ? fontnames[1] : "(nil)");
+		rf = rfget(fix, FALSE, FALSE, nil);
+		if(rf != nil){
+			rulerlog("apply font=%s -> %s", buf, rf->f->name);
+			rfclose(w->body.reffont);
+			w->body.reffont = rf;
+			w->body.fr.font = rf->f;
+			frinittick(&w->body.fr);
+			colgrow(w->col, w, -1);
+		} else {
+			rulerlog("rfget failed for font=%s (fix=%d)", buf, fix);
+		}
+		return;
+	}
 	rulerlog("ignore unknown key=%s", key);
 }
 
@@ -169,6 +194,37 @@ applyresponse(Window *w, char *body, long nbody)
 		rulerlog("response had no key=value lines (body %ld bytes)", nbody);
 }
 
+/*
+ * rulerwintype returns the logical window type for use in ruler queries.
+ * It checks w->dumpstr first: win(1) sets this to the command used to
+ * recreate the window (e.g. "win rc"), so any dumpstr starting with "win"
+ * reliably identifies a terminal window. Falls back to detecting the "/-"
+ * path pattern that win(1) writes into the window name.
+ */
+static char*
+rulerwintype(Window *w)
+{
+	char *path, *t;
+
+	if(w == nil)
+		return "file";
+
+	/* Primary: dumpstr is set by win(1) via the "dump" ctl message. */
+	if(w->dumpstr != nil && strncmp(w->dumpstr, "win", 3) == 0 &&
+	   (w->dumpstr[3] == '\0' || w->dumpstr[3] == ' ' || w->dumpstr[3] == '\n'))
+		return "win";
+
+	/* Fallback: win(1) names its window "<dir>/-<shell>". */
+	if(w->body.file == nil || w->body.file->nname == 0)
+		return "file";
+	path = runetobyte(w->body.file->name, w->body.file->nname);
+	if(path == nil)
+		return "file";
+	t = strstr(path, "/-") != nil ? "win" : "file";
+	free(path);
+	return t;
+}
+
 void
 rulerapply(Window *w)
 {
@@ -183,8 +239,11 @@ rulerapply(Window *w)
 		return;
 	}
 	if(w->isdir){
-		if(rulerdebug)
-			rulerlog("skip: window is directory");
+		rulerlog("skip: window is directory");
+		return;
+	}
+	if(w->isscratch){
+		rulerlog("skip: window is scratch");
 		return;
 	}
 	path = runetobyte(w->body.file->name, w->body.file->nname);
@@ -206,9 +265,11 @@ rulerapply(Window *w)
 		cleanname(abspath);
 		querypath = abspath;
 		free(path);
+		path = nil;
 	}else{
 		abspath = nil;
 		querypath = path;
+		path = nil;
 	}
 	{
 		CFsys *fs;
@@ -217,33 +278,33 @@ rulerapply(Window *w)
 		char resp[Respsize];
 		long n, nw, nr;
 		char *line, *end;
+		char *wtype;
 
-		n = snprint(req, sizeof req, "%s=%s\n%s=acme\n%s=open\n%s=%d\n",
+		wtype = rulerwintype(w);
+		rulerlog("query id=%d type=%s path=%s", w->id, wtype, querypath);
+		n = snprint(req, sizeof req, "%s=%s\n%s=acme\n%s=open\n%s=%d\n%s=%s\n",
 			RulerQuery, querypath,
-			RulerClient, RulerEvent, RulerId, w->id);
-		if(abspath != nil)
-			free(abspath);
-		else
-			free(path);
+			RulerClient, RulerEvent, RulerId, w->id,
+			RulerType, wtype);
 		if(n >= (int)sizeof req){
-			if(rulerdebug)
-				rulerlog("skip: request too long");
+			rulerlog("skip: request too long");
+			free(querypath);
 			return;
 		}
 		fs = nsmount("ruler", nil);
 		if(fs == nil){
-			if(rulerdebug)
-				rulerlog("nsmount ruler: %r");
+			rulerlog("nsmount ruler failed: %r");
+			free(querypath);
 			return;
 		}
 		fid = fsopen(fs, RulerQueryFile, ORDWR);
 		if(fid == nil){
-			if(rulerdebug)
-				rulerlog("fsopen query: %r");
+			rulerlog("fsopen query: %r");
 			fsunmount(fs);
+			free(querypath);
 			return;
 		}
-		rulerlog("query win id=%d request %ld bytes", w->id, n);
+		rulerlog("request %ld bytes", n);
 		if(rulerdebug)
 			for(line = req; line < req + n; line = end + 1){
 				end = memchr(line, '\n', req + n - line);
@@ -257,10 +318,10 @@ rulerapply(Window *w)
 			}
 		nw = fswrite(fid, req, n);
 		if(nw != n){
-			if(rulerdebug)
-				rulerlog("fswrite: %r (wrote %ld/%ld)", nw, n);
+			rulerlog("fswrite: %r (wrote %ld/%ld)", nw, n);
 			fsclose(fid);
 			fsunmount(fs);
+			free(querypath);
 			return;
 		}
 		fsseek(fid, 0, 0);
@@ -273,10 +334,11 @@ rulerapply(Window *w)
 		fsclose(fid);
 		fsunmount(fs);
 		if(nr <= 0){
-			if(rulerdebug)
-				rulerlog("response 0 bytes (no rule matched? check query path and rulerfile patterns)");
+			rulerlog("no match for path=%s type=%s", querypath, wtype);
+			free(querypath);
 			return;
 		}
+		free(querypath);
 		resp[nr] = '\0';
 		if(rulerdebug){
 			char *nl = memchr(resp, '\n', nr);

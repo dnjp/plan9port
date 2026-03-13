@@ -1,11 +1,21 @@
 # Ruler rules (plumber-style). Blank line terminates each rule set.
-# See https://9fans.github.io/plan9port/man/man7/plumb.html
-# All rules: client=acme, event=new (new window opened).
+# See https://9fans.github.io/plan9port/man/man7/ruler.html
+# All rules: client=acme, event=open (window opened).
+#
+# font=fix uses the fixed-width font (fixfont); font=var uses the proportional
+# font (varfont). Source code uses fix; prose and markup use var.
+
+# win(1) terminal windows
+client is acme
+event is open
+type is win
+rule set font fix
 
 # text
 client is acme
 event is open
 query matches '*.txt'
+rule set font var
 rule set comfmt '# %s'
 rule set tabstop 8
 rule set tabexpand off
@@ -17,6 +27,7 @@ query matches '*.rc'
 query matches '*.sh'
 query matches '*.zsh'
 query matches '.*.(profile|.*rc)$'
+rule set font fix
 rule set comfmt '# %s'
 rule set tabstop 8
 rule set tabexpand off
@@ -26,6 +37,7 @@ client is acme
 event is open
 query matches '*Makefile'
 query matches '*mkfile'
+rule set font fix
 rule set comfmt '# %s'
 rule set tabstop 8
 rule set tabexpand off
@@ -34,6 +46,7 @@ rule set tabexpand off
 client is acme
 event is open
 query matches '*.html'
+rule set font fix
 rule set comfmt '<!-- %s -->'
 rule set tabstop 2
 rule set tabexpand on
@@ -42,6 +55,7 @@ rule set tabexpand on
 client is acme
 event is open
 query matches '*.md'
+rule set font var
 rule set tabstop 2
 rule set tabexpand on
 
@@ -50,6 +64,7 @@ client is acme
 event is open
 query matches '*.c'
 query matches '*.h'
+rule set font fix
 rule set comfmt '/* %s */'
 rule set tabstop 8
 rule set tabexpand off
@@ -59,7 +74,7 @@ client is acme
 event is open
 query matches '*.go'
 query matches '.*(\.go|go\.mod|go\.sum)$'
+rule set font fix
 rule set comfmt '// %s'
 rule set tabstop 8
 rule set tabexpand off
-

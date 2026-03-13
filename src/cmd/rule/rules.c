@@ -153,8 +153,12 @@ doinclude(char *t)
 		snprint(buf, sizeof buf, "%s/lib/ruler/%s", home, t);
 		fd = open(buf, OREAD);
 	}
-	if(fd < 0)
+	if(fd < 0){
+		dlog("include: can't open '%s' (tried bare path, #9/rule/, #9/ruler/, ~/lib/ruler/)", t);
 		parseerror("can't open %s for inclusion", t);
+		return 1;
+	}
+	dlog("include: opened '%s'", t);
 	pushinput(t, fd, nil);
 	return 1;
 }
@@ -213,6 +217,7 @@ freerule(Rulerule *r)
 	freepat(r->pats);
 	free(r->client);
 	free(r->event);
+	free(r->type);
 	free(r->directives);
 	free(r);
 }
@@ -274,13 +279,14 @@ readruleset(int *eof)
 	int n;
 	Rulerule *r;
 	Pathpat *pats;
-	char *client, *event;
+	char *client, *event, *type;
 	char *dirbuf;
 	int dirlen, ndir, have_line;
 
 	pats = nil;
 	client = nil;
 	event = nil;
+	type = nil;
 	dirbuf = nil;
 	dirlen = 0;
 	ndir = 0;
@@ -382,6 +388,12 @@ readruleset(int *eof)
 			event = estrdup(args[2]);
 			continue;
 		}
+		/* type is X */
+		if(n >= 3 && strcmp(args[0], "type") == 0 && strcmp(args[1], "is") == 0){
+			if(type != nil) free(type);
+			type = estrdup(args[2]);
+			continue;
+		}
 		/* query matches 'pat' */
 		if(n >= 3 && strcmp(args[0], "query") == 0 && strcmp(args[1], "matches") == 0){
 			pats = parse_query_matches(args[2], pats);
@@ -390,7 +402,9 @@ readruleset(int *eof)
 		/* unknown line: skip (only blank/# terminates rule set) */
 	}
 
-	if(pats == nil){
+	/* A rule with no path patterns is only valid if it has a type constraint
+	 * (e.g. "type is win") — in that case it matches all paths for that type. */
+	if(pats == nil && type == nil){
 		if(client) free(client);
 		if(event) free(event);
 		if(dirbuf) free(dirbuf);
@@ -400,8 +414,12 @@ readruleset(int *eof)
 	r->pats = pats;
 	r->client = client;
 	r->event = event;
+	r->type = type;
 	r->directives = dirbuf != nil ? dirbuf : estrdup("");
 	r->next = nil;
+	dlog("readruleset: loaded rule client=%s event=%s type=%s pat=%s directives=%s",
+		client?client:"*", event?event:"*", type?type:"*",
+		pats?pats->value:"(none)", r->directives);
 	return r;
 }
 
@@ -414,7 +432,8 @@ readrules(char *name, int fd)
 	parsing = 1;
 	pushinput(name, fd, nil);
 	out = emalloc(sizeof(Rulerule*));
-	for(n = 0; ; n++){
+	out[0] = nil;
+	for(n = 0; ; ){
 		eof = 0;
 		r = readruleset(&eof);
 		if(r == nil && eof)
@@ -424,6 +443,7 @@ readrules(char *name, int fd)
 		out = erealloc(out, (n+2)*sizeof(Rulerule*));
 		out[n] = r;
 		out[n+1] = nil;
+		n++;
 	}
 	popinput();
 	parsing = 0;
@@ -450,7 +470,8 @@ readrulesfromstring(char *s, int len)
 	pushinput("<rules>", -1, (uchar*)buf);
 	((Input*)input)->end = (uchar*)buf + len;
 	out = emalloc(sizeof(Rulerule*));
-	for(n = 0; ; n++){
+	out[0] = nil;
+	for(n = 0; ; ){
 		eof = 0;
 		r = readruleset(&eof);
 		if(r == nil && eof)
@@ -460,6 +481,7 @@ readrulesfromstring(char *s, int len)
 		out = erealloc(out, (n+2)*sizeof(Rulerule*));
 		out[n] = r;
 		out[n+1] = nil;
+		n++;
 	}
 	popinput();
 	free(buf);
@@ -494,6 +516,11 @@ printrule(Rulerule *r)
 	if(r->event != nil){
 		s = concat(s, "event is ");
 		s = concat(s, r->event);
+		s = concat(s, "\n");
+	}
+	if(r->type != nil){
+		s = concat(s, "type is ");
+		s = concat(s, r->type);
 		s = concat(s, "\n");
 	}
 	for(p = r->pats; p != nil; p = p->next){
@@ -611,6 +638,7 @@ parseerror(char *fmt, ...)
 	vseprint(buf, buf+sizeof buf, fmt, args);
 	va_end(args);
 
+	dlog("parseerror: %s", buf);
 	if(parsing){
 		printinputstack();
 		fprint(2, "%s\n", buf);

@@ -34,6 +34,22 @@ Used when a rule includes an event scope.
 .TP
 .B id
 Identity of the calling component (e.g. window id); not used for matching.
+.TP
+.B type
+Optional window type hint sent by the client.
+.MR acme 1
+sends
+.B win
+for
+.MR win 1
+terminal windows and
+.B file
+for ordinary file windows.
+Omitting
+.B type
+from the request is allowed; rules with
+.B "type is"
+will not match such requests.
 .RE
 .PP
 Example:
@@ -128,6 +144,23 @@ The rule applies only when the request
 equals
 .IR value .
 .TP
+.B "type is \fIvalue\fP"
+The rule applies only when the request
+.B type
+equals
+.IR value .
+.MR acme 1
+sends
+.B win
+for
+.MR win 1
+terminal windows and
+.B file
+for ordinary file windows.
+A rule without
+.B "type is"
+matches any type (including requests that omit the field entirely).
+.TP
 .B "query matches \fIpattern\fP"
 The request
 .B query
@@ -186,6 +219,16 @@ or
 .B on
 or
 .BR off .
+.TP
+.B font
+.B fix
+to use the fixed-width font
+.RB ( fixfont )
+or
+.B var
+to use the proportional font
+.RB ( varfont ).
+Applied to the window body when the window is opened.
 .RE
 .SH EXAMPLE
 .EX

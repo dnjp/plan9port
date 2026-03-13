@@ -699,6 +699,7 @@ out:
 			seq++;
 			filemark(w->body.file);
 			winsetname(w, r, nr);
+			rulerapply(w);
 			m += (q+1) - pp;
 		}else
 		if(strncmp(p, "font ", 5) == 0){		/* execute font command */

@@ -251,11 +251,12 @@ dostat(Dirtab *d, uchar *buf, uint nbuf, uint t)
 
 /*
  * Parse request buffer (one attribute per line, name=value).
- * Set *query, *client, *event. Id is required but not used for matching.
- * Return 1 if all four present, 0 otherwise.
+ * Set *query, *client, *event, *type. Id is required but not used for matching.
+ * type is optional; *type is set to nil if not present.
+ * Return 1 if query, client, event, and id are all present, 0 otherwise.
  */
 static int
-parsereq(char *buf, long n, char **query, char **client, char **event)
+parsereq(char *buf, long n, char **query, char **client, char **event, char **type)
 {
 	char *p, *end, *eq;
 	int haveq, havec, havee, haveid;
@@ -263,6 +264,7 @@ parsereq(char *buf, long n, char **query, char **client, char **event)
 	*query = nil;
 	*client = nil;
 	*event = nil;
+	*type = nil;
 	haveq = havec = havee = haveid = 0;
 	end = buf + n;
 	for(p = buf; p < end; ){
@@ -294,6 +296,14 @@ parsereq(char *buf, long n, char **query, char **client, char **event)
 			memmove(*event, p, eq - p);
 			(*event)[eq - p] = '\0';
 			havee = 1;
+			p = eq;
+		}else if(strncmp(p, RulerType "=", 5) == 0){
+			p += 5;
+			eq = p;
+			while(eq < end && *eq != '\n' && *eq != '\r') eq++;
+			*type = emalloc(eq - p + 1);
+			memmove(*type, p, eq - p);
+			(*type)[eq - p] = '\0';
 			p = eq;
 		}else if(strncmp(p, RulerId "=", 3) == 0){
 			haveid = 1;
@@ -521,17 +531,18 @@ fsysread(Fcall *t, uchar *buf, Fid *f)
 	int i, n, o, e;
 	uint len;
 	Dirtab *d;
-	char *query, *client, *event;
+	char *query, *client, *event, *type;
 	char *resp;
 
 	if(f->qid.path == Qquery){
 		/* If they wrote a request, parse and match now */
 		if(f->writebuf != nil && f->writecount > 0){
-			if(parsereq(f->writebuf, f->writecount, &query, &client, &event)){
-				resp = matchquery(query, client, event);
+			if(parsereq(f->writebuf, f->writecount, &query, &client, &event, &type)){
+				resp = matchquery(query, client, event, type);
 				free(query);
 				free(client);
 				free(event);
+				free(type);
 				if(resp != nil){
 					f->response = resp;
 					f->resplen = strlen(resp);
@@ -681,16 +692,17 @@ fsysclunk(Fcall *t, uchar *buf, Fid *f)
 			rulesref.ref--;
 			unlock(&rulesref.lk);
 		}
-		if(f->qid.path == Qquery){
+			if(f->qid.path == Qquery){
 			/* Write but no read: run match and store for next open/read */
 			if(f->writebuf != nil && f->writecount > 0 && f->response == nil){
-				char *query, *client, *event;
+				char *query, *client, *event, *type;
 				char *resp;
-				if(parsereq(f->writebuf, f->writecount, &query, &client, &event)){
-					resp = matchquery(query, client, event);
+				if(parsereq(f->writebuf, f->writecount, &query, &client, &event, &type)){
+					resp = matchquery(query, client, event, type);
 					free(query);
 					free(client);
 					free(event);
+					free(type);
 					if(resp != nil){
 						if(lastquery_resp != nil)
 							free(lastquery_resp);
