@@ -1161,6 +1161,31 @@ texttype(Text *t, Rune r)
 			textfill(t->file->text[i]);
 		t->iq1 = t->q0;
 		return;
+	case 0x0B:	/* ^K: delete to end of line */
+		typecommit(t);
+		q0 = t->q0;
+		q1 = q0;
+		/* if cursor is sitting on a newline, delete just the newline */
+		if(q1 < t->file->b.nc && textreadc(t, q1) == '\n'){
+			q1++;
+		} else {
+			while(q1 < t->file->b.nc && textreadc(t, q1) != '\n')
+				q1++;
+		}
+		if(q1 > q0){
+			if(t->what == Body){
+				seq++;
+				filemark(t->file);
+			}
+			for(i=0; i<t->file->ntext; i++){
+				u = t->file->text[i];
+				textdelete(u, q0, q1, TRUE);
+				textsetselect(u, q0, q0);
+				textfill(u);
+			}
+		}
+		t->iq1 = t->q0;
+		return;
 	case '\n':
 		if(t->w->autoindent){
 			/* find beginning of previous line using backspace code */
