@@ -138,11 +138,17 @@ applydirective(Window *w, char *key, char *val)
 		rf = rfget(fix, FALSE, FALSE, nil);
 		if(rf != nil){
 			rulerlog("apply font=%s -> %s", buf, rf->f->name);
+			if(w->body.fr.font == rf->f){
+				/* font already set by rulerprefont; no redraw needed */
+				rfclose(rf);
+				rulerlog("font already set, skipping winresize");
+				return;
+			}
 			rfclose(w->body.reffont);
 			w->body.reffont = rf;
 			w->body.fr.font = rf->f;
 			frinittick(&w->body.fr);
-			colgrow(w->col, w, -1);
+			winresize(w, w->r, FALSE, TRUE);
 		} else {
 			rulerlog("rfget failed for font=%s (fix=%d)", buf, fix);
 		}
@@ -225,129 +231,189 @@ rulerwintype(Window *w)
 	return t;
 }
 
+/*
+ * rulerquerypath builds the absolute query path for w's file name.
+ * Returns an allocated string the caller must free, or nil on failure.
+ */
+static char*
+rulerquerypath(Window *w)
+{
+	char *path, *abspath;
+	int pathlen;
+
+	path = runetobyte(w->body.file->name, w->body.file->nname);
+	if(path == nil || path[0] == '\0'){
+		free(path);
+		return nil;
+	}
+	if(path[0] != '/'){
+		pathlen = strlen(path);
+		abspath = emalloc(pathlen + strlen(wdir) + 2);
+		snprint(abspath, pathlen + strlen(wdir) + 2, "%s/%s", wdir, path);
+		cleanname(abspath);
+		free(path);
+		return abspath;
+	}
+	return path;
+}
+
+/*
+ * rulerquery sends a ruler query for w and returns the response body in an
+ * allocated buffer (caller must free). Returns nil if ruler is unavailable or
+ * no match. querypath is consumed (freed) by this function.
+ */
+static char*
+rulerquery(Window *w, char *querypath)
+{
+	CFsys *fs;
+	CFid *fid;
+	char req[Reqsize];
+	char *resp;
+	long n, nw, nr;
+	char *wtype;
+
+	wtype = rulerwintype(w);
+	n = snprint(req, sizeof req, "%s=%s\n%s=acme\n%s=open\n%s=%d\n%s=%s\n",
+		RulerQuery, querypath,
+		RulerClient, RulerEvent, RulerId, w->id,
+		RulerType, wtype);
+	free(querypath);
+	if(n >= (int)sizeof req)
+		return nil;
+	fs = nsmount("ruler", nil);
+	if(fs == nil)
+		return nil;
+	fid = fsopen(fs, RulerQueryFile, ORDWR);
+	if(fid == nil){
+		fsunmount(fs);
+		return nil;
+	}
+	nw = fswrite(fid, req, n);
+	if(nw != n){
+		fsclose(fid);
+		fsunmount(fs);
+		return nil;
+	}
+	fsseek(fid, 0, 0);
+	resp = emalloc(Respsize);
+	nr = 0;
+	while((n = fsread(fid, resp + nr, Respsize - nr - 1)) > 0){
+		nr += n;
+		if(nr >= Respsize - 1)
+			break;
+	}
+	fsclose(fid);
+	fsunmount(fs);
+	if(nr <= 0){
+		free(resp);
+		return nil;
+	}
+	resp[nr] = '\0';
+	return resp;
+}
+
+/*
+ * rulerprefont queries the ruler for w's font directive and applies it
+ * directly to w->body without triggering a winresize. Call this after
+ * winsetname but before textload so the frame is filled with the correct
+ * font from the start, avoiding a double render.
+ */
+void
+rulerprefont(Window *w)
+{
+	char *querypath, *resp, *p, *eq, *lineend;
+	char key[64], val[256], buf[256];
+	int fix;
+	Reffont *rf;
+	if(getenv("rulerdebug") != nil)
+		rulerdebug = 1;
+	if(w == nil || w->body.file == nil || w->body.file->nname == 0)
+		return;
+	if(w->isdir || w->isscratch)
+		return;
+	querypath = rulerquerypath(w);
+	if(querypath == nil)
+		return;
+
+	resp = rulerquery(w, querypath); /* querypath is freed by rulerquery */
+	if(resp == nil)
+		return;
+
+	/* scan response for font= directive only */
+	p = resp;
+	while(*p != '\0'){
+		lineend = strchr(p, '\n');
+		if(lineend == nil)
+			lineend = p + strlen(p);
+		eq = memchr(p, '=', lineend - p);
+		if(eq != nil && eq > p){
+			int keylen = eq - p;
+			if(keylen >= (int)sizeof key)
+				keylen = sizeof key - 1;
+			memmove(key, p, keylen);
+			key[keylen] = '\0';
+			if(strcmp(key, "font") == 0){
+				int vlen = lineend - (eq + 1);
+				if(vlen >= (int)sizeof val)
+					vlen = sizeof val - 1;
+				memmove(val, eq + 1, vlen);
+				val[vlen] = '\0';
+				parsevalue(val, buf, sizeof buf);
+				fix = (strcmp(buf, "fix") == 0);
+				rf = rfget(fix, FALSE, FALSE, nil);
+				if(rf != nil){
+					rulerlog("prefont: apply font=%s -> %s", buf, rf->f->name);
+					rfclose(w->body.reffont);
+					w->body.reffont = rf;
+					w->body.fr.font = rf->f;
+					w->body.fr.maxtab = w->body.tabstop * stringwidth(rf->f, "0");
+					frsetrects(&w->body.fr, w->body.fr.entire, w->body.fr.b);
+					frinittick(&w->body.fr);
+				}
+				break;
+			}
+		}
+		p = (*lineend == '\0') ? lineend : lineend + 1;
+	}
+	free(resp);
+}
+
 void
 rulerapply(Window *w)
 {
-	char *path, *abspath, *querypath;
-	int pathlen;
+	char *querypath, *resp;
 
 	if(getenv("rulerdebug") != nil)
 		rulerdebug = 1;
 	if(w == nil || w->body.file == nil || w->body.file->nname == 0){
-		if(rulerdebug)
-			rulerlog("skip: no file name (win %p)", w);
+		rulerlog("skip: no file name");
 		return;
 	}
 	if(w->isdir){
-		rulerlog("skip: window is directory");
+		rulerlog("skip: directory");
 		return;
 	}
 	if(w->isscratch){
-		rulerlog("skip: window is scratch");
+		rulerlog("skip: scratch");
 		return;
 	}
-	path = runetobyte(w->body.file->name, w->body.file->nname);
-	if(path == nil){
-		if(rulerdebug)
-			rulerlog("skip: runetobyte failed");
+	querypath = rulerquerypath(w);
+	if(querypath == nil){
+		rulerlog("skip: empty path");
 		return;
 	}
-	pathlen = strlen(path);
-	if(pathlen == 0){
-		free(path);
-		if(rulerdebug)
-			rulerlog("skip: empty path");
+	rulerlog("query id=%d type=%s path=%s", w->id, rulerwintype(w), querypath);
+	resp = rulerquery(w, querypath); /* querypath freed by rulerquery */
+	if(resp == nil){
+		rulerlog("no match");
 		return;
 	}
-	if(path[0] != '/'){
-		abspath = emalloc(pathlen + strlen(wdir) + 2);
-		snprint(abspath, pathlen + strlen(wdir) + 2, "%s/%s", wdir, path);
-		cleanname(abspath);
-		querypath = abspath;
-		free(path);
-		path = nil;
-	}else{
-		abspath = nil;
-		querypath = path;
-		path = nil;
+	if(rulerdebug){
+		char *nl = memchr(resp, '\n', strlen(resp));
+		if(nl != nil) *nl = '\0';
+		rulerlog("response: %s", resp);
+		if(nl != nil) *nl = '\n';
 	}
-	{
-		CFsys *fs;
-		CFid *fid;
-		char req[Reqsize];
-		char resp[Respsize];
-		long n, nw, nr;
-		char *line, *end;
-		char *wtype;
-
-		wtype = rulerwintype(w);
-		rulerlog("query id=%d type=%s path=%s", w->id, wtype, querypath);
-		n = snprint(req, sizeof req, "%s=%s\n%s=acme\n%s=open\n%s=%d\n%s=%s\n",
-			RulerQuery, querypath,
-			RulerClient, RulerEvent, RulerId, w->id,
-			RulerType, wtype);
-		if(n >= (int)sizeof req){
-			rulerlog("skip: request too long");
-			free(querypath);
-			return;
-		}
-		fs = nsmount("ruler", nil);
-		if(fs == nil){
-			rulerlog("nsmount ruler failed: %r");
-			free(querypath);
-			return;
-		}
-		fid = fsopen(fs, RulerQueryFile, ORDWR);
-		if(fid == nil){
-			rulerlog("fsopen query: %r");
-			fsunmount(fs);
-			free(querypath);
-			return;
-		}
-		rulerlog("request %ld bytes", n);
-		if(rulerdebug)
-			for(line = req; line < req + n; line = end + 1){
-				end = memchr(line, '\n', req + n - line);
-				if(end == nil)
-					end = req + n;
-				if(end > line){
-					*end = '\0';
-					rulerlog("  %s", line);
-					*end = '\n';
-				}
-			}
-		nw = fswrite(fid, req, n);
-		if(nw != n){
-			rulerlog("fswrite: %r (wrote %ld/%ld)", nw, n);
-			fsclose(fid);
-			fsunmount(fs);
-			free(querypath);
-			return;
-		}
-		fsseek(fid, 0, 0);
-		nr = 0;
-		while((n = fsread(fid, resp + nr, sizeof resp - nr - 1)) > 0){
-			nr += n;
-			if(nr >= (long)sizeof resp - 1)
-				break;
-		}
-		fsclose(fid);
-		fsunmount(fs);
-		if(nr <= 0){
-			rulerlog("no match for path=%s type=%s", querypath, wtype);
-			free(querypath);
-			return;
-		}
-		free(querypath);
-		resp[nr] = '\0';
-		if(rulerdebug){
-			char *nl = memchr(resp, '\n', nr);
-			if(nl != nil)
-				*nl = '\0';
-			rulerlog("response %ld bytes: %s", nr, resp);
-			if(nl != nil)
-				*nl = '\n';
-		}
-		applyresponse(w, resp, nr);
-	}
+	applyresponse(w, resp, strlen(resp));
+	free(resp);
 }
