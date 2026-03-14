@@ -3,18 +3,7 @@
 PLAN9=${PLAN9:-/usr/local/plan9}
 bin=$PLAN9/bin
 
-file=$1
-
-# Pass the file to the plumber without a hardcoded destination so that
-# plumb/basic routes it correctly (PDF → page, image → page, text → acme, etc.).
-#
-# For filenames with spaces the plumb/basic regexes won't match the full path,
-# so we split into -w <dir> <basename>.  The plumber resolves the full path
-# from wdir + data, and the basename alone matches the extension rules.
-if echo "$file" | grep -q " "; then
-	dir=$(dirname "$file")
-	base=$(basename "$file")
-	"$bin/plumb" -w "$dir" "$base"
-else
-	"$bin/plumb" "$file"
-fi
+# Pass the absolute path directly to the plumber.  The plumb/basic rules use
+# '.+' as the guard pattern so any filename (including spaces and special
+# characters) matches.  arg isfile $0 verifies the file exists on disk.
+"$bin/plumb" "$1"

@@ -4,8 +4,9 @@
 include fileaddr
 
 # declarations of ports without rules
-# edit is declared here because the file-opening rulesets use "plumb start"
-# rather than "plumb client", so no client ever registers the port dynamically.
+# edit is declared here because the file-opening rulesets use "plumb client"
+# rather than "plumb start", so no client ever registers the port dynamically
+# until acme (or another editor) is running.
 plumb to edit
 plumb to seemail
 plumb to showmail
@@ -13,14 +14,14 @@ plumb to showmail
 # relative files as file: urls get made into absolute paths
 type is text
 data matches 'file:([.a-zA-Z¡-￿0-9_\-]([.a-zA-Z¡-￿0-9_/\-]*[a-zA-Z¡-￿0-9_/\-]))?'
-arg isfile	$1
-data set	file://$file
+arg isfile $1
+data set file://$file
 plumb to web
 plumb start web $data
 
 # urls go to web browser
 type is text
-data matches '(https?|ftp|file|gopher|mailto|news|nntp|telnet|wais|prospero)://[a-zA-Z0-9_@\-]+([.:][a-zA-Z0-9_@\-]+)*/?[a-zA-Z0-9_?,%#~&/\-+=]+([:.][a-zA-Z0-9_?,%#~&/\-+=]+)*'
+data matches '(https?|ftp|file|gopher|mailto|news|nntp|telnet|wais|prospero)://[a-zA-Z0-9_@\-]+([.:][a-zA-Z0-9_@\-]+)*/?[a-zA-Z0-9_?,%#~&/\-+=]+([:.][a-zA-Z0-9_@\-]+)*'
 plumb to web
 plumb start web $0
 
@@ -28,7 +29,7 @@ plumb start web $0
 type is text
 data matches '.+'
 data matches '(.+)\.(doc|rtf)'
-arg isfile	$0
+arg isfile $0
 plumb to msword
 plumb start wdoc2txt $file
 
@@ -42,16 +43,15 @@ plumb start wdoc2txt $file
 type is text
 data matches '.+'
 data matches '(.+)\.(jpe?g|JPE?G|gif|GIF|tiff?|TIFF?|ppm|bit|png|PNG)'
-arg isfile	$0
+arg isfile $0
 plumb to image
 plumb start 9 page $file
 
-# postscript/pdf/dvi go to page but not over the a plumb port
-# the port is here for reference but is unused
+# postscript/pdf/dvi go to page
 type is text
 data matches '.+'
 data matches '(.+)\.(ps|PS|eps|EPS|pdf|PDF|dvi|DVI)'
-arg isfile	$0
+arg isfile $0
 plumb to postscript
 plumb start 9 page $file
 
@@ -59,79 +59,88 @@ plumb start 9 page $file
 type is text
 data matches '.+'
 data matches '(.+)\.([Ss][XxTt][CcDdIiGgMmWw]|[Dd][Oo][Cc]|[Xx][Ll][Ss]|[Pp][Pp][Tt])'
-arg isfile	$0
+arg isfile $0
 plumb to openoffice
 plumb start openoffice $file
 
-# existing files tagged by line number:columnumber or linenumber.columnumber, twice, go to editor
+# existing files tagged by line:col twice, go to editor
 type is text
 data matches '([.a-zA-Z¡-￿0-9_/\-@]*[a-zA-Z¡-￿0-9_/\-])':$twocolonaddr,$twocolonaddr
-arg isfile     $1
-data set       $file
-attr add       addr=$2-#0+#$3-#1,$4-#0+#$5-#1
-plumb start $plan9/bin/plumb-edit $file $2-#0+#$3-#1,$4-#0+#$5-#1
+arg isfile $1
+data set $file
+attr add addr=$2-#0+#$3-#1,$4-#0+#$5-#1
+plumb to edit
+plumb client $editor
 
-# existing files tagged by line number:columnumber or linenumber.columnumber, twice, go to editor
+# existing files tagged by line:col, go to editor
 type is text
 data matches '([.a-zA-Z¡-￿0-9_/\-@]*[a-zA-Z¡-￿0-9_/\-])':$twocolonaddr
-arg isfile     $1
-data set       $file
-attr add       addr=$2-#0+#$3-#1
-plumb start $plan9/bin/plumb-edit $file $2-#0+#$3-#1
+arg isfile $1
+data set $file
+attr add addr=$2-#0+#$3-#1
+plumb to edit
+plumb client $editor
 
 # existing files, possibly tagged by line number, go to editor
 type is text
 data matches '(.+?)('$addr')?'
-arg isfile	$1
-data set	$file
-attr add	addr=$3
-plumb start $plan9/bin/plumb-edit $file $3
+arg isfile $1
+data set $file
+attr add addr=$3
+plumb to edit
+plumb client $editor
 
-# .h files are looked up in /usr/include and passed to edit
+# delegate file types not handled above (audio, video, archives, etc.) to macOS
+include macos
+
+# .h files are looked up in /usr/include and passed to editor
 type is text
 data matches '([a-zA-Z¡-￿0-9/_\-]+\.h)('$addr')?'
-arg isfile	/usr/include/$1
-data set	$file
-attr add	addr=$3
-plumb start $plan9/bin/plumb-edit $file $3
+arg isfile /usr/include/$1
+data set $file
+attr add addr=$3
+plumb to edit
+plumb client $editor
 
-# .h files are looked up in /usr/local/include and passed to edit
+# .h files are looked up in /usr/local/include and passed to editor
 type is text
 data matches '([a-zA-Z¡-￿0-9/_\-]+\.h)('$addr')?'
-arg isfile	/usr/local/include/$1
-data set	$file
-attr add	addr=$3
-plumb start $plan9/bin/plumb-edit $file $3
+arg isfile /usr/local/include/$1
+data set $file
+attr add addr=$3
+plumb to edit
+plumb client $editor
 
-# .h files are looked up in $plan9/include and passed to edit
+# .h files are looked up in $plan9/include and passed to editor
 type is text
 data matches '([a-zA-Z¡-￿0-9/_\-]+\.h)('$addr')?'
-arg isfile	$plan9/include/$1
-data set	$file
-attr add	addr=$3
-plumb start $plan9/bin/plumb-edit $file $3
+arg isfile $plan9/include/$1
+data set $file
+attr add addr=$3
+plumb to edit
+plumb client $editor
 
-# .m files are looked up in /usr/inferno/module and passed to edit
+# .m files are looked up in /usr/inferno/module and passed to editor
 type is text
 data matches '([a-zA-Z¡-￿0-9/_\-]+\.m)('$addr')?'
-arg isfile	/usr/inferno/module/$1
-data set	$file
-attr add	addr=$3
-plumb start $plan9/bin/plumb-edit $file $3
+arg isfile /usr/inferno/module/$1
+data set $file
+attr add addr=$3
+plumb to edit
+plumb client $editor
 
 # faces -> new mail window for message
-type	is	text
-data	matches	'[a-zA-Z¡-￿0-9_\-./]+'
-data	matches	'/mail/fs/[a-zA-Z¡-￿0-9/]+/[0-9]+'
-plumb	to	showmail
-plumb	start	window -r 4 120 750 600 upas/nedmail -s $0
+type is text
+data matches '[a-zA-Z¡-￿0-9_\-./]+'
+data matches '/mail/fs/[a-zA-Z¡-￿0-9/]+/[0-9]+'
+plumb to showmail
+plumb start window -r 4 120 750 600 upas/nedmail -s $0
 
 # email addresses get a new mail window
 type is text
 data matches '[a-zA-Z0-9_+.\-]+@[a-zA-Z0-9_+.\-]*'
 plumb to sendmail
 plumb start wmail $0
-# plumb start window rc -c '''echo % mail '''$0'; mail '$0
 
 # man index entries are synthesized
 type is text

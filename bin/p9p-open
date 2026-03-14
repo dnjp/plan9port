@@ -1,0 +1,46 @@
+#!/bin/bash
+# p9p-open — wrapper around macOS `open` called from plumb/macos rules.
+#
+# Usage: p9p-open -b <bundleID> <file-part> [<file-part> ...]
+#
+# The plumber's buildargv splits $file on spaces into multiple argv elements.
+# This wrapper reassembles them: everything after "-b <bundleID>" is joined
+# back into a single file path with spaces.
+#
+# Test hook: reads /tmp/plumb-test-logpath for the current log file path,
+# appends "bundleID<TAB>file" to it, then touches "<logpath>.done" to signal
+# completion.  Tests poll for the .done file instead of sleeping blindly.
+
+bundle=""
+i=1
+
+# Parse -b <bundleID>
+while [[ $i -le $# ]]; do
+	if [[ "${!i}" == "-b" ]]; then
+		i=$((i+1))
+		bundle="${!i}"
+		i=$((i+1))
+		break
+	fi
+	i=$((i+1))
+done
+
+# Everything remaining is the (possibly space-split) file path
+file_parts=()
+while [[ $i -le $# ]]; do
+	file_parts+=("${!i}")
+	i=$((i+1))
+done
+file="${file_parts[*]}"
+
+# Test hook
+logpath_file=/tmp/plumb-test-logpath
+if [[ -f "$logpath_file" ]]; then
+	logpath=$(cat "$logpath_file")
+	if [[ -n "$logpath" && -f "$logpath" ]]; then
+		printf '%s\t%s\n' "$bundle" "$file" >> "$logpath"
+		touch "${logpath}.done"
+	fi
+fi
+
+exec /usr/bin/open -b "$bundle" "$file"
