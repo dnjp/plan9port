@@ -1,0 +1,123 @@
+---
+description: Architecture, conventions, and gotchas for the plan9port fork and dotfiles plan9 setup
+alwaysApply: true
+---
+
+# plan9port fork (dnjp)
+
+The plan9port submodule lives at `plan9/modules/plan9port/`. It is a fork of
+[9fans/plan9port](https://github.com/9fans/plan9port) maintained at
+`origin/dnjp` (default branch). Upstream is `upstream/master`.
+
+## Key locations
+
+| Path | Purpose |
+|------|---------|
+| `plan9/modules/plan9port/` | plan9port submodule root |
+| `plan9/modules/plan9port/src/cmd/acme/` | Acme editor source |
+| `plan9/modules/plan9port/src/cmd/devdraw/` | Display server (NSApplication process on macOS) |
+| `plan9/modules/plan9port/src/cmd/plumb/` | Plumber source |
+| `plan9/modules/plan9port/src/libdraw/` | Drawing library (spawns devdraw) |
+| `plan9/modules/plan9port/mac/` | macOS app bundles and LaunchAgent daemons |
+| `plan9/modules/plan9port/bin/` | Shell scripts: `editinacme`, `plumb-edit`, `acme` wrapper |
+| `plan9/modules/plan9port/plumb/basic` | Default plumbing rules |
+| `plan9/modules/plan9port/shell/` | Shell environment templates (`*.sh.in` → `*.sh` via SETUP) |
+| `plan9/modules/plan9port/SETUP` | One-shot install script |
+| `~/lib/rules` | User's personal ruler rule file |
+
+## Build system
+
+- Uses `mk` (plan9port's make). Build targets: `mk all`, `mk install`.
+- Binaries install to `/usr/local/plan9/bin/`.
+- On macOS, `mkmany` and `mkone` automatically `codesign --force --sign -` after install.
+- To build acme: `cd src/cmd/acme && mk o.acme.bin` (local test binary).
+- **Never use `sudo cp` to install binaries** — use `mk install` which also codesigns.
+
+## macOS app bundles
+
+`devdraw` is the actual `NSApplication` process (owns Dock icon, menu bar).
+Each app bundle (`Acme.app`, `9term.app`, `Sam.app`) contains a copy of
+`devdraw` in `Contents/MacOS/`. The launcher script sets `DEVDRAW=$(dirname "$0")/devdraw`
+so libdraw execs the bundle-internal copy, giving macOS the correct icon and name.
+`devdraw`'s `applicationDidFinishLaunching` reads `CFBundleName` and
+`CFBundleIconFile` from `[NSBundle mainBundle]` to set the menu title and icon.
+`mk apps` (in `mac/`) copies the bundles and the devdraw binary to `/Applications`.
+
+**After `mk apps`, always re-sign with `--deep`:**
+```sh
+codesign --force --deep --sign - /Applications/Acme.app
+```
+Copying `devdraw` into the bundle invalidates the signature. `--deep` is required
+to re-seal the entire bundle; signing only the top-level or only the binary causes
+macOS to `SIGKILL` the process at launch.
+
+### Multi-window / Dock menu
+
+Each "New Window" spawns a separate process. A primary/secondary model keeps all
+windows under one Dock icon:
+- **Primary** (no `P9P_SECONDARY`): `NSApplicationActivationPolicyRegular`, runs
+  a Unix domain socket server at `/tmp/p9p-winreg-<bundleID>`.
+- **Secondary** (`P9P_SECONDARY=1`, set via `open -n --env`):
+  `NSApplicationActivationPolicyAccessory`, connects to primary and sends
+  `title <pid> <label>\n` / `close <pid>\n` messages.
+- **Promotion**: when primary exits, first secondary to detect socket closure calls
+  `winreg_promote()` — switches to `Regular` policy, waits 200 ms, then activates.
+- **Title bar vs. Dock label**: `setlabel:` sets `[win setTitle:CFBundleName]`
+  (stable) and stores the full path in `winreg_pending_title` for the Dock menu.
+- **libc.h conflicts**: `#undef accept/listen/close/write` before IPC code in
+  `mac-screen.m`, then `#define` them back to `p9*` afterwards.
+
+### Launcher scripts
+
+Bundle launcher scripts (`Contents/MacOS/acme` etc.) must set `PLAN9` and
+`export PATH="$PLAN9/bin:$PATH"` — Dock-launched apps inherit a minimal `PATH`
+that doesn't include plan9port binaries.
+
+## Plumbing
+
+- `plumb/basic` must have `plumb to edit` as a **standalone top-level declaration**.
+  The `dnjp` fork uses `plumb start plumb-edit` instead of `plumb client $editor`,
+  so nothing ever registers the `edit` port dynamically — the declaration is required.
+- A ruleset may have at most one `plumb to X` and one `plumb start`/`plumb client`.
+  Having two `plumb to` lines in one ruleset causes "too many ports" parse error.
+- After editing `plumb/basic`: `sudo cp plumb/basic /usr/local/plan9/plumb/basic` then restart plumber.
+
+## editinacme
+
+`bin/editinacme` is used as `$EDITOR` (e.g. for `git commit`). Key design:
+- Starts `acme` if not running; waits for `9p stat acme` (not `plumb/edit`, which always exists).
+- Starts `9p read acme/log` into a fifo **before** sending `plumb -d edit $file` to avoid missing the `del` event.
+- Uses a second done-fifo so awk signals completion without closing the log pipe prematurely.
+- Kills background processes with `kill $pids | rc` (plan9port `kill` prints commands; pipe to `rc` executes them).
+
+## Ruler
+
+The ruler daemon applies per-window directives (font, tabstop, etc.) in acme.
+- Rules live in `~/lib/rules`.
+- `rulerdebug=1` enables verbose logging in acme.
+- `rulerprefont(w)` is called before `textload` to set the font before the frame is filled, avoiding a re-render flash.
+- Acme's custom 64-entry LRU subfont cache (`src/cmd/acme/cache.c`) overrides libdraw's single-entry cache to prevent thrashing when variable and fixed fonts are both in use.
+
+## Shell environment templates
+
+Files ending in `.sh.in`, `.fish.in`, `.rc.in` in `shell/` are templates.
+`SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g" | sudo tee` to
+produce the final files in the installed location. **Edit the `.in` files, never
+the generated ones.**
+
+## Keeping knowledge up to date
+
+After completing any non-trivial task in this repo, update `plan9/modules/plan9port/AGENTS.md`:
+- Add new debugging entries to the symptom/cause/fix table.
+- Document any new architectural decisions or non-obvious conventions.
+- Update existing entries if behaviour has changed.
+
+Also update this rule file if a new convention is broadly applicable across sessions.
+
+## Important conventions
+
+- The `plan9port kill` command **prints** shell commands but does not execute them. Pipe its output to `rc` or `sh`: `kill $pid | rc`.
+- `9p stat acme` is the reliable signal that acme's 9P server is up.
+- `plumb/edit` existing in `9p ls plumb` does NOT mean acme is running — it's a static port declaration.
+- Namespace: all daemons and terminals must share `/tmp/ns.$USER.:0`. Set `NAMESPACE` explicitly in daemon launchers.
+- When acme is already running, the `acme` wrapper script creates a fresh namespace (`/tmp/ns.$USER.$RANDOM`) to avoid socket conflicts.
