@@ -267,6 +267,12 @@ plan9.log
 postscript/font/
 sky/*.scat
 sky/here
+shell/fonts.sh
+shell/p9p-session.fish
+shell/p9p-session.sh
+shell/plan9.fish
+shell/plan9.rc
+shell/plan9.sh
 src/**/o.*
 src/cmd/awk/proctab.c
 src/cmd/awk/y.output

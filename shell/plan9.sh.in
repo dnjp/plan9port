@@ -17,22 +17,8 @@ case ":${PATH}:" in
 	;;
 esac
 
-# Acme font settings. These use fontsrv (started as a LaunchAgent on macOS)
-# to serve system fonts via the /mnt/font path. Override these in your own
-# profile after sourcing this file.
-#
-# Retina/HiDPI: fontsrv serves each size twice — the doubled size (e.g. 28a)
-# is the HiDPI variant. acme-start passes both as a comma-separated pair so
-# acme picks the right one for the display it opens on.
-#
-# fixfont: monospace font for file content and tag lines (-F flag).
-# varfont: proportional font for directory listings and menus (-f flag).
-# These names match the conventions used by startacme, start9term, and acme(1).
-
-: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
-: "${varfont:=/mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font}"
-
-export fixfont varfont
+# Acme font defaults — defined in fonts.sh so all shells share one source of truth.
+. "${PLAN9}/shell/fonts.sh"
 
 # Path to an acme dump file to restore on startup.
 : "${acmedump:=$HOME/acme.dump}"

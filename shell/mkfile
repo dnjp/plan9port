@@ -1,0 +1,49 @@
+# shell/mkfile — install generated shell environment files into $PLAN9.
+#
+# Each *.in template has the literal string /usr/local/plan9 replaced with
+# the actual $PLAN9 path at install time.
+#
+# Usage:
+#   mk install          # install all generated files (requires write access to $PLAN9)
+#   mk install-sudo     # same, using sudo (for root-owned $PLAN9)
+
+PLAN9=/usr/local/plan9
+
+TEMPLATES=\
+	fonts.sh\
+	plan9.sh\
+	plan9.fish\
+	plan9.rc\
+	p9p-session.sh\
+	p9p-session.fish\
+
+install:V: $TEMPLATES
+	for f in $TEMPLATES; do
+		cp $f $PLAN9/shell/$f
+	done
+
+install-sudo:V: $TEMPLATES
+	for f in $TEMPLATES; do
+		sudo cp $f $PLAN9/shell/$f
+	done
+
+fonts.sh: fonts.sh.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' fonts.sh.in >fonts.sh
+
+plan9.sh: plan9.sh.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' plan9.sh.in >plan9.sh
+
+plan9.fish: plan9.fish.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' plan9.fish.in >plan9.fish
+
+plan9.rc: plan9.rc.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' plan9.rc.in >plan9.rc
+
+p9p-session.sh: p9p-session.sh.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' p9p-session.sh.in >p9p-session.sh
+
+p9p-session.fish: p9p-session.fish.in
+	sed 's|/usr/local/plan9|'$PLAN9'|g' p9p-session.fish.in >p9p-session.fish
+
+clean:V:
+	rm -f $TEMPLATES

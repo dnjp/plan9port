@@ -295,6 +295,9 @@ readruleset(int *eof)
 	for(;;){
 		line = getline();
 		if(line == nil){
+			/* EOF: if we have a partial rule set, return it before signalling eof */
+			if(have_line)
+				break;
 			*eof = 1;
 			break;
 		}

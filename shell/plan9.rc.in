@@ -9,11 +9,11 @@ PLAN9=/usr/local/plan9
 if(! ~ $PLAN9/bin $path)
 	path=($PLAN9/bin $path)
 
-# Acme font settings. Override these after sourcing this file.
-# See plan9.sh for details on the HiDPI comma-separated pair format.
+# Acme font defaults — rc doesn't source sh files directly; set the same
+# values here, kept in sync with shell/fonts.sh.in.
 if(~ $#fixfont 0)
-	fixfont=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font
+	fixfont=/mnt/font/Menlo-Regular/15a/font,/mnt/font/Menlo-Regular/30a/font
 if(~ $#varfont 0)
-	varfont=/mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font
+	varfont=/mnt/font/LucidaGrande/14a/font,/mnt/font/LucidaGrande/28a/font
 if(~ $#acmedump 0)
 	acmedump=$home/acme.dump
