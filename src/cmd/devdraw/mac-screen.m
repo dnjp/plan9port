@@ -350,31 +350,37 @@ rpc_shutdown(void)
 	if(appName == nil || [appName isEqualToString:@"devdraw"])
 		appName = @"devdraw";
 
+	// App menu (leftmost, named after the app).
 	sm = [NSMenu new];
-	// Only show "New Window" when running from an app bundle — bare devdraw
-	// has no launcher script to re-exec.
+	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
+	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
+	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
+
+	m = [NSMenu new];
+	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
+	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
+
+	// File menu — only shown for app bundles that support New Window.
 	if(![appName isEqualToString:@"devdraw"]){
+		NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
 		NSMenuItem *newWin = [[NSMenuItem alloc]
 		                      initWithTitle:@"New Window"
 		                             action:@selector(newWindow:)
 		                      keyEquivalent:@"n"];
 		[newWin setTarget:self];
-		[sm addItem:newWin];
+		[fileMenu addItem:newWin];
+		NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
+		[fileMenuItem setSubmenu:fileMenu];
+		[m addItem:fileMenuItem];
 	}
-	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
-	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
-	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
 
 	// Window menu — populated dynamically via menuNeedsUpdate:.
 	NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
 	[windowMenu setDelegate:self];
 	NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
 	[windowMenuItem setSubmenu:windowMenu];
-
-	m = [NSMenu new];
-	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
-	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
 	[m addItem:windowMenuItem];
+
 	[NSApp setMainMenu:m];
 
 	// Only set the icon programmatically when running outside a bundle
