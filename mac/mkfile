@@ -26,6 +26,7 @@ apps:V:
 	cp -r Plumb.app /Applications/
 	codesign --force --deep --sign - /Applications/Plumb.app
 	install -m 755 ../bin/p9p-open $PLAN9/bin/p9p-open
+	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Plumb.app
 	cp -r Sam.app /Applications/
 	cp $PLAN9/bin/devdraw /Applications/Sam.app/Contents/MacOS/devdraw
 	codesign --force --deep --sign - /Applications/Sam.app
@@ -103,53 +104,52 @@ logs:V:
 # apps from opening these files.  Specialised document formats (Pages, Word,
 # PDF, images, etc.) are intentionally excluded.
 register-defaults:V:
-	@if ! command -v duti >/dev/null 2>&1; then \
-		echo 'error: duti not found. Install with: brew install duti'; \
-		exit 1; \
-	fi
-	@BUNDLE=com.swtch.plan9port.plumb; \
-	\
-	echo '==> Registering named UTIs...'; \
-	for uti in \
-		public.plain-text \
-		public.source-code \
-		public.script \
-		public.shell-script \
-		public.bash-script \
-		public.zsh-script \
-		public.python-script \
-		public.ruby-script \
-		public.perl-script \
-		public.c-source \
-		public.c-header \
-		public.c-plus-plus-source \
-		public.objective-c-source \
-		public.make-source \
-		com.netscape.javascript-source \
-		com.sun.java-source \
-		public.yaml \
-		public.json \
-		net.daringfireball.markdown \
-	; do \
-		duti -s $$BUNDLE $$uti all && echo "  $$uti" || echo "  FAILED: $$uti"; \
-	done; \
-	\
-	echo '==> Registering extensions (dynamic/unknown UTIs)...'; \
-	for ext in \
-		ts \
-		go \
-		rs \
-		toml \
-		lua \
-		vim \
-		fish \
-		conf \
-		rc \
-		mk \
-		profile \
-		gitconfig \
-	; do \
-		duti -s $$BUNDLE .$$ext all && echo "  .$$ext" || echo "  FAILED: .$$ext"; \
-	done; \
-	\
-	echo '==> Done. You may need to relaunch Finder for changes to take effect.'
+	sh -c '\
+		if ! command -v duti >/dev/null 2>&1; then \
+			echo "error: duti not found. Install with: brew install duti"; \
+			exit 1; \
+		fi; \
+		BUNDLE=com.swtch.plan9port.plumb; \
+		echo "==> Registering named UTIs..."; \
+		for uti in \
+			public.plain-text \
+			public.source-code \
+			public.script \
+			public.shell-script \
+			public.bash-script \
+			public.zsh-script \
+			public.python-script \
+			public.ruby-script \
+			public.perl-script \
+			public.c-source \
+			public.c-header \
+			public.c-plus-plus-source \
+			public.objective-c-source \
+			public.make-source \
+			com.netscape.javascript-source \
+			com.sun.java-source \
+			public.yaml \
+			public.json \
+			net.daringfireball.markdown \
+		; do \
+			duti -s "$BUNDLE" "$uti" all && echo "  $uti" || echo "  FAILED: $uti"; \
+		done; \
+		echo "==> Registering extensions (dynamic/unknown UTIs)..."; \
+		for ext in \
+			ts \
+			go \
+			rs \
+			toml \
+			lua \
+			vim \
+			fish \
+			conf \
+			rc \
+			mk \
+			profile \
+			gitconfig \
+		; do \
+			duti -s "$BUNDLE" ".$ext" all && echo "  .$ext" || echo "  FAILED: .$ext"; \
+		done; \
+		echo "==> Done. You may need to relaunch Finder for changes to take effect." \
+	'

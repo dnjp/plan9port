@@ -24,6 +24,8 @@
 	<string>Plumb1</string>
 	<key>CFBundleVersion</key>
 	<string>2</string>
+
+	<!-- Register as a URL handler for plumb:// URLs -->
 	<key>CFBundleURLName</key>
 	<string>Plan9 Plumber</string>
 	<key>CFBundleURLTypes</key>
@@ -37,56 +39,350 @@
 			</array>
 		</dict>
 	</array>
+
+	<!--
+	  CFBundleDocumentTypes tells Launch Services which file types this app
+	  can open, making it appear in "Open With" menus and Finder's recommended
+	  app list.  LSHandlerRank="Alternate" means we show up in "Open With" but
+	  don't steal the system default from apps like Xcode or TextEdit.
+	  Set LSHandlerRank="Default" (or run mk register-defaults) to make Plumb
+	  the primary handler.
+
+	  Each entry groups related types.  LSItemContentTypes lists the UTIs;
+	  CFBundleTypeExtensions provides a fallback for files with dynamic UTIs
+	  that macOS doesn't recognise natively.
+	-->
 	<key>CFBundleDocumentTypes</key>
 	<array>
+
+		<!-- ── Plain text ──────────────────────────────────────────────── -->
 		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-				<string>C</string>
-				<string>asm</string>
-				<string>b</string>
-				<string>c</string>
-				<string>cc</string>
-				<string>cgi</string>
-				<string>cgo</string>
-				<string>cpp</string>
-				<string>cs</string>
-				<string>go</string>
-				<string>goc</string>
-				<string>h</string>
-				<string>java</string>
-				<string>l</string>
-				<string>lx</string>
-				<string>m</string>
-				<string>ms</string>
-				<string>pl</string>
-				<string>py</string>
-				<string>s</string>
-				<string>tex</string>
-				<string>txt</string>
-				<string>xy</string>
-				<string>y</string>
-			</array>
+			<key>CFBundleTypeName</key>
+			<string>Plain Text</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
 			<key>CFBundleTypeIconFile</key>
-			<string>spaceglenda.icns</string>
-			<key>CFBundleTypeMIMETypes</key>
-			<array>
-				<string>text/plain</string>
-			</array>
+			<string>pjw.icns</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>public.plain-text</string>
+				<string>public.text</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>txt</string>
+				<string>text</string>
+			</array>
+		</dict>
+
+		<!-- ── Source code (system-recognised UTIs) ────────────────────── -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Source Code</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>pjw.icns</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.source-code</string>
+				<string>public.script</string>
+				<string>public.shell-script</string>
+				<string>public.bash-script</string>
+				<string>public.zsh-script</string>
+				<string>public.python-script</string>
+				<string>public.ruby-script</string>
+				<string>public.perl-script</string>
+				<string>public.c-source</string>
+				<string>public.c-header</string>
+				<string>public.c-plus-plus-source</string>
+				<string>public.objective-c-source</string>
+				<string>public.make-source</string>
+				<string>com.netscape.javascript-source</string>
+				<string>com.sun.java-source</string>
+				<string>public.json</string>
+				<string>public.yaml</string>
+				<string>net.daringfireball.markdown</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>c</string>
+				<string>h</string>
+				<string>cc</string>
+				<string>cpp</string>
+				<string>cxx</string>
+				<string>m</string>
+				<string>mm</string>
+				<string>java</string>
+				<string>py</string>
+				<string>rb</string>
+				<string>pl</string>
+				<string>sh</string>
+				<string>bash</string>
+				<string>zsh</string>
+				<string>js</string>
+				<string>json</string>
+				<string>yaml</string>
+				<string>yml</string>
+				<string>md</string>
+				<string>markdown</string>
+				<string>mk</string>
+				<string>s</string>
+				<string>asm</string>
+			</array>
+		</dict>
+
+		<!-- ── Source code (custom UTIs declared below) ────────────────── -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Source Code (Extended)</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>pjw.icns</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.swtch.plan9port.go-source</string>
+				<string>com.swtch.plan9port.typescript-source</string>
+				<string>com.swtch.plan9port.rust-source</string>
+				<string>com.swtch.plan9port.toml</string>
+				<string>com.swtch.plan9port.lua-source</string>
+				<string>com.swtch.plan9port.vim-script</string>
+				<string>com.swtch.plan9port.fish-script</string>
+				<string>com.swtch.plan9port.conf</string>
+				<string>com.swtch.plan9port.rc-script</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>go</string>
+				<string>ts</string>
+				<string>tsx</string>
+				<string>rs</string>
+				<string>toml</string>
+				<string>lua</string>
+				<string>vim</string>
+				<string>fish</string>
+				<string>conf</string>
+				<string>rc</string>
+				<string>profile</string>
+				<string>gitconfig</string>
+				<string>gitignore</string>
+				<string>editorconfig</string>
+				<string>env</string>
+				<string>tf</string>
+				<string>hcl</string>
+				<string>proto</string>
+				<string>graphql</string>
+				<string>gql</string>
+				<string>sql</string>
+				<string>css</string>
+				<string>scss</string>
+				<string>html</string>
+				<string>htm</string>
+				<string>xml</string>
+				<string>svg</string>
+			</array>
+		</dict>
+
+	</array>
+
+	<!--
+	  UTImportedTypeDeclarations teaches macOS about file types it doesn't
+	  know natively.  Each declaration gives the type a stable UTI, associates
+	  it with file extensions, and declares conformance to a parent type
+	  (public.source-code or public.plain-text) so it inherits their handlers.
+
+	  "Imported" (vs "Exported") means we're declaring types defined by
+	  someone else.  This is correct for open-source languages — we're not
+	  the authority, just informing the system.
+	-->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.go-source</string>
+			<key>UTTypeDescription</key>
+			<string>Go Source File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
 				<string>public.source-code</string>
 			</array>
-			<key>CFBundleTypeName</key>
-			<string>Program Files</string>
-			<key>CFBundleTypeOSTypes</key>
-			<array/>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>go</string>
+				</array>
+			</dict>
 		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.typescript-source</string>
+			<key>UTTypeDescription</key>
+			<string>TypeScript Source File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ts</string>
+					<string>tsx</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.rust-source</string>
+			<key>UTTypeDescription</key>
+			<string>Rust Source File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rs</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.toml</string>
+			<key>UTTypeDescription</key>
+			<string>TOML Configuration File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>toml</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.lua-source</string>
+			<key>UTTypeDescription</key>
+			<string>Lua Script</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>lua</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.vim-script</string>
+			<key>UTTypeDescription</key>
+			<string>Vim Script</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>vim</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.fish-script</string>
+			<key>UTTypeDescription</key>
+			<string>Fish Shell Script</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.script</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fish</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.conf</string>
+			<key>UTTypeDescription</key>
+			<string>Configuration File</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>conf</string>
+					<string>cfg</string>
+					<string>ini</string>
+					<string>env</string>
+					<string>profile</string>
+					<string>gitconfig</string>
+					<string>gitignore</string>
+					<string>editorconfig</string>
+				</array>
+			</dict>
+		</dict>
+
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.swtch.plan9port.rc-script</string>
+			<key>UTTypeDescription</key>
+			<string>RC Shell Script</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.script</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rc</string>
+				</array>
+			</dict>
+		</dict>
+
 	</array>
+
+	<!--
+	  LSBackgroundOnly = false so Plumb appears in the Dock and "Open With"
+	  menus when handling files.  (Previously true, which hid it from menus.)
+	-->
 	<key>LSBackgroundOnly</key>
-	<true/>
+	<false/>
+
 </dict>
 </plist>
