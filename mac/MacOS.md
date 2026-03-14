@@ -68,6 +68,51 @@ Each launcher script (`Contents/MacOS/acme`, `9term`, `sam`) does the following:
 3. Sets `DEVDRAW` to the bundle-internal copy.
 4. Execs the plan9port binary (e.g. `$PLAN9/bin/acme`).
 
+### Plumb.app and file routing
+
+`Plumb.app` is a minimal app bundle whose sole purpose is to act as the macOS
+default handler for files double-clicked in Finder. Its launcher
+(`Contents/MacOS/plumb`) calls `macargv` to receive the file paths from Finder,
+then passes each path to `plumb` (the plan9port plumb client):
+
+```sh
+for file in $($bin/macargv); do
+    "$bin/plumb" "$file"
+done
+```
+
+The plumber daemon then applies the rules in `~/lib/plumbing` (which includes
+`plumb/basic` and `plumb/macos`) to decide what to do with each file — opening
+source files in acme, PDFs in Preview, audio in QuickTime Player, etc.
+
+#### Why `macedit` was removed
+
+Upstream plan9port ships a helper script `bin/macedit` that `Plumb.app` used to
+call instead of `plumb` directly. It existed to work around two limitations:
+
+1. **Forced editor destination** — it called `plumb -d edit "$file"`, which
+   bypasses the plumber's routing rules and sends the file directly to the `edit`
+   port (acme). This meant every file opened via Finder went to acme, regardless
+   of type.
+
+2. **Spaces in filenames** — the plumbing rules used restrictive character-class
+   regexes (e.g. `[a-zA-Z0-9_\-./@ ]+`) that couldn't match filenames with
+   braces, parentheses, or other special characters. For filenames containing
+   spaces, `macedit` worked around this by reading the file's *content* and
+   sending it as inline plumb data with a mangled filename
+   (`/BadName/name_with_underscores`).
+
+Both workarounds are no longer needed in this fork:
+
+- `plumb/basic` and `plumb/macos` use `.+` guard patterns that accept any
+  filename, and `p9p-open` reassembles space-split paths from `buildargv`.
+- The routing rules now correctly dispatch PDFs, images, audio, etc. to their
+  native macOS apps, so forcing `-d edit` would be wrong.
+
+`macedit` was therefore reduced to a single `plumb "$1"` call and then removed.
+If you need to re-sync with upstream, be aware that upstream's `macedit` forces
+all Finder-opened files to the editor — you would lose the macOS app routing.
+
 ### Code signing
 
 Copying `devdraw` into the bundle invalidates the bundle's code signature.

@@ -22,7 +22,9 @@ Notable additions over upstream:
 - **Shift+click selection** in acme (`textselectextend` in `src/cmd/acme/text.c`).
 - **`editinacme`**: reliable `$EDITOR` wrapper for opening files in acme.
 - **macOS app bundles**: Acme, 9term, Sam show their own Dock icon/name via bundle-internal `devdraw`.
-- **`plumb-edit`**: replaces `plumb client $editor` with a `plumb start` script.
+- **`plumb-edit`**: script that opens files in acme; used as `$editor` in plumbing rules via `plumb client $editor`.
+- **`Plumb.app` file routing**: double-clicking any file in Finder routes it through the plumber, dispatching to acme, Preview, QuickTime, etc. based on type.
+- **`p9p-open`**: thin wrapper around `open -b <bundleID>` used by `plumb/macos`; reassembles space-split filenames from `buildargv`.
 
 ## Build system
 
@@ -85,33 +87,69 @@ pressed with the Shift modifier. Handles both the "no existing selection" case
 
 ## Plumbing
 
-### `plumb/basic`
+### `plumb/basic` and `~/lib/plumbing`
 
-The `dnjp` fork uses `plumb start $plan9/bin/plumb-edit` for file-opening rules
-instead of upstream's `plumb client $editor`. This means nothing ever opens the
-`edit` port as a 9P client, so the port must be declared explicitly:
+This fork aligns with upstream's `plumb client $editor` pattern. `$editor` is
+set to `plumb-edit` in `~/lib/plumbing`. The port declarations are still required
+because `plumb client` only registers the port dynamically when a client connects,
+and the plumber needs the port declared up-front:
 
 ```
 # declarations of ports without rules
-# edit is declared here because the file-opening rulesets use "plumb start"
-# rather than "plumb client", so no client ever registers the port dynamically.
 plumb to edit
 plumb to seemail
 plumb to showmail
 ```
 
+**File routing**: `~/lib/plumbing` includes `plumb/basic` and `plumb/macos`.
+The order matters — `include macos` must come **before** the general `(.+?)`
+editor catch-all, because that catch-all matches any existing file (including
+PDFs, images, etc.) and would prevent the macOS rules from ever firing.
+
+**Filename regexes**: all `data matches` guards in `plumb/basic` use `.+` (not
+restrictive character classes) so any filename — including spaces, braces, etc.
+— matches. `arg isfile $0` then verifies the file actually exists on disk.
+
 **Plumber parse rules** (from `src/cmd/plumb/rules.c`):
 - A ruleset may have at most one `plumb to X` (sets the destination port).
 - A ruleset may have at most one `plumb start` or `plumb client` action.
-- Having both `plumb to X` and `plumb start Y` in the same ruleset is **valid** —
-  this is the normal upstream pattern.
+- Having both `plumb to X` and `plumb start Y` in the same ruleset is **valid**.
 - Having two `plumb to` lines in one ruleset causes "too many ports" error.
+- `buildargv` splits `$file` on spaces into multiple argv elements. Use
+  `p9p-open` (which reassembles them) rather than `open` directly.
+- Single-quoted `'$file'` in a rule **prevents** `$file` expansion — the plumber
+  treats single quotes as quoting, not as shell quoting. Use bare `$file`.
 
 ### `bin/plumb-edit`
 
-Called by the plumber when a file match fires. Starts acme if needed (waits for
-`9p stat acme`), then sends `plumb -d edit $file` directly to acme's edit port.
-Using `-d edit` bypasses rule re-evaluation and prevents recursive invocation.
+Called by the plumber via `plumb client $editor` when a file match fires. Starts
+acme if needed (waits for `9p stat acme`), then sends `plumb -d edit $file`
+directly to acme's edit port. Using `-d edit` bypasses rule re-evaluation and
+prevents recursive invocation.
+
+### `bin/p9p-open`
+
+Wrapper around `open -b <bundleID>` used by `plumb/macos` rules. The plumber's
+`buildargv` splits `$file` on spaces into separate argv elements; `p9p-open`
+reassembles everything after `-b <bundleID>` into a single path with spaces.
+
+Also has a test hook: if `/tmp/plumb-test-logpath` exists and contains a path,
+it appends `bundleID<TAB>file` to that path and touches `<path>.done`. The test
+runner in `tests/plumb/run-tests` uses this to verify routing without opening
+actual apps.
+
+### `Plumb.app` and `bin/macedit`
+
+`Plumb.app` is the macOS default handler for files double-clicked in Finder. Its
+launcher calls `macargv` to receive file paths, then passes each to `plumb`
+directly. The plumber routes each file to the appropriate destination.
+
+Upstream's `bin/macedit` (which `Plumb.app` used to call) forced all files to
+`plumb -d edit`, bypassing routing rules, and had a special workaround for
+filenames with spaces (sending file *content* as inline data). This fork removes
+`macedit` because: (1) `.+` regexes handle any filename, (2) `p9p-open`
+reassembles space-split paths, and (3) routing to native macOS apps (Preview,
+QuickTime, etc.) is desirable. See `mac/MacOS.md` for the full explanation.
 
 ### `bin/editinacme`
 
@@ -187,7 +225,10 @@ etc.) are produced at install time and should not be committed.
 | `plumber: ruleset has more than one client or start action` | Two `plumb to` lines in one ruleset | Move extra `plumb to` to top-level declarations block |
 | `plumb file does not exist` when acme tries to open edit port | Missing `plumb to edit` declaration | Add `plumb to edit` to top of `plumb/basic` |
 | `9p: mount: dial ... Connection refused` after `9p stat acme` succeeds | Race: acme's 9P server not fully up | Wait in a loop on `9p stat acme` |
-| acme reopens continuously after closing | `plumb-edit` calling `plumb $file` without `-d`, re-triggering rules | Use `plumb -d edit $file` |
+| acme reopens continuously after closing | `plumb-edit` calling `plumb $file` without `-d`, re-triggering rules | Use `plumb -d edit $file` in `plumb-edit` |
+| PDF/image/audio opens in acme instead of native app | `include macos` placed after the `(.+?)` editor catch-all in `~/lib/plumbing` | Move `include macos` **before** the catch-all; macos rules use specific extensions so source files still fall through |
+| `plumb start p9p-open -b com.apple.Preview '$file'` passes literal `$file` string | Single quotes in plumber rules prevent `$file` expansion (plumber quoting ≠ shell quoting) | Use bare `$file` without quotes; use `p9p-open` to reassemble space-split argv |
+| `plumb /path/with spaces/file.pdf` fails or opens wrong app | `buildargv` splits `$file` on spaces into multiple argv elements | Use `p9p-open` as the command in `plumb start`; it joins all args after `-b <bundleID>` back into one path |
 | devdraw shows Glenda icon / "devdraw" in menu bar | devdraw not running from within an app bundle | Set `DEVDRAW` to bundle-internal copy; run `mk apps` |
 | `9term.bin.o: no recipe` during build | `9term.bin` incorrectly listed in `TARG` in `9term/mkfile` | Keep `9term.bin` out of `TARG`; use explicit rules |
 | `launchctl load` → `Load failed: 5: Input/output error` | `launchctl load/unload` deprecated since macOS 10.10 | Use `launchctl bootstrap gui/$(id -u)` / `bootout gui/$(id -u)` |

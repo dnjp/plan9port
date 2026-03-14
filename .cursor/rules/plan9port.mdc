@@ -19,7 +19,9 @@ The plan9port submodule lives at `plan9/modules/plan9port/`. It is a fork of
 | `plan9/modules/plan9port/src/cmd/plumb/` | Plumber source |
 | `plan9/modules/plan9port/src/libdraw/` | Drawing library (spawns devdraw) |
 | `plan9/modules/plan9port/mac/` | macOS app bundles and LaunchAgent daemons |
-| `plan9/modules/plan9port/bin/` | Shell scripts: `editinacme`, `plumb-edit`, `acme` wrapper |
+| `plan9/modules/plan9port/bin/` | Shell scripts: `editinacme`, `plumb-edit`, `p9p-open`, `acme` wrapper |
+| `plan9/modules/plan9port/plumb/macos` | Fallback rules routing files to native macOS apps via `p9p-open` |
+| `plan9/modules/plan9port/tests/plumb/` | Automated plumbing routing tests |
 | `plan9/modules/plan9port/plumb/basic` | Default plumbing rules |
 | `plan9/modules/plan9port/shell/` | Shell environment templates (`*.sh.in` → `*.sh` via SETUP) |
 | `plan9/modules/plan9port/SETUP` | One-shot install script |
@@ -73,14 +75,34 @@ Bundle launcher scripts (`Contents/MacOS/acme` etc.) must set `PLAN9` and
 `export PATH="$PLAN9/bin:$PATH"` — Dock-launched apps inherit a minimal `PATH`
 that doesn't include plan9port binaries.
 
+`Plumb.app`'s launcher (`Contents/MacOS/plumb`) calls `macargv` to receive
+Finder file paths, then passes each to `plumb` directly. The plumber routes
+files to acme, Preview, QuickTime, etc. based on `~/lib/plumbing`. Upstream's
+`bin/macedit` (which forced all files to the editor) is not used in this fork —
+see `mac/MacOS.md` for the full explanation.
+
 ## Plumbing
 
-- `plumb/basic` must have `plumb to edit` as a **standalone top-level declaration**.
-  The `dnjp` fork uses `plumb start plumb-edit` instead of `plumb client $editor`,
-  so nothing ever registers the `edit` port dynamically — the declaration is required.
+- Uses `plumb client $editor` (upstream pattern). `$editor=plumb-edit` is set in `~/lib/plumbing`.
+- `plumb to edit` must be a **standalone top-level declaration** — required because `plumb client`
+  only registers the port when a client connects; the plumber needs it declared up-front.
 - A ruleset may have at most one `plumb to X` and one `plumb start`/`plumb client`.
   Having two `plumb to` lines in one ruleset causes "too many ports" parse error.
-- After editing `plumb/basic`: `sudo cp plumb/basic /usr/local/plan9/plumb/basic` then restart plumber.
+- **`include macos` placement**: must come **before** the `(.+?)` editor catch-all in
+  `~/lib/plumbing`. That catch-all matches any existing file, so macos rules must fire first.
+- **Filename regexes**: use `.+` guards (not restrictive character classes) so filenames with
+  spaces, braces, etc. match. `arg isfile $0` verifies existence.
+- **`buildargv` space splitting**: `$file` in `plumb start` is split on spaces into multiple
+  argv elements. Use `p9p-open` instead of `open` directly — it reassembles the parts.
+- **Single quotes ≠ shell quoting**: `'$file'` in a plumber rule prevents `$file` expansion
+  entirely (plumber strips quotes but doesn't expand inside them). Use bare `$file`.
+- **`p9p-open`**: wrapper in `bin/p9p-open`, installed to `$PLAN9/bin/p9p-open` by `mk apps`.
+  Called as `plumb start p9p-open -b <bundleID> $file` in `plumb/macos`.
+- After editing `~/lib/plumbing`: reload with `cat ~/lib/plumbing | 9p write plumb/rules`.
+- After editing `plumb/basic` or `plumb/macos`: `sudo install -m644 plumb/basic $PLAN9/plumb/basic`
+  then reload rules.
+- **Test routing**: `cd tests/plumb && bash run-tests` — verifies PDF→Preview, WAV→QuickTime,
+  source files→editor, etc. without opening actual apps (uses `p9p-open`'s test hook).
 
 ## editinacme
 

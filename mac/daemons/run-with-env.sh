@@ -25,6 +25,7 @@ PLAN9=${PLAN9:-/usr/local/plan9}
 # This matches what interactive plan9port sessions use on macOS.
 export NAMESPACE="/tmp/ns.${USER}.:0"
 mkdir -p "$NAMESPACE"
+chmod 0700 "$NAMESPACE"
 
 # Determine the 9p socket name for this daemon.
 if [[ $# -ge 1 ]]; then
