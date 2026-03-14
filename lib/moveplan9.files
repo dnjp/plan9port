@@ -9,7 +9,6 @@ bin/doctype
 bin/fossil/conf
 bin/ipso
 bin/lookman
-bin/macedit
 bin/man
 bin/mount
 bin/netfileget

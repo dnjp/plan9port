@@ -1,9 +1,0 @@
-#!/bin/bash
-
-PLAN9=${PLAN9:-/usr/local/plan9}
-bin=$PLAN9/bin
-
-# Pass the absolute path directly to the plumber.  The plumb/basic rules use
-# '.+' as the guard pattern so any filename (including spaces and special
-# characters) matches.  arg isfile $0 verifies the file exists on disk.
-"$bin/plumb" "$1"

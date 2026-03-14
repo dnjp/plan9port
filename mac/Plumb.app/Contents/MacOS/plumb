@@ -2,8 +2,7 @@
 # Plumb.app launcher — route files double-clicked in Finder through the plumber.
 #
 # macOS Finder passes files as arguments (via Apple Events / macargv).
-# For each file, macedit calls: plumb -d edit $file
-# which sends a plumb message to the running plumber daemon.
+# For each file, plumb is called directly to send a message to the plumber daemon.
 #
 # Dock-launched apps inherit a minimal environment.  We set PLAN9, PATH, and
 # NAMESPACE explicitly so the plumb binary can find both the plan9port binaries
@@ -24,5 +23,5 @@ bin=$PLAN9/bin
 IFS=$'\n'
 
 for file in $($bin/macargv); do
-	$bin/macedit "$file"
+	"$bin/plumb" "$file"
 done
