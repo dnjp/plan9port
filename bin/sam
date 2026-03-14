@@ -1,0 +1,49 @@
+#!/bin/bash
+# sam — launch the sam editor with the correct environment and font settings.
+#
+# This script wraps sam.bin so that:
+#   - The font default is applied when not set by the environment.
+#   - The process is named "sam" (not the binary path or "arch"), which is
+#     what the macOS menu bar, skhd, and pgrep expect.
+#   - The correct architecture is selected on Apple Silicon Macs.
+#
+# sam uses the $font environment variable (read by libdraw) rather than a
+# command-line flag. fixfont is the right choice since sam is a text editor.
+#
+# When invoked from Sam.app (INSIDE_SAM=true), the login environment is
+# sourced first so that PLAN9, PATH, and user settings are available.
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+
+# Sam.app launches this script before the login shell environment is loaded.
+if [[ "${INSIDE_P9P}" == "true" ]]; then
+	cd "$HOME"
+	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
+	fshell=${fshell:-$SHELL}
+	case "$fshell" in
+	*/bash)  [[ -f ~/.bash_profile ]] && . ~/.bash_profile ;;
+	*/zsh)   [[ -f ~/.zprofile    ]] && . ~/.zprofile ;;
+	*)       [[ -f ~/.profile     ]] && . ~/.profile ;;
+	esac
+	if [[ ":$PATH:" != *":$PLAN9/bin:"* ]]; then
+		PATH=$PATH:$PLAN9/bin
+	fi
+fi
+
+# Apply font default if not already set.
+# sam uses $font (read by libdraw/initdraw); fixfont is appropriate since sam
+# is a text editor. The HiDPI variant is included for Retina display support.
+: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
+: "${font:=$fixfont}"
+export font
+
+# Select the native architecture on Apple Silicon so we don't run under Rosetta.
+arch=x86_64
+if arch -arch arm64 true >/dev/null 2>&1; then
+	arch=arm64
+fi
+
+# exec -a sam ensures argv[0] is "sam" so the macOS menu bar and pgrep see
+# the process as "sam" rather than the full binary path.
+exec arch -arch "$arch" \
+	/bin/bash -c 'exec -a sam "$@"' -- "$PLAN9/bin/sam.bin" "$@"

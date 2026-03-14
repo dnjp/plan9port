@@ -1,0 +1,67 @@
+#!/bin/bash
+# acme — launch the acme editor with the correct environment and font settings.
+#
+# This script wraps acme.bin so that:
+#   - Font and dump defaults are applied when not set by the environment.
+#   - The process is named "acme" (not the binary path or "arch"), which is
+#     what the macOS menu bar, skhd, and pgrep expect.
+#   - The correct architecture is selected on Apple Silicon Macs.
+#   - Namespace collisions are handled when a second acme is launched.
+#
+# The login environment is sourced whenever it hasn't been loaded yet —
+# detected by the absence of fixfont, which plan9.sh always sets. This covers
+# both the Acme.app launch path and the plumber's plumb-edit launch path.
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+
+# Source the user's login profile if it hasn't been loaded yet.
+# We use fixfont as the sentinel: plan9.sh always sets it, so its absence
+# means we're running in a minimal environment (app bundle or plumber spawn).
+if [[ -z "$fixfont" ]]; then
+	cd "$HOME"
+	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
+	fshell=${fshell:-$SHELL}
+	case "$fshell" in
+	*/bash)  [[ -f ~/.bash_profile ]] && . ~/.bash_profile ;;
+	*/zsh)   [[ -f ~/.zprofile    ]] && . ~/.zprofile ;;
+	*)       [[ -f ~/.profile     ]] && . ~/.profile ;;
+	esac
+	if [[ ":$PATH:" != *":$PLAN9/bin:"* ]]; then
+		PATH=$PATH:$PLAN9/bin
+	fi
+fi
+
+# Apply font and dump defaults if not already set.
+# fixfont/varfont match the naming used by startacme, start9term, and acme(1).
+# Each is a comma-separated normal,HiDPI pair for Retina display support.
+: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
+: "${varfont:=/mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font}"
+: "${acmedump:=$HOME/acme.dump}"
+
+ARGS=()
+ARGS+=(-F "$fixfont")
+ARGS+=(-f "$varfont")
+if [[ -f "$acmedump" ]]; then
+	ARGS+=(-l "$acmedump")
+fi
+
+# Handle namespace collisions: if acme is already mounted, spin up a fresh
+# namespace so the new instance does not conflict with the running one.
+if "$PLAN9/bin/9p" stat acme >/dev/null 2>&1; then
+	ns=/tmp/ns.$USER.$RANDOM
+	mkdir -p "$ns"
+	export NAMESPACE="$ns"
+else
+	rm -f "$("$PLAN9/bin/namespace" 2>/dev/null)"/acme 2>/dev/null || true
+fi
+
+# Select the native architecture on Apple Silicon so we don't run under Rosetta.
+arch=x86_64
+if arch -arch arm64 true >/dev/null 2>&1; then
+	arch=arm64
+fi
+
+# exec -a acme ensures argv[0] is "acme" so the macOS menu bar and pgrep see
+# the process as "acme" rather than the full binary path.
+exec arch -arch "$arch" \
+	/bin/bash -c 'exec -a acme "$@"' -- "$PLAN9/bin/acme.bin" "${ARGS[@]}" "$@"

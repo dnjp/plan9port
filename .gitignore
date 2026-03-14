@@ -10,12 +10,10 @@ bin/9import
 bin/9p
 bin/9pfuse
 bin/9pserve
-bin/9term
 bin/Mail
 bin/Netfiles
 bin/acid
 bin/acidtypes
-bin/acme
 bin/acmeevent
 bin/aescbc
 bin/ascii
@@ -168,7 +166,6 @@ bin/rsa2ssh
 bin/rsa2x509
 bin/rsafill
 bin/rsagen
-bin/sam
 bin/samterm
 bin/scat
 bin/secstore
