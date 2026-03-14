@@ -735,8 +735,6 @@ rpc_setlabel(Client *client, char *label)
 		// stable while the full path label is used for dock menu tracking.
 		NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
 		[self.win setTitle:bundleName ?: s];
-		if(client0)
-			[[NSApp dockTile] setBadgeLabel:s];
 		// Always keep the full label for dock menu use.
 		strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
 		// Register/update this window's title with the primary instance.
