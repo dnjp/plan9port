@@ -49,7 +49,6 @@ Acme.app/
     Info.plist          — CFBundleName=acme, CFBundleIconFile=spaceglenda.icns
     MacOS/
       acme              — launcher script (CFBundleExecutable); sets DEVDRAW and execs $PLAN9/bin/acme
-      acme-exec         — thin wrapper used by the acme wrapper script for argv[0] naming
       devdraw           — copy of $PLAN9/bin/devdraw placed here by mk apps
     Resources/
       spaceglenda.icns  — application icon
@@ -57,6 +56,113 @@ Acme.app/
 
 `9term.app` and `Sam.app` follow the same pattern with their own icons and
 launcher scripts.
+
+### Launcher scripts
+
+Each launcher script (`Contents/MacOS/acme`, `9term`, `sam`) does the following:
+
+1. Sets `INSIDE_P9P=true` and an app-specific flag (`INSIDE_ACME`, `INSIDE_9TERM`).
+2. Sets `PLAN9` (defaulting to `/usr/local/plan9`) and prepends `$PLAN9/bin` to
+   `PATH`. This is required because Dock-launched apps inherit a minimal `PATH`
+   that does not include the plan9port binaries (e.g. `9pserve`).
+3. Sets `DEVDRAW` to the bundle-internal copy.
+4. Execs the plan9port binary (e.g. `$PLAN9/bin/acme`).
+
+### Code signing
+
+Copying `devdraw` into the bundle invalidates the bundle's code signature.
+`mk apps` re-signs the entire bundle with:
+
+```sh
+codesign --force --deep --sign - /Applications/Acme.app
+```
+
+The `--deep` flag is required — signing only the top-level bundle or only the
+binary is not sufficient. Without it, macOS will `SIGKILL` the process at launch
+with "Code Signature Invalid".
+
+### Multi-window support and Dock menu
+
+plan9port apps are single-process-per-window: each "New Window" spawns a
+completely separate process. To present a single Dock icon for all windows of
+the same app, `devdraw` uses a primary/secondary model with Unix domain socket
+IPC.
+
+#### Primary vs. secondary instances
+
+- The **primary** instance is the first one launched (no `P9P_SECONDARY` env
+  var). It sets `NSApplicationActivationPolicyRegular` (owns the Dock icon and
+  menu bar) and starts a Unix domain socket server at
+  `/tmp/p9p-winreg-<bundleID>`.
+- **Secondary** instances are spawned by "New Window" via
+  `open -n --env P9P_SECONDARY=1 <bundle>`. They set
+  `NSApplicationActivationPolicyAccessory` (no Dock icon) and connect to the
+  primary's socket.
+
+#### IPC protocol
+
+Secondaries send newline-terminated messages to the primary:
+
+| Message | Meaning |
+|---------|---------|
+| `title <pid> <label>\n` | Register or update this window's title |
+| `close <pid>\n` | This window is closing |
+
+The primary stores these in a `WinEntry winreg[]` array (max 64 entries) and
+uses it to populate the Dock right-click menu.
+
+#### Dock right-click menu (`applicationDockMenu:`)
+
+The primary builds the menu from two sources:
+
+1. **Local windows** (`[NSApp windows]`): uses `winreg_pending_title` (the full
+   path label) for the menu item text, falling back to `[win title]`. Action:
+   `bringWindowToFront:` (brings the `NSWindow` to front).
+2. **Remote windows** (secondary instances in `winreg[]`): uses the registered
+   title. Action: `activateSecondaryWindow:` (calls
+   `[NSRunningApplication activateWithOptions:]` for the secondary's PID).
+
+#### Window title bar vs. Dock menu label
+
+The macOS title bar always shows the `CFBundleName` (e.g. "acme") for
+stability. The full path label (set by `drawsetlabel`) is stored separately in
+`winreg_pending_title` and used only for the Dock menu. This decoupling is done
+in `setlabel:` in `mac-screen.m`:
+
+```objc
+NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+[self.win setTitle:bundleName ?: s];          // title bar: always "acme"
+strlcpy(winreg_pending_title, label, ...);    // dock menu: full path
+```
+
+#### Primary promotion
+
+When the primary exits, secondaries detect the socket closure (the blocking
+`read` loop in `winreg_connect` returns 0). The first secondary to detect this
+calls `winreg_promote()` on the main thread, which:
+
+1. Starts a new socket server (becoming the new primary).
+2. Sets `NSApplicationActivationPolicyRegular`.
+3. After a 200 ms delay (required for the Dock to pick up the policy change),
+   calls `[NSApp activateIgnoringOtherApps:YES]`.
+
+#### libc.h macro conflicts
+
+plan9port's `libc.h` redefines `accept`, `listen`, `close`, and `write` to
+`p9accept`, `p9listen`, `p9close`, and `p9write`. The IPC code in
+`mac-screen.m` needs the real POSIX functions. The file `#undef`s these macros
+before the IPC section, declares the POSIX prototypes explicitly, then
+`#define`s them back to the plan9port names afterwards.
+
+### Acme window labels
+
+Acme calls `drawsetlabel()` in two places to keep the Dock menu titles
+meaningful:
+
+1. **At startup** (`acme.c: threadmain`): sets the label to the current working
+   directory (`wdir`).
+2. **On focus change** (`acme.c: mousethread`): when a window gains focus, sets
+   the label to `w->body.file->name` (the file path of the focused buffer).
 
 ## Background Daemons
 
