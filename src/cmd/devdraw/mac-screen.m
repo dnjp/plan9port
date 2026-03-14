@@ -104,6 +104,8 @@ winreg_remove(int pid)
 	}
 }
 
+static void winreg_quit_all(void);
+
 // Read one newline-terminated message from fd into buf. Returns length or -1.
 static int
 winreg_readline(int fd, char *buf, int max)
@@ -150,17 +152,23 @@ winreg_server_thread(void *arg)
 					dispatch_async(dispatch_get_main_queue(), ^{
 						winreg_remove(cpid);
 					});
-				} else if(strcmp(line, "raise") == 0){
-					dispatch_async(dispatch_get_main_queue(), ^{
-						for(NSWindow *win in [NSApp windows]){
-							if([win isVisible]){
-								[win makeKeyAndOrderFront:nil];
-								break;
-							}
+			} else if(strcmp(line, "raise") == 0){
+				dispatch_async(dispatch_get_main_queue(), ^{
+					for(NSWindow *win in [NSApp windows]){
+						if([win isVisible]){
+							[win makeKeyAndOrderFront:nil];
+							break;
 						}
-						[NSApp activateIgnoringOtherApps:YES];
-					});
-				}
+					}
+					[NSApp activateIgnoringOtherApps:YES];
+				});
+			} else if(strcmp(line, "quit") == 0){
+				dispatch_async(dispatch_get_main_queue(), ^{
+					// Kill all secondaries then quit the primary.
+					winreg_quit_all();
+					[NSApp terminate:nil];
+				});
+			}
 			}
 			// Client disconnected.
 			close(clientfd);
@@ -255,6 +263,15 @@ winreg_send(const char *msg)
 {
 	if(winreg_client_fd < 0) return;
 	write(winreg_client_fd, msg, strlen(msg));
+}
+
+// Terminate all secondary instances then quit the primary.
+// Must be called on the main thread (reads nwinreg/winreg[]).
+static void
+winreg_quit_all(void)
+{
+	for(int i = 0; i < nwinreg; i++)
+		kill(winreg[i].pid, SIGTERM);
 }
 
 // Restore plan9port macro overrides.
@@ -369,6 +386,13 @@ rpc_shutdown(void)
 		                      keyEquivalent:@"n"];
 		[newWin setTarget:self];
 		[fileMenu addItem:newWin];
+		[fileMenu addItem:[NSMenuItem separatorItem]];
+		NSMenuItem *closeWin = [[NSMenuItem alloc]
+		                        initWithTitle:@"Close Window"
+		                               action:@selector(closeWindow:)
+		                        keyEquivalent:@"w"];
+		[closeWin setTarget:self];
+		[fileMenu addItem:closeWin];
 		NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
 		[fileMenuItem setSubmenu:fileMenu];
 		[m addItem:fileMenuItem];
@@ -403,6 +427,19 @@ rpc_shutdown(void)
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
 	return YES;
+}
+
+- (void)closeWindow:(id)sender
+{
+	[[NSApp keyWindow] performClose:sender];
+}
+
+// When the primary quits (for any reason), kill all secondary instances first.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
+{
+	if(winreg_server_fd >= 0)
+		winreg_quit_all();
+	return NSTerminateNow;
 }
 
 // New Window: spawn a secondary instance via `open -n --env P9P_SECONDARY=1`.
@@ -1053,6 +1090,30 @@ rpc_resizewindow(Client *c, Rectangle r)
 		[self sendmouse:8];
 	else if (s < 0.0f)
 		[self sendmouse:16];
+}
+
+// Intercept Cmd+W (close window) and Cmd+Q (quit app) before they are
+// forwarded to the Plan 9 key handler as Kcmd+'w'/'q' keystrokes.
+- (BOOL)performKeyEquivalent:(NSEvent*)e
+{
+	if([e modifierFlags] & NSEventModifierFlagCommand){
+		NSString *chars = [e charactersIgnoringModifiers];
+		if([chars isEqualToString:@"w"]){
+			[NSApp sendAction:@selector(closeWindow:) to:nil from:self];
+			return YES;
+		}
+		if([chars isEqualToString:@"q"]){
+			// If we are a secondary, ask the primary to quit everything.
+			// If we are the primary (or unconnected), terminate directly —
+			// applicationShouldTerminate: will kill secondaries first.
+			if(winreg_client_fd >= 0)
+				winreg_send("quit\n");
+			else
+				[NSApp terminate:nil];
+			return YES;
+		}
+	}
+	return [super performKeyEquivalent:e];
 }
 
 - (void)keyDown:(NSEvent*)e
