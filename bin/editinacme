@@ -19,13 +19,14 @@ file=$file(1)
 echo 'editinacme: editing '$file >[1=2]
 
 # Start acme if it is not already running.
-if(! 9p stat acme >/dev/null >[2]/dev/null) {
-	acme &
-	# Wait up to 10 seconds for acme's 9p port to appear.
+if(! 9p stat plumb/edit >/dev/null >[2]/dev/null) {
+	if(! 9p stat acme >/dev/null >[2]/dev/null)
+		acme &
+	# Wait up to 10 seconds for acme to register its plumb edit port.
 	i=0
-	while(! 9p stat acme >/dev/null >[2]/dev/null) {
+	while(! 9p stat plumb/edit >/dev/null >[2]/dev/null) {
 		if(~ $i 20) {
-			echo 'editinacme: timed out waiting for acme' >[1=2]
+			echo 'editinacme: timed out waiting for acme plumb port' >[1=2]
 			exit 'acme timeout'
 		}
 		sleep 0.5
@@ -39,11 +40,6 @@ if(! ~ $status '') {
 	exit 'plumb failed'
 }
 
-# Keep one 9p connection open and read log events one line at a time.
-# Each line: winid op name
-9p read acme/log | while(event=`{read}) {
-	op=`{echo $event | awk '{print $2}'}
-	name=`{echo $event | awk '{print $3}'}
-	if(~ $op del && ~ $name $file)
-		exit 0
-}
+# Wait for the window to be deleted. awk exits (closing the pipe cleanly)
+# as soon as it sees the del event for our file, avoiding a broken pipe.
+9p read acme/log | awk -v file=$file '$2=="del" && $3==file {exit}'
