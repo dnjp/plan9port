@@ -12,7 +12,7 @@ all:V: install
 # Install .app bundles and daemons.
 install:V: apps daemons
 
-# Copy .app bundles to /Applications.
+# Copy .app bundles to /Applications and install helper scripts to $PLAN9/bin.
 # devdraw is copied from $PLAN9/bin into each bundle's MacOS/ directory so
 # that macOS associates the display server process with the correct bundle
 # (icon, app name, Dock entry) rather than showing a generic devdraw entry.
@@ -24,6 +24,9 @@ apps:V:
 	cp $PLAN9/bin/devdraw /Applications/Acme.app/Contents/MacOS/devdraw
 	codesign --force --deep --sign - /Applications/Acme.app
 	cp -r Plumb.app /Applications/
+	codesign --force --deep --sign - /Applications/Plumb.app
+	install -m 755 ../bin/p9p-open $PLAN9/bin/p9p-open
+	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Plumb.app
 	cp -r Sam.app /Applications/
 	cp $PLAN9/bin/devdraw /Applications/Sam.app/Contents/MacOS/devdraw
 	codesign --force --deep --sign - /Applications/Sam.app
@@ -77,3 +80,76 @@ status:V:
 # Tail all plan9port daemon logs.
 logs:V:
 	sh daemons/9p-status tail
+
+# Register Plumb.app as the default handler for text and source-code file types.
+#
+# macOS exposes no native shell API for this — the underlying call is
+# LSSetDefaultRoleHandlerForContentType, which requires compiled code.
+# duti (https://github.com/moretension/duti) is the standard thin wrapper
+# around that API.  Install with: brew install duti
+#
+# Two strategies are used:
+#
+#   1. Named UTIs  — covers all files macOS recognises as that type, regardless
+#      of extension.  This is the preferred approach.
+#
+#   2. Extension fallback — for types macOS assigns a dynamic "dyn.*" UTI to
+#      (i.e. it doesn't know the format), we register by extension so Finder
+#      still routes double-clicks correctly.
+#
+# After running this target, re-launch Finder or log out/in if changes don't
+# appear immediately.  macOS caches Launch Services associations aggressively.
+#
+# NOTE: This only sets Plumb.app as the *default*; it does not prevent other
+# apps from opening these files.  Specialised document formats (Pages, Word,
+# PDF, images, etc.) are intentionally excluded.
+register-defaults:V:
+	sh -c '\
+		if ! command -v duti >/dev/null 2>&1; then \
+			echo "error: duti not found. Install with: brew install duti"; \
+			exit 1; \
+		fi; \
+		BUNDLE=com.swtch.plan9port.plumb; \
+		echo "==> Registering named UTIs..."; \
+		for uti in \
+			public.plain-text \
+			public.source-code \
+			public.script \
+			public.shell-script \
+			public.bash-script \
+			public.zsh-script \
+			public.python-script \
+			public.ruby-script \
+			public.perl-script \
+			public.c-source \
+			public.c-header \
+			public.c-plus-plus-source \
+			public.objective-c-source \
+			public.make-source \
+			com.netscape.javascript-source \
+			com.sun.java-source \
+			public.yaml \
+			public.json \
+			net.daringfireball.markdown \
+		; do \
+			duti -s "$BUNDLE" "$uti" all && echo "  $uti" || echo "  FAILED: $uti"; \
+		done; \
+		echo "==> Registering extensions (dynamic/unknown UTIs)..."; \
+		for ext in \
+			ts \
+			go \
+			rs \
+			toml \
+			lua \
+			vim \
+			fish \
+			conf \
+			rc \
+			mk \
+			profile \
+			gitconfig \
+		; do \
+			duti -s "$BUNDLE" ".$ext" all && echo "  .$ext" || echo "  FAILED: .$ext"; \
+		done; \
+		echo "==> Done. You may need to relaunch Finder for changes to take effect." \
+	'

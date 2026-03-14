@@ -1,0 +1,26 @@
+#!/bin/bash
+# plumb — send a plumb message to the plumber daemon.
+#
+# This script wraps plumb.bin so that:
+#   - $PLAN9/bin is on PATH (required when invoked from Plumb.app or other
+#     minimal-environment contexts like LaunchAgents).
+#   - $NAMESPACE is set correctly so plumb.bin can find the plumber socket.
+#     getns() in lib9 uses $NAMESPACE if set, otherwise falls back to
+#     /tmp/ns.$USER.:0 — the default on macOS.  We only set it here if it
+#     isn't already set, so terminal invocations are unaffected.
+#   - The process is named "plumb" (not the binary path).
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+export PLAN9
+
+if [[ ":$PATH:" != *":$PLAN9/bin:"* ]]; then
+	export PATH="$PLAN9/bin:$PATH"
+fi
+
+# Default namespace on macOS is /tmp/ns.$USER.:0
+# Only set if not already provided by the environment.
+if [[ -z "$NAMESPACE" ]]; then
+	export NAMESPACE="/tmp/ns.${USER}.:0"
+fi
+
+exec -a plumb "$PLAN9/bin/plumb.bin" "$@"

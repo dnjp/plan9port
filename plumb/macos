@@ -1,0 +1,123 @@
+# plumb/macos — open files using standard macOS applications.
+#
+# Include this file at the END of a plumbing rules file as a fallback:
+#
+#   include macos
+#
+# Rules above the include take priority; anything not matched above falls
+# through to these rules.  Each rule calls `open -b <bundleID>` to target
+# a specific standard macOS app, regardless of the user's default app
+# preferences.  This ensures predictable behaviour on a bare macOS install.
+#
+# Standard app bundle IDs used here:
+#   com.apple.Preview          — PDF, images
+#   com.apple.QuickTimePlayerX — audio, video
+#   com.apple.TextEdit         — plain text, RTF, markup
+#   com.apple.archiveutility   — archives
+#   com.apple.FontBook         — fonts
+#   com.apple.Photos           — HEIC/HEIF and camera raw formats
+
+# ── PDF / PostScript ───────────────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(pdf|PDF)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Preview $file
+
+type is text
+data matches '.+'
+data matches '(.+)\.(ps|PS|eps|EPS|dvi|DVI)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Preview $file
+
+# ── Standard raster images → Preview ──────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(jpe?g|JPE?G|png|PNG|gif|GIF|tiff?|TIFF?|bmp|BMP|ico|ICO|psd|PSD)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Preview $file
+
+# ── SVG → Preview ─────────────────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(svg|SVG)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Preview $file
+
+# ── Modern / camera image formats → Photos ────────────────────────────────
+# Photos handles HEIC/HEIF and common camera raw formats natively.
+type is text
+data matches '.+'
+data matches '(.+)\.(heic|HEIC|heif|HEIF|webp|WEBP|avif|AVIF)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Photos $file
+
+type is text
+data matches '.+'
+data matches '(.+)\.(raw|RAW|cr2|CR2|cr3|CR3|nef|NEF|arw|ARW|dng|DNG)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Photos $file
+
+# ── Audio → QuickTime Player ───────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(wav|WAV|mp3|MP3|m4a|M4A|aiff?|AIFF?|flac|FLAC|aac|AAC|caf|CAF)'
+arg isfile $0
+plumb start p9p-open -b com.apple.QuickTimePlayerX $file
+
+# ── Video → QuickTime Player ───────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(mp4|MP4|mov|MOV|m4v|M4V)'
+arg isfile $0
+plumb start p9p-open -b com.apple.QuickTimePlayerX $file
+
+# ── Plain text and markup → TextEdit ──────────────────────────────────────
+# csv and tsv are plain text; TextEdit opens them as-is.
+# If you want these in acme instead, add rules above the include.
+type is text
+data matches '.+'
+data matches '(.+)\.(csv|CSV|tsv|TSV)'
+arg isfile $0
+plumb start p9p-open -b com.apple.TextEdit $file
+
+type is text
+data matches '.+'
+data matches '(.+)\.(rtf|RTF|odt|ODT)'
+arg isfile $0
+plumb start p9p-open -b com.apple.TextEdit $file
+
+# ── Archives → Archive Utility ────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(tar\.gz|tar\.bz2|tar\.xz|tgz|TGZ|tbz2|txz)'
+arg isfile $0
+plumb start p9p-open -b com.apple.archiveutility $file
+
+type is text
+data matches '.+'
+data matches '(.+)\.(zip|ZIP|tar|TAR|gz|GZ|bz2|BZ2|xz|XZ)'
+arg isfile $0
+plumb start p9p-open -b com.apple.archiveutility $file
+
+# ── Fonts → Font Book ─────────────────────────────────────────────────────
+type is text
+data matches '.+'
+data matches '(.+)\.(ttf|TTF|otf|OTF|woff2?|WOFF2?)'
+arg isfile $0
+plumb start p9p-open -b com.apple.FontBook $file
+
+# ── Word processing / spreadsheets / presentations → TextEdit / Preview ───
+# On a bare macOS install there are no Office or iWork apps guaranteed.
+# TextEdit handles docx/xlsx/pptx reasonably; Preview handles them too.
+type is text
+data matches '.+'
+data matches '(.+)\.(docx|DOCX|doc|DOC|pages|PAGES)'
+arg isfile $0
+plumb start p9p-open -b com.apple.TextEdit $file
+
+type is text
+data matches '.+'
+data matches '(.+)\.(xlsx|XLSX|xls|XLS|numbers|NUMBERS|ods|ODS|pptx|PPTX|ppt|PPT|odp|ODP|keynote|KEYNOTE)'
+arg isfile $0
+plumb start p9p-open -b com.apple.Preview $file

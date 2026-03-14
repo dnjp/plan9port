@@ -145,7 +145,7 @@ bin/pemdecode
 bin/pemencode
 bin/pic
 bin/plot
-bin/plumb
+bin/plumb.bin
 bin/plumber
 bin/png
 bin/ppm
