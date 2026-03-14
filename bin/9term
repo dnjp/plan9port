@@ -27,9 +27,14 @@ if [[ "${INSIDE_P9P}" == "true" ]]; then
 	fi
 fi
 
-# Apply font default if not already set.
-# 9term takes -f font directly; fixfont is the right choice for a terminal.
-: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
+# Apply font defaults if not already set.
+# fixfont: monospace font for terminal text.
+# varfont: proportional font for popup menus (button 2).
+if [[ -f "$PLAN9/shell/fonts.sh" ]]; then
+	. "$PLAN9/shell/fonts.sh"
+fi
+: "${fixfont:=/mnt/font/Menlo-Regular/15a/font,/mnt/font/Menlo-Regular/30a/font}"
+: "${varfont:=/mnt/font/LucidaGrande/14a/font,/mnt/font/LucidaGrande/28a/font}"
 
 # Select the native architecture on Apple Silicon so we don't run under Rosetta.
 arch=x86_64
@@ -40,4 +45,4 @@ fi
 # exec -a 9term ensures argv[0] is "9term" so the macOS menu bar and pgrep see
 # the process as "9term" rather than the full binary path.
 exec arch -arch "$arch" \
-	/bin/bash -c 'exec -a 9term "$@"' -- "$PLAN9/bin/9term.bin" -s -f "$fixfont" "$@"
+	/bin/bash -c 'exec -a 9term "$@"' -- "$PLAN9/bin/9term.bin" -s -f "$fixfont" -F "$varfont" "$@"

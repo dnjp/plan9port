@@ -26,6 +26,8 @@ int rcfd;
 int sfd;
 Window *w;
 char *fontname;
+char *varfontname;	/* proportional font for menus (-F flag) */
+Font *varfont;		/* loaded proportional font */
 
 void derror(Display*, char*);
 void	mousethread(void*);
@@ -44,7 +46,7 @@ int cooked;
 void
 usage(void)
 {
-	fprint(2, "usage: 9term [-s] [-f font] [-W winsize] [cmd ...]\n");
+	fprint(2, "usage: 9term [-s] [-f font] [-F varfont] [-W winsize] [cmd ...]\n");
 	threadexitsall("usage");
 }
 
@@ -93,6 +95,9 @@ threadmain(int argc, char *argv[])
 	case 'f':
 		fontname = EARGF(usage());
 		break;
+	case 'F':
+		varfontname = EARGF(usage());
+		break;
 	case 's':
 		scrolling = TRUE;
 		break;
@@ -123,6 +128,12 @@ threadmain(int argc, char *argv[])
 
 	if(initdraw(derror, fontname, "9term") < 0)
 		sysfatal("initdraw: %r");
+
+	/* Load proportional font for menus; fall back to fixfont if not specified. */
+	if(varfontname != nil)
+		varfont = openfont(display, varfontname);
+	if(varfont == nil)
+		varfont = display->defaultfont;
 
 	notify(hangupnote);
 	noteenable("sys: child");
@@ -251,6 +262,8 @@ mousethread(void *v)
 			goto Send;
 		}else if(mouse->buttons&2)
 			button2menu(w);
+		else if(mouse->buttons&4)
+			wplumb(w);
 		else
 			bouncemouse(mouse);
 	}
@@ -343,6 +356,8 @@ Rune newline[] = { '\n' };
 void
 button2menu(Window *w)
 {
+	Font *savefont;
+
 	if(w->deleted)
 		return;
 	incref(&w->ref);
@@ -355,6 +370,9 @@ button2menu(Window *w)
 	else
 		menu2str[Cook] = "cook";
 
+	/* Use proportional font for the popup menu. */
+	savefont = font;
+	font = varfont;
 	switch(menuhit(2, mousectl, &menu2, wscreen)){
 	case Cut:
 		wsnarf(w);
@@ -406,6 +424,7 @@ button2menu(Window *w)
 		cooked ^= 1;
 		break;
 	}
+	font = savefont;
 	wclose(w);
 	wsendctlmesg(w, Wakeup, ZR, nil);
 	flushimage(display, 1);
@@ -478,6 +497,16 @@ winterrupt(Window *w)
 	USED(w);
 	rubout[0] = getintr(sfd);
 	write(rcfd, rubout, 1);
+}
+
+void
+weot(Window *w)
+{
+	char eot[1];
+
+	USED(w);
+	eot[0] = 0x04;	/* EOT / ^D */
+	write(rcfd, eot, 1);
 }
 
 int

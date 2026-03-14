@@ -680,6 +680,21 @@ wkeyctl(Window *w, Rune r)
 		if(r == 0x1B)
 			return;
 	}
+	/* ^C and ^D are always handled as signals, even in raw mode. */
+	if(r == 0x03){
+		w->qh = w->nr;
+		wshow(w, w->qh);
+		winterrupt(w);
+		w->iq1 = w->q0;
+		return;
+	}
+	if(r == 0x04){
+		w->qh = w->nr;
+		wshow(w, w->qh);
+		weot(w);
+		w->iq1 = w->q0;
+		return;
+	}
 	if(!w->holding && w->rawing && (w->q0==w->nr || w->mouseopen)){
 		waddraw(w, &r, 1);
 		return;
@@ -705,15 +720,26 @@ wkeyctl(Window *w, Rune r)
 		wcut(w);
 	}
 	switch(r){
-	case 0x03:		/* maybe send interrupt */
-		/* since ^C is so commonly used as interrupt, special case it */
-		if (intrc() != 0x03)
-			break;
-		/* fall through */
-	case 0x7F:		/* send interrupt */
+	case 0x7F:		/* DEL: send interrupt */
 		w->qh = w->nr;
 		wshow(w, w->qh);
 		winterrupt(w);
+		w->iq1 = w->q0;
+		return;
+	case 0x0B:		/* ^K: delete to end of line */
+		if(w->q0 >= w->nr || w->q0 < w->qh)
+			return;
+		q1 = w->q0;
+		/* delete to end of line, or just the newline if at EOL */
+		if(q1 < w->nr && w->r[q1] == '\n')
+			q1++;	/* delete the newline itself if cursor is on it */
+		else
+			while(q1 < w->nr && w->r[q1] != '\n')
+				q1++;
+		if(q1 > w->q0){
+			wdelete(w, w->q0, q1);
+			wsetselect(w, w->q0, w->q0);
+		}
 		w->iq1 = w->q0;
 		return;
 	case 0x06:	/* ^F: file name completion */
