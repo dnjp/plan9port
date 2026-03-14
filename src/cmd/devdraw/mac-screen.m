@@ -5,6 +5,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <spawn.h>
 
 #undef Cursor
 #undef Point
@@ -91,30 +92,78 @@ rpc_shutdown(void)
 - (void)applicationDidFinishLaunching:(id)arg
 {
 	NSMenu *m, *sm;
-	NSData *d;
-	NSImage *i;
+	NSBundle *bundle;
+	NSString *appName;
 
 	LOG(@"applicationDidFinishLaunching");
 
+	// Use the enclosing app bundle's name if available so the menu bar reads
+	// "acme", "9term", etc. rather than "devdraw".
+	bundle = [NSBundle mainBundle];
+	appName = [bundle objectForInfoDictionaryKey:@"CFBundleName"];
+	if(appName == nil || [appName isEqualToString:@"devdraw"])
+		appName = @"devdraw";
+
 	sm = [NSMenu new];
+	// Only show "New Window" when running from an app bundle — bare devdraw
+	// has no launcher script to re-exec.
+	if(![appName isEqualToString:@"devdraw"]){
+		NSMenuItem *newWin = [[NSMenuItem alloc]
+		                      initWithTitle:@"New Window"
+		                             action:@selector(newWindow:)
+		                      keyEquivalent:@"n"];
+		[newWin setTarget:self];
+		[sm addItem:newWin];
+	}
 	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
 	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
 	m = [NSMenu new];
-	[m addItemWithTitle:@"DEVDRAW" action:NULL keyEquivalent:@""];
-	[m setSubmenu:sm forItem:[m itemWithTitle:@"DEVDRAW"]];
+	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
+	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
 	[NSApp setMainMenu:m];
 
-	d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
-	i = [[NSImage alloc] initWithData:d];
-	[NSApp setApplicationIconImage:i];
-	[[NSApp dockTile] display];
+	// Only set the icon programmatically when running outside a bundle
+	// (i.e. bare devdraw with no CFBundleIconFile). When running from within
+	// Acme.app, 9term.app, etc., macOS already applies the correct icon from
+	// CFBundleIconFile — calling setApplicationIconImage: here would override it.
+	if([bundle objectForInfoDictionaryKey:@"CFBundleIconFile"] == nil){
+		NSData *d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
+		NSImage *i = [[NSImage alloc] initWithData:d];
+		[NSApp setApplicationIconImage:i];
+		[[NSApp dockTile] display];
+	}
 
 	gfx_started();
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication {
 	return client0 != nil;
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+	return YES;
+}
+
+// Spawn a new instance of the enclosing app bundle's launcher script.
+// posix_spawn is safe to call from a Cocoa app (unlike fork).
+// DEVDRAW is removed from the child's environment so it spawns its own
+// fresh devdraw rather than trying to reuse the parent's instance.
+- (void)newWindow:(id)sender
+{
+	NSBundle *bundle = [NSBundle mainBundle];
+	NSString *exe = [bundle objectForInfoDictionaryKey:@"CFBundleExecutable"];
+	if(exe == nil)
+		return;
+	// Use `open -n <bundle>` via posix_spawn. This goes through Launch
+	// Services so the new devdraw gets a proper window server connection,
+	// and -n forces a new instance even if one is already running.
+	const char *bundlePath = [[[NSBundle mainBundle] bundlePath] UTF8String];
+	char *argv[] = {"/usr/bin/open", "-n", (char*)bundlePath, nil};
+	pid_t pid;
+	int err = posix_spawn(&pid, "/usr/bin/open", nil, nil, argv, nil);
+	if(err != 0)
+		fprint(2, "devdraw: newWindow: %s\n", strerror(err));
 }
 @end
 
