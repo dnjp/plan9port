@@ -7,19 +7,25 @@ PLAN9=${PLAN9:-/usr/local/plan9}
 file="$1"
 addr="$2"
 
-# Start acme if not running.
-if ! pgrep -x acme > /dev/null 2>&1; then
+# Start acme if not running, then wait for its 9P server.
+if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
 	"$PLAN9/bin/acme" &
-	# Wait for acme's 9p port to appear (up to 10 seconds).
+	# Wait up to 10 seconds for acme's 9P server to come up.
 	for i in $(seq 1 20); do
-		sleep 0.5
 		"$PLAN9/bin/9p" stat acme > /dev/null 2>&1 && break
+		sleep 0.5
 	done
+	if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
+		echo "plumb-edit: timed out waiting for acme" >&2
+		exit 1
+	fi
 fi
 
-# Re-plumb the file now that acme is running.
+# Send directly to acme's edit port.
+# Using -d edit avoids re-running the plumber rules (which would call
+# plumb-edit again, creating a loop).
 if [ -n "$addr" ]; then
-	"$PLAN9/bin/plumb" -a "addr=$addr" "$file"
+	"$PLAN9/bin/plumb" -d edit -a "addr=$addr" "$file"
 else
-	"$PLAN9/bin/plumb" "$file"
+	"$PLAN9/bin/plumb" -d edit "$file"
 fi
