@@ -192,6 +192,14 @@ threadmain(int argc, char *argv[])
 	nfontcache = 1;
 	fontcache[0] = &reffont;
 
+	/* pre-load fixed font if -F was given, so rfget(1,...) never calls openfont at open time */
+	if(fontnames[1] != nil && strcmp(fontnames[0], fontnames[1]) != 0){
+		Reffont *rf1 = rfget(1, TRUE, FALSE, nil);
+		/* warm the subfont cache so the first file open doesn't pay the fontsrv spawn cost */
+		if(rf1 != nil)
+			stringwidth(rf1->f, "abcdefghijklmnopqrstuvwxyz0123456789");
+	}
+
 	iconinit();
 	timerinit();
 	rxinit();
@@ -909,7 +917,8 @@ rfget(int fix, int save, int setfont, char *name)
 	}
 	if(r == nil){
 		for(i=0; i<nfontcache; i++)
-			if(strcmp(name, fontcache[i]->f->name) == 0){
+			if(strcmp(name, fontcache[i]->f->name) == 0 ||
+			   (fontcache[i]->f->namespec != nil && strcmp(name, fontcache[i]->f->namespec) == 0)){
 				r = fontcache[i];
 				goto Found;
 			}

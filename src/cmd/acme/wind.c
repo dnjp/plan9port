@@ -341,6 +341,8 @@ winclose(Window *w)
 			free(w->incl[i]);
 		free(w->incl);
 		free(w->events);
+		free(w->dumpstr);
+		free(w->dumpdir);
 		free(w);
 	}
 }
