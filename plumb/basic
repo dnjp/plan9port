@@ -4,6 +4,8 @@
 include fileaddr
 
 # declarations of ports without rules
+# edit is declared here because the file-opening rulesets use "plumb start"
+# rather than "plumb client", so no client ever registers the port dynamically.
 plumb to edit
 plumb to seemail
 plumb to showmail
