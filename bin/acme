@@ -32,10 +32,11 @@ if [[ -z "$fixfont" ]]; then
 fi
 
 # Apply font and dump defaults if not already set.
-# fixfont/varfont match the naming used by startacme, start9term, and acme(1).
-# Each is a comma-separated normal,HiDPI pair for Retina display support.
-: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
-: "${varfont:=/mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font}"
+# Font defaults are defined in $PLAN9/shell/fonts.sh — source it if fixfont
+# wasn't already set by the login profile.
+if [[ -z "$fixfont" ]]; then
+	. "${PLAN9}/shell/fonts.sh"
+fi
 : "${acmedump:=$HOME/acme.dump}"
 
 ARGS=()

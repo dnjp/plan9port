@@ -10,13 +10,10 @@ if not contains $PLAN9/bin $fish_user_paths
     fish_add_path $PLAN9/bin
 end
 
-# Acme font settings. Override these after sourcing this file.
-# See plan9.sh for details on the HiDPI comma-separated pair format.
+# Acme font defaults — source fonts.sh (shared with bash/zsh/rc).
+# Override fixfont/varfont after this line to use different fonts.
 if not set -q fixfont
-    set -gx fixfont /mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font
-end
-if not set -q varfont
-    set -gx varfont /mnt/font/LucidaGrande/13a/font,/mnt/font/LucidaGrande/26a/font
+    bass source $PLAN9/shell/fonts.sh
 end
 if not set -q acmedump
     set -gx acmedump $HOME/acme.dump

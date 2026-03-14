@@ -18,6 +18,7 @@ static void
 usage(void)
 {
 	fprint(2, "usage: rule [-q query] [-c client] [-e event] [-i id]\n");
+	fprint(2, "       rule -r [rulesfile]  (reload rules; default ~/lib/rules)\n");
 	fprint(2, "       rule  (reads raw request from stdin)\n");
 	threadexitsall("usage");
 }
@@ -51,7 +52,14 @@ threadmain(int argc, char **argv)
 	char *query = nil, *client = nil, *event = nil, *id = nil;
 	int anyflag = 0;
 
+	int reload = 0;
+	char *rulesfile = nil;
+
 	ARGBEGIN{
+	case 'r':
+		reload = 1;
+		rulesfile = ARGF();	/* optional: nil means use ~/lib/rules */
+		break;
 	case 'q':
 		query = ARGF();
 		if(query == nil) usage();
@@ -78,6 +86,37 @@ threadmain(int argc, char **argv)
 
 	if(argc > 0)
 		usage();
+
+	if(reload){
+		char path[1024];
+		int fd;
+		CFsys *rfs;
+		CFid *rfid;
+
+		if(rulesfile == nil){
+			char *home = getenv("HOME");
+			if(home == nil)
+				sysfatal("rule -r: $HOME not set");
+			snprint(path, sizeof path, "%s/lib/rules", home);
+			rulesfile = path;
+		}
+		fd = open(rulesfile, OREAD);
+		if(fd < 0)
+			sysfatal("rule -r: open %s: %r", rulesfile);
+		rfs = nsmount("ruler", nil);
+		if(rfs == nil)
+			sysfatal("rule -r: mount ruler: %r");
+		rfid = fsopen(rfs, "rules", OWRITE);
+		if(rfid == nil)
+			sysfatal("rule -r: open ruler/rules: %r");
+		while((n = read(fd, buf, sizeof buf)) > 0)
+			if(fswrite(rfid, buf, n) != n)
+				sysfatal("rule -r: write: %r");
+		close(fd);
+		fsclose(rfid);
+		fsunmount(rfs);
+		threadexitsall(nil);
+	}
 
 	fs = nsmount("ruler", nil);
 	if(fs == nil)

@@ -1,0 +1,16 @@
+# fonts.sh — default acme font settings for plan9port.
+#
+# Sourced by plan9.sh, plan9.fish, and plan9.rc.  Override any variable
+# after sourcing to use a different font.
+#
+# Font path format: /mnt/font/<Family>-<Style>/<size>a/font
+#   - fontsrv serves system fonts at /mnt/font (started as a LaunchAgent).
+#   - The comma-separated pair is normal,HiDPI for Retina display support.
+#     acme picks the right one based on the display it opens on.
+#
+# fixfont: monospace font used for file content and tag lines (-F flag).
+# varfont: proportional font used for directory listings and menus (-f flag).
+
+: "${fixfont:=/mnt/font/Menlo-Regular/14a/font,/mnt/font/Menlo-Regular/28a/font}"
+: "${varfont:=/mnt/font/LucidaGrande/15a/font,/mnt/font/LucidaGrande/30a/font}"
+export fixfont varfont
