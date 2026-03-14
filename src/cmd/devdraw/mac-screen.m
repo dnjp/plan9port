@@ -6,6 +6,9 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <spawn.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 
 #undef Cursor
 #undef Point
@@ -32,7 +35,235 @@ AUTOFRAMEWORK(CoreFoundation)
 
 #define LOG	if(0)NSLog
 
-// TODO: Maintain list of views for dock menu.
+// ── Window registry IPC ───────────────────────────────────────────────────────
+//
+// The primary instance (no P9P_SECONDARY) runs a Unix domain socket server.
+// Each secondary instance connects and sends newline-terminated messages:
+//   "title <pid> <title>\n"  — register or update window title
+//   "close <pid>\n"          — window closed
+//
+// The primary uses the registry to populate the Dock right-click menu.
+// Socket path: /tmp/p9p-winreg-<bundleID>
+//
+// plan9port's libc.h redefines accept/listen/close/write; undef them here
+// so we can use the POSIX BSD socket API, then restore them afterwards.
+#undef accept
+#undef listen
+#undef close
+#undef write
+
+// Declare POSIX prototypes explicitly to avoid conflicts.
+extern int    accept(int, struct sockaddr * __restrict, socklen_t * __restrict);
+extern int    listen(int, int);
+extern int    close(int);
+extern ssize_t write(int, const void *, size_t);
+
+#define WINREG_MAXCLIENTS 64
+
+typedef struct WinEntry {
+	int  pid;
+	char title[512];
+} WinEntry;
+
+static WinEntry winreg[WINREG_MAXCLIENTS];
+static int      nwinreg = 0;
+static int      winreg_server_fd = -1;
+
+static NSString*
+winreg_sockpath(void)
+{
+	NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
+	if(bid == nil) bid = @"devdraw";
+	return [NSString stringWithFormat:@"/tmp/p9p-winreg-%@", bid];
+}
+
+static void
+winreg_set(int pid, const char *title)
+{
+	for(int i = 0; i < nwinreg; i++){
+		if(winreg[i].pid == pid){
+			strlcpy(winreg[i].title, title, sizeof(winreg[i].title));
+			return;
+		}
+	}
+	if(nwinreg < WINREG_MAXCLIENTS){
+		winreg[nwinreg].pid = pid;
+		strlcpy(winreg[nwinreg].title, title, sizeof(winreg[nwinreg].title));
+		nwinreg++;
+	}
+}
+
+static void
+winreg_remove(int pid)
+{
+	for(int i = 0; i < nwinreg; i++){
+		if(winreg[i].pid == pid){
+			winreg[i] = winreg[--nwinreg];
+			return;
+		}
+	}
+}
+
+// Read one newline-terminated message from fd into buf. Returns length or -1.
+static int
+winreg_readline(int fd, char *buf, int max)
+{
+	int n = 0;
+	while(n < max-1){
+		char c;
+		if(read(fd, &c, 1) <= 0)
+			return -1;
+		if(c == '\n')
+			break;
+		buf[n++] = c;
+	}
+	buf[n] = '\0';
+	return n;
+}
+
+// Server: accept connections and process messages on a background thread.
+static void
+winreg_server_thread(void *arg)
+{
+	int sfd = (int)(intptr_t)arg;
+	for(;;){
+		int cfd = accept(sfd, nil, nil);
+		if(cfd < 0) break;
+		// Handle each client on its own thread.
+		int clientfd = cfd;
+		dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+			char line[600];
+			while(winreg_readline(clientfd, line, sizeof(line)) >= 0){
+				int pid = 0;
+				char titlebuf[512];
+				titlebuf[0] = '\0';
+				if(sscanf(line, "title %d %511[^\n]", &pid, titlebuf) == 2){
+					// Copy to heap so the block can capture it.
+					char *titlecopy = strdup(titlebuf);
+					int cpid = pid;
+					dispatch_async(dispatch_get_main_queue(), ^{
+						winreg_set(cpid, titlecopy);
+						free(titlecopy);
+					});
+				} else if(sscanf(line, "close %d", &pid) == 1){
+					int cpid = pid;
+					dispatch_async(dispatch_get_main_queue(), ^{
+						winreg_remove(cpid);
+					});
+				} else if(strcmp(line, "raise") == 0){
+					dispatch_async(dispatch_get_main_queue(), ^{
+						for(NSWindow *win in [NSApp windows]){
+							if([win isVisible]){
+								[win makeKeyAndOrderFront:nil];
+								break;
+							}
+						}
+						[NSApp activateIgnoringOtherApps:YES];
+					});
+				}
+			}
+			// Client disconnected.
+			close(clientfd);
+		});
+	}
+}
+
+static void
+winreg_start_server(void)
+{
+	NSString *path = winreg_sockpath();
+	unlink([path UTF8String]);
+
+	struct sockaddr_un addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	strlcpy(addr.sun_path, [path UTF8String], sizeof(addr.sun_path));
+
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if(fd < 0) return;
+	if(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0){ close(fd); return; }
+	if(listen(fd, 16) < 0){ close(fd); return; }
+	winreg_server_fd = fd;
+
+	dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+		winreg_server_thread((void*)(intptr_t)fd);
+	});
+}
+
+// Client: connect to primary and return socket fd, or -1.
+static int  winreg_client_fd = -1;
+static char winreg_pending_title[512] = {0};
+
+// Promote this secondary to primary: start the server, show Dock icon.
+// Called on the main thread.
+static void
+winreg_promote(void)
+{
+	winreg_client_fd = -1;
+	winreg_start_server();
+	// Changing activation policy at runtime requires a brief delay on macOS
+	// for the Dock to pick up the change.
+	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC),
+	               dispatch_get_main_queue(), ^{
+		[NSApp activateIgnoringOtherApps:YES];
+	});
+}
+
+static void
+winreg_connect(void)
+{
+	NSString *path = winreg_sockpath();
+	struct sockaddr_un addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	strlcpy(addr.sun_path, [path UTF8String], sizeof(addr.sun_path));
+
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if(fd < 0) return;
+	// Retry a few times — primary may not have started the server yet.
+	for(int i = 0; i < 20; i++){
+		if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0){
+			winreg_client_fd = fd;
+			// Flush any title that was set before we connected.
+			if(winreg_pending_title[0] != '\0'){
+				char msg[600];
+				snprintf(msg, sizeof(msg), "title %d %s\n", (int)getpid(), winreg_pending_title);
+				write(fd, msg, strlen(msg));
+			}
+			// Keep reading from the server — if it closes, promote ourselves.
+			char buf[4];
+			while(read(fd, buf, sizeof(buf)) > 0)
+				;
+			// Server gone: promote on main thread.
+			dispatch_async(dispatch_get_main_queue(), ^{
+				winreg_promote();
+			});
+			return;
+		}
+		usleep(100000); // 100ms
+	}
+	// Could not connect to any primary — become primary ourselves.
+	close(fd);
+	dispatch_async(dispatch_get_main_queue(), ^{
+		winreg_promote();
+	});
+}
+
+static void
+winreg_send(const char *msg)
+{
+	if(winreg_client_fd < 0) return;
+	write(winreg_client_fd, msg, strlen(msg));
+}
+
+// Restore plan9port macro overrides.
+#define accept  p9accept
+#define listen  p9listen
+#define close   p9close
+#define write   p9write
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 static void setprocname(const char*);
 static uint keycvt(uint);
@@ -62,6 +293,7 @@ static ClientImpl macimpl = {
 @class DrawLayer;
 
 @interface AppDelegate : NSObject<NSApplicationDelegate>
+- (NSMenu*)applicationDockMenu:(NSApplication*)sender;
 @end
 
 static AppDelegate *myApp = NULL;
@@ -74,7 +306,21 @@ gfx_main(void)
 
 	@autoreleasepool{
 		[NSApplication sharedApplication];
-		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+		// Secondary instances are spawned via "New Window" with P9P_SECONDARY=1.
+		// They use Accessory policy (no Dock icon) and connect to the primary's
+		// registry so their titles appear in the primary's Dock menu.
+		BOOL isSecondary = getenv("P9P_SECONDARY") != nil;
+		if(isSecondary){
+			[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+			dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+				winreg_connect();
+			});
+		} else {
+			[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+			winreg_start_server();
+		}
+
 		myApp = [AppDelegate new];
 		[NSApp setDelegate:myApp];
 		[NSApp run];
@@ -145,25 +391,102 @@ rpc_shutdown(void)
 	return YES;
 }
 
-// Spawn a new instance of the enclosing app bundle's launcher script.
-// posix_spawn is safe to call from a Cocoa app (unlike fork).
-// DEVDRAW is removed from the child's environment so it spawns its own
-// fresh devdraw rather than trying to reuse the parent's instance.
+// New Window: spawn a secondary instance via `open -n --env P9P_SECONDARY=1`.
+// The secondary sees P9P_SECONDARY and uses Accessory policy (no Dock icon),
+// sharing the primary's Dock icon and appearing in its right-click menu.
 - (void)newWindow:(id)sender
 {
-	NSBundle *bundle = [NSBundle mainBundle];
-	NSString *exe = [bundle objectForInfoDictionaryKey:@"CFBundleExecutable"];
-	if(exe == nil)
-		return;
-	// Use `open -n <bundle>` via posix_spawn. This goes through Launch
-	// Services so the new devdraw gets a proper window server connection,
-	// and -n forces a new instance even if one is already running.
 	const char *bundlePath = [[[NSBundle mainBundle] bundlePath] UTF8String];
-	char *argv[] = {"/usr/bin/open", "-n", (char*)bundlePath, nil};
+	char *argv[] = {
+		"/usr/bin/open", "-n",
+		"--env", "P9P_SECONDARY=1",
+		(char*)bundlePath, nil
+	};
 	pid_t pid;
 	int err = posix_spawn(&pid, "/usr/bin/open", nil, nil, argv, nil);
 	if(err != 0)
 		fprint(2, "devdraw: newWindow: %s\n", strerror(err));
+}
+
+// Provide a dock right-click menu listing all open windows by title.
+// Local windows (this process) are actionable; remote windows (secondary
+// instances tracked via IPC) are shown as informational items.
+- (NSMenu*)applicationDockMenu:(NSApplication*)sender
+{
+	NSMenu *menu = [NSMenu new];
+
+	// Local windows in this process.
+	// Use winreg_pending_title (the full path label) rather than the window
+	// title (which is fixed to the app name) for meaningful menu entries.
+	for(NSWindow *win in [NSApp windows]){
+		if(![win isVisible])
+			continue;
+		NSString *title = nil;
+		if(winreg_pending_title[0] != '\0')
+			title = [NSString stringWithUTF8String:winreg_pending_title];
+		if(title == nil || [title length] == 0)
+			title = [win title];
+		NSMenuItem *item = [[NSMenuItem alloc]
+		                    initWithTitle:title
+		                           action:@selector(bringWindowToFront:)
+		                    keyEquivalent:@""];
+		[item setTarget:self];
+		[item setRepresentedObject:win];
+		[menu addItem:item];
+	}
+
+	// Windows from secondary instances registered via IPC.
+	for(int i = 0; i < nwinreg; i++){
+		NSString *title = [NSString stringWithUTF8String:winreg[i].title];
+		if(title == nil || [title length] == 0)
+			continue;
+		NSMenuItem *item = [[NSMenuItem alloc]
+		                    initWithTitle:title
+		                           action:@selector(activateSecondaryWindow:)
+		                    keyEquivalent:@""];
+		[item setTarget:self];
+		// Store the PID so the action can activate the right process.
+		[item setRepresentedObject:@(winreg[i].pid)];
+		[menu addItem:item];
+	}
+
+	return menu;
+}
+
+- (void)bringWindowToFront:(NSMenuItem*)item
+{
+	NSWindow *win = [item representedObject];
+	[win makeKeyAndOrderFront:nil];
+	[NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)activateSecondaryWindow:(NSMenuItem*)item
+{
+	pid_t pid = [(NSNumber*)[item representedObject] intValue];
+	NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+	[app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+}
+
+// Clicking the Dock icon when the app is already running triggers this.
+// Bring the existing window to front rather than doing nothing.
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)hasVisibleWindows
+{
+	NSLog(@"devdraw: applicationShouldHandleReopen hasVisibleWindows=%d", (int)hasVisibleWindows);
+	for(NSWindow *win in [NSApp windows])
+		[win makeKeyAndOrderFront:nil];
+	[NSApp activateIgnoringOtherApps:YES];
+	return NO;
+}
+
+- (void)applicationWillTerminate:(NSNotification*)notification
+{
+	if(winreg_client_fd >= 0){
+		char msg[64];
+		snprintf(msg, sizeof(msg), "close %d\n", (int)getpid());
+		winreg_send(msg);
+		close(winreg_client_fd);
+		winreg_client_fd = -1;
+	}
 }
 @end
 
@@ -408,9 +731,25 @@ rpc_setlabel(Client *client, char *label)
 
 	@autoreleasepool{
 		NSString *s = [[NSString alloc] initWithUTF8String:label];
-		[self.win setTitle:s];
+		// Use the bundle name in the title bar (e.g. "acme") so it stays
+		// stable while the full path label is used for dock menu tracking.
+		NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+		[self.win setTitle:bundleName ?: s];
 		if(client0)
 			[[NSApp dockTile] setBadgeLabel:s];
+		// Always keep the full label for dock menu use.
+		strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
+		// Register/update this window's title with the primary instance.
+		if(getenv("P9P_SECONDARY") != nil){
+			char *msgcopy = malloc(600);
+			if(msgcopy){
+				snprintf(msgcopy, 600, "title %d %s\n", (int)getpid(), label);
+				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+					winreg_send(msgcopy);
+					free(msgcopy);
+				});
+			}
+		}
 	}
 }
 
