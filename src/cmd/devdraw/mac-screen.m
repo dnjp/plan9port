@@ -201,8 +201,13 @@ winreg_promote(void)
 {
 	winreg_client_fd = -1;
 	winreg_start_server();
+	// Changing activation policy at runtime requires a brief delay on macOS
+	// for the Dock to pick up the change.
 	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-	[NSApp activateIgnoringOtherApps:YES];
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC),
+	               dispatch_get_main_queue(), ^{
+		[NSApp activateIgnoringOtherApps:YES];
+	});
 }
 
 static void
