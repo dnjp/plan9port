@@ -1,6 +1,6 @@
 <$PLAN9/src/mkhdr
 
-TARG=9term.bin win
+TARG=win
 
 OFILES=\
 	rcstart.$O\
@@ -12,5 +12,18 @@ HFILES=dat.h fns.h term.h
 
 Darwin.$O Linux.$O FreeBSD.$O DragonFly.$O: bsdpty.c
 
-$O.9term.bin: data.$O scrl.$O time.$O util.$O wind.$O
+# 9term.bin has a custom set of objects so it is built and installed explicitly
+# rather than via mkmany's generic rule (which would require 9term.bin.c).
+all:V: $O.9term.bin
+
+$O.9term.bin: 9term.$O data.$O scrl.$O time.$O util.$O wind.$O $OFILES $LIB
+	$LD -o $target $prereq $LDFLAGS
+
+9term.bin.install:V: $BIN/9term.bin
+
+$BIN/9term.bin: $O.9term.bin
+	$INSTALL $O.9term.bin $BIN/9term.bin
+	if [ "$(uname)" = Darwin ]; then codesign --force --sign - $BIN/9term.bin 2>/dev/null || true; fi
+
+install:V: 9term.bin.install
 
