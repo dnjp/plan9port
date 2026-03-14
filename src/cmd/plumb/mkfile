@@ -1,6 +1,9 @@
 <$PLAN9/src/mkhdr
 
-TARG=plumber plumb
+# plumber is built and installed via mkmany's generic rules.
+# plumb is excluded from TARG and built explicitly as plumb.bin so that
+# $BIN/plumb can be a wrapper script (following the acme/9term/sam pattern).
+TARG=plumber
 
 <$PLAN9/src/mkmany
 
@@ -10,6 +13,19 @@ PLUMB=plumb.$O
 $PLUMBER:	$HFILES plumber.h
 $PLUMB:		$HFILES
 
-$O.plumb:	$PLUMB
 $O.plumber:	$PLUMBER
 
+# Build plumb.bin explicitly (mkmany won't generate a rule for it since it's
+# not in TARG, and there is no plumb.bin.c to trigger mkone's pattern rule).
+all:V: $O.plumb.bin
+
+$O.plumb.bin:	$PLUMB
+	$LD -o $target $prereq $LDFLAGS
+
+plumb.bin.install:V: $BIN/plumb.bin
+
+$BIN/plumb.bin: $O.plumb.bin
+	$INSTALL $O.plumb.bin $BIN/plumb.bin
+	if [ "$(uname)" = Darwin ]; then codesign --force --sign - $BIN/plumb.bin 2>/dev/null || true; fi
+
+install:V: many-install plumb.bin.install

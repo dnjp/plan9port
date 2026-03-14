@@ -1,14 +1,28 @@
 #!/bin/bash
+# Plumb.app launcher — route files double-clicked in Finder through the plumber.
+#
+# macOS Finder passes files as arguments (via Apple Events / macargv).
+# For each file, macedit calls: plumb -d edit $file
+# which sends a plumb message to the running plumber daemon.
+#
+# Dock-launched apps inherit a minimal environment.  We set PLAN9, PATH, and
+# NAMESPACE explicitly so the plumb binary can find both the plan9port binaries
+# and the plumber's Unix domain socket.
 
-if [ -e ~/.bashrc ] ; then
-	. ~/.bashrc
-fi
 PLAN9=${PLAN9:-/usr/local/plan9}
+export PLAN9
+export PATH="$PLAN9/bin:$PATH"
+
+# The plumber socket lives in the namespace directory.
+# getns() in lib9 uses $NAMESPACE if set, otherwise /tmp/ns.$USER.:0.
+# Set it explicitly here so it's always correct regardless of $DISPLAY.
+if [[ -z "$NAMESPACE" ]]; then
+	export NAMESPACE="/tmp/ns.${USER}.:0"
+fi
 
 bin=$PLAN9/bin
 IFS=$'\n'
 
-for file in $($bin/macargv)
-do
+for file in $($bin/macargv); do
 	$bin/macedit "$file"
 done

@@ -26,8 +26,8 @@ plumb start web $0
 
 # doc and rtf files go to wdoc2txt
 type is text
-data matches '[a-zA-Z¡-￿0-9_\-./]+'
-data matches '([a-zA-Z¡-￿0-9_\-./]+)\.(doc|rtf)'
+data matches '.+'
+data matches '(.+)\.(doc|rtf)'
 arg isfile	$0
 plumb to msword
 plumb start wdoc2txt $file
@@ -40,8 +40,8 @@ plumb start wdoc2txt $file
 
 # image files go to page
 type is text
-data matches '[a-zA-Z¡-￿0-9_\-./@]+'
-data matches '([a-zA-Z¡-￿0-9_\-./@]+)\.(jpe?g|JPE?G|gif|GIF|tiff?|TIFF?|ppm|bit|png|PNG)'
+data matches '.+'
+data matches '(.+)\.(jpe?g|JPE?G|gif|GIF|tiff?|TIFF?|ppm|bit|png|PNG)'
 arg isfile	$0
 plumb to image
 plumb start 9 page $file
@@ -49,15 +49,16 @@ plumb start 9 page $file
 # postscript/pdf/dvi go to page but not over the a plumb port
 # the port is here for reference but is unused
 type is text
-data matches '[a-zA-Z¡-￿0-9_\-./@]+'
-data matches '([a-zA-Z¡-￿0-9_\-./@]+)\.(ps|PS|eps|EPS|pdf|PDF|dvi|DVI)'
+data matches '.+'
+data matches '(.+)\.(ps|PS|eps|EPS|pdf|PDF|dvi|DVI)'
 arg isfile	$0
 plumb to postscript
 plumb start 9 page $file
 
 # open office - s[xt][cdigmw], doc, xls, ppt
-data matches '[a-zA-Z¡-￿0-9_\-./@]+'
-data matches '([a-zA-Z¡-￿0-9_\-./@]+)\.([Ss][XxTt][CcDdIiGgMmWw]|[Dd][Oo][Cc]|[Xx][Ll][Ss]|[Pp][Pp][Tt])'
+type is text
+data matches '.+'
+data matches '(.+)\.([Ss][XxTt][CcDdIiGgMmWw]|[Dd][Oo][Cc]|[Xx][Ll][Ss]|[Pp][Pp][Tt])'
 arg isfile	$0
 plumb to openoffice
 plumb start openoffice $file
@@ -80,7 +81,7 @@ plumb start $plan9/bin/plumb-edit $file $2-#0+#$3-#1
 
 # existing files, possibly tagged by line number, go to editor
 type is text
-data matches '([.a-zA-Z¡-￿0-9_/\-@]*[a-zA-Z¡-￿0-9_/\-])('$addr')?'
+data matches '(.+?)('$addr')?'
 arg isfile	$1
 data set	$file
 attr add	addr=$3

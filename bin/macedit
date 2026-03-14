@@ -5,13 +5,16 @@ bin=$PLAN9/bin
 
 file=$1
 
-# Blanks are problematic in filenames: just plumb
-# the file's content.
-if echo "$file" | grep -q " "
-then
-	base=$(basename "$file" | sed 's/ /_/g')
-	attr="action=showdata filename=/BadName/$base"
-	cat $file | "$bin/plumb" -i -d edit -a "$attr"
+# Pass the file to the plumber without a hardcoded destination so that
+# plumb/basic routes it correctly (PDF → page, image → page, text → acme, etc.).
+#
+# For filenames with spaces the plumb/basic regexes won't match the full path,
+# so we split into -w <dir> <basename>.  The plumber resolves the full path
+# from wdir + data, and the basename alone matches the extension rules.
+if echo "$file" | grep -q " "; then
+	dir=$(dirname "$file")
+	base=$(basename "$file")
+	"$bin/plumb" -w "$dir" "$base"
 else
-	"$bin/plumb" -d edit "$file"
+	"$bin/plumb" "$file"
 fi
