@@ -1272,6 +1272,85 @@ textframescroll(Text *t, int dl)
 }
 
 
+/*
+ * textselectextend extends the current selection to the mouse click position,
+ * implementing shift+click. The anchor is the end of the selection that the
+ * cursor is NOT at (tracked by cursoratq1, consistent with shift+arrow keys).
+ * If there is no existing selection (q0==q1), the click position becomes the
+ * new cursor and cursoratq1 is reset. After extending, the cursor end is set
+ * to the click position and cursoratq1 is updated accordingly.
+ */
+void
+textselectextend(Text *t)
+{
+	uint q0, q1, click;
+	int atq1;
+
+	/* convert click position to character offset */
+	click = t->org + frcharofpt(&t->fr, mouse->xy);
+	if(click > t->file->b.nc)
+		click = t->file->b.nc;
+
+	q0 = t->q0;
+	q1 = t->q1;
+
+	if(q0 == q1){
+		/*
+		 * No selection: cursor is the anchor. Extend from cursor to click.
+		 */
+		if(click >= q0){
+			q1 = click;
+			atq1 = 1;
+		} else {
+			q0 = click;
+			atq1 = 0;
+		}
+	} else {
+		/*
+		 * Existing selection: determine which end is the cursor (moves)
+		 * and which is the anchor (stays). cursoratq1 tracks this across
+		 * shift+arrow keys; if unset, infer from click proximity.
+		 */
+		if(t->cursoratq1 < 0){
+			if(click <= q0)
+				atq1 = 0;
+			else if(click >= q1)
+				atq1 = 1;
+			else
+				atq1 = (click - q0 > q1 - click) ? 1 : 0;
+		} else {
+			atq1 = t->cursoratq1;
+		}
+
+		/* move cursor end to click, flipping if click crosses anchor */
+		if(atq1){
+			if(click >= q0){
+				q1 = click;
+			} else {
+				q1 = q0;
+				q0 = click;
+				atq1 = 0;
+			}
+		} else {
+			if(click <= q1){
+				q0 = click;
+			} else {
+				q0 = q1;
+				q1 = click;
+				atq1 = 1;
+			}
+		}
+	}
+
+	textsetselect(t, q0, q1);
+	flushimage(display, 1);
+	t->cursoratq1 = atq1;	/* textsetselect clears it; restore */
+
+	/* drain button release */
+	while(mouse->buttons)
+		readmouse(mousectl);
+}
+
 void
 textselect(Text *t)
 {
