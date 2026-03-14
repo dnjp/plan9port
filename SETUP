@@ -10,10 +10,13 @@ sudo ./INSTALL
 
 # Generate shell environment files with the actual install path baked in.
 # Users can source these from their shell profile instead of setting PLAN9 manually.
+# Use sudo tee since /usr/local/plan9 is root-owned after INSTALL.
 PLAN9=`pwd`
-sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.sh.in > shell/plan9.sh
-sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.fish.in > shell/plan9.fish
-sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.rc.in > shell/plan9.rc
+sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.sh.in      | sudo tee shell/plan9.sh      > /dev/null
+sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.fish.in    | sudo tee shell/plan9.fish    > /dev/null
+sed "s|/usr/local/plan9|$PLAN9|g" shell/plan9.rc.in      | sudo tee shell/plan9.rc      > /dev/null
+sed "s|/usr/local/plan9|$PLAN9|g" shell/p9p-session.sh.in   | sudo tee shell/p9p-session.sh   > /dev/null
+sed "s|/usr/local/plan9|$PLAN9|g" shell/p9p-session.fish.in | sudo tee shell/p9p-session.fish > /dev/null
 
 # On macOS, install and start the background daemons (plumber, fontsrv, ruler).
 if [ "$(uname)" = "Darwin" ]; then

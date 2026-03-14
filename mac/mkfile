@@ -13,11 +13,17 @@ all:V: install
 install:V: apps daemons
 
 # Copy .app bundles to /Applications.
+# devdraw is copied from $PLAN9/bin into each bundle's MacOS/ directory so
+# that macOS associates the display server process with the correct bundle
+# (icon, app name, Dock entry) rather than showing a generic devdraw entry.
 apps:V:
 	cp -r 9term.app /Applications/
+	cp $PLAN9/bin/devdraw /Applications/9term.app/Contents/MacOS/devdraw
 	cp -r Acme.app /Applications/
+	cp $PLAN9/bin/devdraw /Applications/Acme.app/Contents/MacOS/devdraw
 	cp -r Plumb.app /Applications/
 	cp -r Sam.app /Applications/
+	cp $PLAN9/bin/devdraw /Applications/Sam.app/Contents/MacOS/devdraw
 
 # Expand plist templates and install LaunchAgents.
 # Scripts (run-with-env.sh, 9p-status) are referenced in-place from the source
@@ -36,21 +42,30 @@ daemons:V:
 	echo 'Daemons installed. Run mk load to start them.'
 
 # Load (start) all LaunchAgents.
+# launchctl load/unload are deprecated since macOS 10.10; use bootstrap/bootout.
+# bootout first (ignored if not loaded) so bootstrap never fails on re-runs.
 load:V:
 	for d in $DAEMONS; do \
-		launchctl load $LAUNCH_AGENTS/$d.plist; \
+		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
+		launchctl bootstrap gui/`id -u` $LAUNCH_AGENTS/$d.plist; \
 		echo loaded $d; \
 	done
 
 # Unload (stop) all LaunchAgents.
 unload:V:
 	for d in $DAEMONS; do \
-		launchctl unload $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
+		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
 		echo unloaded $d; \
 	done
 
 # Unload then load (restart after editing plists or run-with-env.sh).
-reload:V: unload load
+# bootstrap fails if already loaded, so always bootout first (errors ignored).
+reload:V:
+	for d in $DAEMONS; do \
+		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
+		launchctl bootstrap gui/`id -u` $LAUNCH_AGENTS/$d.plist; \
+		echo reloaded $d; \
+	done
 
 # Show status of all LaunchAgents.
 status:V:

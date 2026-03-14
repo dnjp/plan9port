@@ -5,4 +5,8 @@ export tabstop=8
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 
+# Point libdraw at the devdraw binary inside this bundle so that the
+# display server process inherits the bundle's icon and app name.
+export DEVDRAW="$(dirname "$0")/devdraw"
+
 exec "$PLAN9/bin/sam"
