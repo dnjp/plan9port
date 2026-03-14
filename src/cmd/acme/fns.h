@@ -12,6 +12,7 @@ void	warningew(Window*, Mntdir*, char*, ...);
 void	plumblook(Plumbmsg *m);
 void	plumbshow(Plumbmsg*m);
 void	rulerapply(Window*);
+void	rulerprefont(Window*);
 void	acmeputsnarf(void);
 void	acmegetsnarf(void);
 int	tempfile(void);

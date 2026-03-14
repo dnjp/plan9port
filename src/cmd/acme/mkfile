@@ -5,6 +5,7 @@ DIRS=mail
 
 OFILES=\
 	acme.$O\
+	subfontcache.$O\
 	addr.$O\
 	buff.$O\
 	cols.$O\

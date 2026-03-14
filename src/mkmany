@@ -12,6 +12,7 @@ $O.%:	%.$O $OFILES $LIB # ${SHORTLIB:%=$LIBDIR/lib%.a}
 
 $BIN/%:	$O.%
 	$INSTALL $O.$stem $BIN/$stem
+	if [ "$(uname)" = Darwin ]; then codesign --force --sign - $BIN/$stem 2>/dev/null || true; fi
 
 many-install:V:
 	for i in $TARG

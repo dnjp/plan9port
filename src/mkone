@@ -10,6 +10,7 @@ install:V: $TARG.install
 
 $BIN/%:	$O.%
 	$INSTALL $O.$stem $BIN/$stem
+	if [ "$(uname)" = Darwin ]; then codesign --force --sign - $BIN/$stem 2>/dev/null || true; fi
 
 CLEANFILES=$CLEANFILES $PROG
 NUKEFILES=$NUKEFILES $BIN/$TARG
