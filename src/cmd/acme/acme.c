@@ -179,6 +179,7 @@ threadmain(int argc, char *argv[])
 		fprint(2, "acme: can't open display: %r\n");
 		threadexitsall("initdraw");
 	}
+	drawsetlabel(wdir);
 
 	d = display;
 	font = d->defaultfont;
@@ -600,6 +601,13 @@ mousethread(void *v)
 			if((t!=mousetext && t!=nil && t->w!=nil) &&
 				(mousetext==nil || mousetext->w==nil || t->w->id!=mousetext->w->id)) {
 				xfidlog(t->w, "focus");
+				if(t->w->body.file->nname > 0){
+					char *bname = runetobyte(t->w->body.file->name, t->w->body.file->nname);
+					if(bname != nil){
+						drawsetlabel(bname);
+						free(bname);
+					}
+				}
 			}
 
 			if(t!=mousetext && mousetext!=nil && mousetext->w!=nil){
