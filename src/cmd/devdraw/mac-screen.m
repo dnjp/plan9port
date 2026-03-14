@@ -104,6 +104,8 @@ winreg_remove(int pid)
 	}
 }
 
+static void winreg_quit_all(void);
+
 // Read one newline-terminated message from fd into buf. Returns length or -1.
 static int
 winreg_readline(int fd, char *buf, int max)
@@ -150,17 +152,23 @@ winreg_server_thread(void *arg)
 					dispatch_async(dispatch_get_main_queue(), ^{
 						winreg_remove(cpid);
 					});
-				} else if(strcmp(line, "raise") == 0){
-					dispatch_async(dispatch_get_main_queue(), ^{
-						for(NSWindow *win in [NSApp windows]){
-							if([win isVisible]){
-								[win makeKeyAndOrderFront:nil];
-								break;
-							}
+			} else if(strcmp(line, "raise") == 0){
+				dispatch_async(dispatch_get_main_queue(), ^{
+					for(NSWindow *win in [NSApp windows]){
+						if([win isVisible]){
+							[win makeKeyAndOrderFront:nil];
+							break;
 						}
-						[NSApp activateIgnoringOtherApps:YES];
-					});
-				}
+					}
+					[NSApp activateIgnoringOtherApps:YES];
+				});
+			} else if(strcmp(line, "quit") == 0){
+				dispatch_async(dispatch_get_main_queue(), ^{
+					// Kill all secondaries then quit the primary.
+					winreg_quit_all();
+					[NSApp terminate:nil];
+				});
+			}
 			}
 			// Client disconnected.
 			close(clientfd);
@@ -257,6 +265,15 @@ winreg_send(const char *msg)
 	write(winreg_client_fd, msg, strlen(msg));
 }
 
+// Terminate all secondary instances then quit the primary.
+// Must be called on the main thread (reads nwinreg/winreg[]).
+static void
+winreg_quit_all(void)
+{
+	for(int i = 0; i < nwinreg; i++)
+		kill(winreg[i].pid, SIGTERM);
+}
+
 // Restore plan9port macro overrides.
 #define accept  p9accept
 #define listen  p9listen
@@ -292,7 +309,7 @@ static ClientImpl macimpl = {
 @class DrawView;
 @class DrawLayer;
 
-@interface AppDelegate : NSObject<NSApplicationDelegate>
+@interface AppDelegate : NSObject<NSApplicationDelegate, NSMenuDelegate>
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
 @end
 
@@ -350,23 +367,44 @@ rpc_shutdown(void)
 	if(appName == nil || [appName isEqualToString:@"devdraw"])
 		appName = @"devdraw";
 
+	// App menu (leftmost, named after the app).
 	sm = [NSMenu new];
-	// Only show "New Window" when running from an app bundle — bare devdraw
-	// has no launcher script to re-exec.
+	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
+	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
+	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
+
+	m = [NSMenu new];
+	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
+	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
+
+	// File menu — only shown for app bundles that support New Window.
 	if(![appName isEqualToString:@"devdraw"]){
+		NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
 		NSMenuItem *newWin = [[NSMenuItem alloc]
 		                      initWithTitle:@"New Window"
 		                             action:@selector(newWindow:)
 		                      keyEquivalent:@"n"];
 		[newWin setTarget:self];
-		[sm addItem:newWin];
+		[fileMenu addItem:newWin];
+		[fileMenu addItem:[NSMenuItem separatorItem]];
+		NSMenuItem *closeWin = [[NSMenuItem alloc]
+		                        initWithTitle:@"Close Window"
+		                               action:@selector(closeWindow:)
+		                        keyEquivalent:@"w"];
+		[closeWin setTarget:self];
+		[fileMenu addItem:closeWin];
+		NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
+		[fileMenuItem setSubmenu:fileMenu];
+		[m addItem:fileMenuItem];
 	}
-	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
-	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
-	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
-	m = [NSMenu new];
-	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
-	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
+
+	// Window menu — populated dynamically via menuNeedsUpdate:.
+	NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+	[windowMenu setDelegate:self];
+	NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
+	[windowMenuItem setSubmenu:windowMenu];
+	[m addItem:windowMenuItem];
+
 	[NSApp setMainMenu:m];
 
 	// Only set the icon programmatically when running outside a bundle
@@ -389,6 +427,19 @@ rpc_shutdown(void)
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
 	return YES;
+}
+
+- (void)closeWindow:(id)sender
+{
+	[[NSApp keyWindow] performClose:sender];
+}
+
+// When the primary quits (for any reason), kill all secondary instances first.
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
+{
+	if(winreg_server_fd >= 0)
+		winreg_quit_all();
+	return NSTerminateNow;
 }
 
 // New Window: spawn a secondary instance via `open -n --env P9P_SECONDARY=1`.
@@ -465,6 +516,51 @@ rpc_shutdown(void)
 	pid_t pid = [(NSNumber*)[item representedObject] intValue];
 	NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
 	[app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+}
+
+// NSMenuDelegate — rebuild the Window menu each time it opens so it always
+// reflects the current set of open windows (local + secondary instances).
+- (void)menuNeedsUpdate:(NSMenu*)menu
+{
+	if(![[menu title] isEqualToString:@"Window"])
+		return;
+
+	[menu removeAllItems];
+
+	// Local windows in this process.
+	for(NSWindow *win in [NSApp windows]){
+		if(![win isVisible])
+			continue;
+		NSString *title = nil;
+		if(winreg_pending_title[0] != '\0')
+			title = [NSString stringWithUTF8String:winreg_pending_title];
+		if(title == nil || [title length] == 0)
+			title = [win title];
+		NSMenuItem *item = [[NSMenuItem alloc]
+		                    initWithTitle:title
+		                           action:@selector(bringWindowToFront:)
+		                    keyEquivalent:@""];
+		[item setTarget:self];
+		[item setRepresentedObject:win];
+		[menu addItem:item];
+	}
+
+	// Windows from secondary instances registered via IPC.
+	if(nwinreg > 0){
+		[menu addItem:[NSMenuItem separatorItem]];
+		for(int i = 0; i < nwinreg; i++){
+			NSString *title = [NSString stringWithUTF8String:winreg[i].title];
+			if(title == nil || [title length] == 0)
+				continue;
+			NSMenuItem *item = [[NSMenuItem alloc]
+			                    initWithTitle:title
+			                           action:@selector(activateSecondaryWindow:)
+			                    keyEquivalent:@""];
+			[item setTarget:self];
+			[item setRepresentedObject:@(winreg[i].pid)];
+			[menu addItem:item];
+		}
+	}
 }
 
 // Clicking the Dock icon when the app is already running triggers this.
@@ -735,8 +831,6 @@ rpc_setlabel(Client *client, char *label)
 		// stable while the full path label is used for dock menu tracking.
 		NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
 		[self.win setTitle:bundleName ?: s];
-		if(client0)
-			[[NSApp dockTile] setBadgeLabel:s];
 		// Always keep the full label for dock menu use.
 		strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
 		// Register/update this window's title with the primary instance.
@@ -996,6 +1090,30 @@ rpc_resizewindow(Client *c, Rectangle r)
 		[self sendmouse:8];
 	else if (s < 0.0f)
 		[self sendmouse:16];
+}
+
+// Intercept Cmd+W (close window) and Cmd+Q (quit app) before they are
+// forwarded to the Plan 9 key handler as Kcmd+'w'/'q' keystrokes.
+- (BOOL)performKeyEquivalent:(NSEvent*)e
+{
+	if([e modifierFlags] & NSEventModifierFlagCommand){
+		NSString *chars = [e charactersIgnoringModifiers];
+		if([chars isEqualToString:@"w"]){
+			[NSApp sendAction:@selector(closeWindow:) to:nil from:self];
+			return YES;
+		}
+		if([chars isEqualToString:@"q"]){
+			// If we are a secondary, ask the primary to quit everything.
+			// If we are the primary (or unconnected), terminate directly —
+			// applicationShouldTerminate: will kill secondaries first.
+			if(winreg_client_fd >= 0)
+				winreg_send("quit\n");
+			else
+				[NSApp terminate:nil];
+			return YES;
+		}
+	}
+	return [super performKeyEquivalent:e];
 }
 
 - (void)keyDown:(NSEvent*)e
