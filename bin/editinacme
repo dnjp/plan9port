@@ -18,15 +18,14 @@ file=$file(1)
 
 echo 'editinacme: editing '$file >[1=2]
 
-# Start acme if it is not already running.
-if(! 9p stat plumb/edit >/dev/null >[2]/dev/null) {
-	if(! 9p stat acme >/dev/null >[2]/dev/null)
-		acme &
-	# Wait up to 10 seconds for acme to register its plumb edit port.
+# Start acme if it is not already running, then wait for its 9P server.
+if(! 9p stat acme >/dev/null >[2]/dev/null) {
+	acme &
+	# Wait up to 10 seconds for acme's 9P server to come up.
 	i=0
-	while(! 9p stat plumb/edit >/dev/null >[2]/dev/null) {
+	while(! 9p stat acme >/dev/null >[2]/dev/null) {
 		if(~ $i 20) {
-			echo 'editinacme: timed out waiting for acme plumb port' >[1=2]
+			echo 'editinacme: timed out waiting for acme' >[1=2]
 			exit 'acme timeout'
 		}
 		sleep 0.5
@@ -34,12 +33,39 @@ if(! 9p stat plumb/edit >/dev/null >[2]/dev/null) {
 	}
 }
 
-plumb -s editinacme -d edit $file
+# Start tailing acme/log before sending the plumb message so we cannot
+# miss the del event if the window is closed quickly.
+# awk signals completion by writing to a done-fifo; we then kill the log
+# reader before awk exits, so 9p read is never left with a broken pipe.
+logfifo=`{mktemp -u /tmp/editinacme.XXXXXX}
+donefifo=`{mktemp -u /tmp/editinacme.XXXXXX}
+mkfifo $logfifo
+mkfifo $donefifo
+9p read acme/log >$logfifo &
+logpid=$apid
+
+# Send directly to acme's edit port. Using -d edit avoids re-running the
+# plumber rules (which would call plumb-edit, creating a loop).
+plumb -d edit $file
 if(! ~ $status '') {
 	echo 'editinacme: plumb failed' >[1=2]
+	kill $logpid | rc >[2]/dev/null
+	rm -f $logfifo $donefifo
 	exit 'plumb failed'
 }
 
-# Wait for the window to be deleted. awk exits (closing the pipe cleanly)
-# as soon as it sees the del event for our file, avoiding a broken pipe.
-9p read acme/log | awk -v file=$file '$2=="del" && $3==file {exit}'
+# awk reads the log until it sees the del event, then writes to donefifo
+# (unblocking the read below) and keeps draining so 9p read stays alive.
+awk -v file=$file -v done=$donefifo '
+	$2=="del" && $3==file {
+		print "" > done; close(done)
+	}
+' <$logfifo &
+awkpid=$apid
+
+# Block until awk signals that the del event was seen.
+read <$donefifo
+
+# Now kill both background processes cleanly before their pipes close.
+kill $logpid $awkpid | rc >[2]/dev/null
+rm -f $logfifo $donefifo
