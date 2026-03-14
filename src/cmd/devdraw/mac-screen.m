@@ -292,7 +292,7 @@ static ClientImpl macimpl = {
 @class DrawView;
 @class DrawLayer;
 
-@interface AppDelegate : NSObject<NSApplicationDelegate>
+@interface AppDelegate : NSObject<NSApplicationDelegate, NSMenuDelegate>
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
 @end
 
@@ -364,9 +364,17 @@ rpc_shutdown(void)
 	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
 	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
+
+	// Window menu — populated dynamically via menuNeedsUpdate:.
+	NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+	[windowMenu setDelegate:self];
+	NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
+	[windowMenuItem setSubmenu:windowMenu];
+
 	m = [NSMenu new];
 	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
 	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
+	[m addItem:windowMenuItem];
 	[NSApp setMainMenu:m];
 
 	// Only set the icon programmatically when running outside a bundle
@@ -465,6 +473,51 @@ rpc_shutdown(void)
 	pid_t pid = [(NSNumber*)[item representedObject] intValue];
 	NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
 	[app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+}
+
+// NSMenuDelegate — rebuild the Window menu each time it opens so it always
+// reflects the current set of open windows (local + secondary instances).
+- (void)menuNeedsUpdate:(NSMenu*)menu
+{
+	if(![[menu title] isEqualToString:@"Window"])
+		return;
+
+	[menu removeAllItems];
+
+	// Local windows in this process.
+	for(NSWindow *win in [NSApp windows]){
+		if(![win isVisible])
+			continue;
+		NSString *title = nil;
+		if(winreg_pending_title[0] != '\0')
+			title = [NSString stringWithUTF8String:winreg_pending_title];
+		if(title == nil || [title length] == 0)
+			title = [win title];
+		NSMenuItem *item = [[NSMenuItem alloc]
+		                    initWithTitle:title
+		                           action:@selector(bringWindowToFront:)
+		                    keyEquivalent:@""];
+		[item setTarget:self];
+		[item setRepresentedObject:win];
+		[menu addItem:item];
+	}
+
+	// Windows from secondary instances registered via IPC.
+	if(nwinreg > 0){
+		[menu addItem:[NSMenuItem separatorItem]];
+		for(int i = 0; i < nwinreg; i++){
+			NSString *title = [NSString stringWithUTF8String:winreg[i].title];
+			if(title == nil || [title length] == 0)
+				continue;
+			NSMenuItem *item = [[NSMenuItem alloc]
+			                    initWithTitle:title
+			                           action:@selector(activateSecondaryWindow:)
+			                    keyEquivalent:@""];
+			[item setTarget:self];
+			[item setRepresentedObject:@(winreg[i].pid)];
+			[menu addItem:item];
+		}
+	}
 }
 
 // Clicking the Dock icon when the app is already running triggers this.
