@@ -416,12 +416,16 @@ rpc_shutdown(void)
 	NSMenu *menu = [NSMenu new];
 
 	// Local windows in this process.
+	// Use winreg_pending_title (the full path label) rather than the window
+	// title (which is fixed to the app name) for meaningful menu entries.
 	for(NSWindow *win in [NSApp windows]){
 		if(![win isVisible])
 			continue;
-		NSString *title = [win title];
+		NSString *title = nil;
+		if(winreg_pending_title[0] != '\0')
+			title = [NSString stringWithUTF8String:winreg_pending_title];
 		if(title == nil || [title length] == 0)
-			continue;
+			title = [win title];
 		NSMenuItem *item = [[NSMenuItem alloc]
 		                    initWithTitle:title
 		                           action:@selector(bringWindowToFront:)
@@ -727,12 +731,16 @@ rpc_setlabel(Client *client, char *label)
 
 	@autoreleasepool{
 		NSString *s = [[NSString alloc] initWithUTF8String:label];
-		[self.win setTitle:s];
+		// Use the bundle name in the title bar (e.g. "acme") so it stays
+		// stable while the full path label is used for dock menu tracking.
+		NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+		[self.win setTitle:bundleName ?: s];
 		if(client0)
 			[[NSApp dockTile] setBadgeLabel:s];
+		// Always keep the full label for dock menu use.
+		strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
 		// Register/update this window's title with the primary instance.
 		if(getenv("P9P_SECONDARY") != nil){
-			strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
 			char *msgcopy = malloc(600);
 			if(msgcopy){
 				snprintf(msgcopy, 600, "title %d %s\n", (int)getpid(), label);
