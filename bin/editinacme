@@ -20,9 +20,13 @@ echo 'editinacme: editing '$file >[1=2]
 
 # Start acme if it is not already running, then wait for its 9P server.
 if(! 9p stat acme >/dev/null >[2]/dev/null) {
-	if(~ `{uname}(1) Darwin && test -d /Applications/Acme.app)
+	os=`{uname}
+	started=0
+	if(~ $os(1) Darwin) if(test -d /Applications/Acme.app) {
 		/usr/bin/open -a Acme.app
-	if not
+		started=1
+	}
+	if(~ $started 0)
 		acme &
 	# Wait up to 10 seconds for acme's 9P server to come up.
 	i=0
