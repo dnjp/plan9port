@@ -90,6 +90,15 @@ attr add	addr=$3
 plumb to edit
 plumb client $editor
 
+# ~/path files, possibly tagged by address, go to editor
+type is text
+data matches '~/([.a-zA-Z¡-￿0-9_/\-@]*[a-zA-Z¡-￿0-9_/\-])('$addr')?'
+arg isfile	$homedir/$1
+data set	$file
+attr add	addr=$3
+plumb to edit
+plumb client $editor
+
 # .h files are looked up in /usr/include and passed to edit
 type is text
 data matches '([a-zA-Z¡-￿0-9/_\-]+\.h)('$addr')?'
