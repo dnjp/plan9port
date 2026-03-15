@@ -1,9 +1,14 @@
 # to update: cat $HOME/lib/plumbing | 9p write plumb/rules
 #
-# Set home to your home directory for ~/path plumbing to work.
-# The plumber does not expand shell variables, so this must be a literal path.
-homedir = /Users/daniel
-home = /Users/daniel
+# This is the default plumbing rules file. User-specific settings such as
+# home directory paths should be set in $HOME/lib/plumbing instead, e.g.:
+#
+#   homedir = /Users/you
+#   home = /Users/you
+#   editor = plumb-edit
+#   include basic
+#
+# The plumber does not expand shell variables, so paths must be literal.
 
 editor = plumb-edit
 include basic
