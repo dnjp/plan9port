@@ -50,8 +50,12 @@ fi
 : "${acmedump:=$HOME/acme.dump}"
 
 ARGS=()
+# autoindent
+ARGS+=(-a)
+# fonts
 ARGS+=(-F "$fixfont")
 ARGS+=(-f "$varfont")
+# load dump file if it exists
 if [[ -f "$acmedump" ]]; then
 	ARGS+=(-l "$acmedump")
 fi
