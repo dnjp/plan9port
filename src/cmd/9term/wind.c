@@ -538,8 +538,8 @@ namecomplete(Window *w)
 {
 	int nstr, npath;
 	Rune *rp, *path, *str;
-	Completion *c;
-	char *s, *dir, *root;
+	Completion *c = nil;
+	char *s, *dir = nil, *root;
 
 	/* control-f: filename completion; works back to white space or / */
 	if(w->q0<w->nr && w->r[w->q0]>' ')	/* must be at end of word */
@@ -556,6 +556,23 @@ namecomplete(Window *w)
 	if(npath>0 && path[0]=='/'){
 		dir = malloc(UTFmax*npath+1);
 		sprint(dir, "%.*S", npath, path);
+	}else if(npath>0 && path[0]=='~' && (npath==1 || path[1]=='/')){
+		/* ~/... -> expand ~ to $HOME */
+		char *home = getenv("HOME");
+		if(home == nil)
+			goto Return;
+		dir = malloc(strlen(home)+UTFmax*npath+1);
+		sprint(dir, "%s%.*S", home, npath-1, path+1);
+	}else if(npath>=5
+		&& path[0]=='$' && path[1]=='h' && path[3]=='m' && path[4]=='e'
+		&& (path[2]=='o' || path[2]=='O')  /* $home or $HOME */
+		&& (npath==5 || path[5]=='/')){
+		/* $HOME/... or $home/... -> expand to $HOME */
+		char *home = getenv("HOME");
+		if(home == nil)
+			goto Return;
+		dir = malloc(strlen(home)+UTFmax*npath+1);
+		sprint(dir, "%s%.*S", home, npath-5, path+5);
 	}else{
 		if(strcmp(w->dir, "") == 0)
 			root = ".";

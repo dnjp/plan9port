@@ -14,3 +14,6 @@ end
 set -gx TERM dumb
 set -gx PAGER nobs
 set -gx MANPAGER nobs
+
+# Set $home to mirror $HOME so plumbing rules using $home/path work.
+set -gx home $HOME

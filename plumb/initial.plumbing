@@ -1,4 +1,9 @@
 # to update: cat $HOME/lib/plumbing | 9p write plumb/rules
+#
+# Set home to your home directory for ~/path plumbing to work.
+# The plumber does not expand shell variables, so this must be a literal path.
+homedir = /Users/daniel
+home = /Users/daniel
 
 editor = plumb-edit
 include basic

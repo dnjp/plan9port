@@ -175,6 +175,16 @@ and erases the character before the word.
 An ACK character (control-F) or Insert character triggers file name completion
 for the preceding string (see
 .MR complete 3 ).
+The prefixes
+.BR ~ ,
+.BR $HOME ,
+and
+.B $home
+are expanded to the user's home directory before the completion search,
+so typing
+.B ~/sr
+followed by control-F will complete against
+.BR $HOME/sr .
 .PP
 Text may be moved vertically within the window.
 A scroll bar on the left of the window shows in its clear portion what fragment of the

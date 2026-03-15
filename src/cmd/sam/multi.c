@@ -48,12 +48,59 @@ fullname(String *name)
 		Strinsert(name, &curwd, (Posn)0);
 }
 
+static void
+expandhome(String *name)
+{
+	char *h;
+	int hlen, skip;
+	String *hs;
+
+	if(name->n == 0)
+		return;
+	h = getenv("HOME");
+	if(h == nil || h[0] == '\0')
+		return;
+	hlen = strlen(h);
+
+	/* ~ or ~/... */
+	if(name->s[0] == '~' && (name->n == 1 || name->s[1] == '/')) {
+		skip = 1;
+		hs = tmpcstr(h);
+		Strdelete(name, 0, skip);
+		Strinsert(name, hs, 0);
+		freetmpstr(hs);
+		return;
+	}
+
+	/* $HOME/... or $home/... */
+	{
+		static char *prefixes[] = { "$HOME", "$home", nil };
+		int i;
+		for(i = 0; prefixes[i] != nil; i++) {
+			int plen = strlen(prefixes[i]);
+			if(name->n >= plen) {
+				int j, match = 1;
+				for(j = 0; j < plen; j++)
+					if(name->s[j] != prefixes[i][j]) { match = 0; break; }
+				if(match && (name->n == plen || name->s[plen] == '/')) {
+					hs = tmpcstr(h);
+					Strdelete(name, 0, plen);
+					Strinsert(name, hs, 0);
+					freetmpstr(hs);
+					return;
+				}
+			}
+		}
+	}
+}
+
 void
 fixname(String *name)
 {
 	String *t;
 	char *s;
 
+	expandhome(name);
 	fullname(name);
 	s = Strtoc(name);
 	if(strlen(s) > 0)

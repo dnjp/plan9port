@@ -297,7 +297,7 @@ plumbshow(Plumbmsg *m)
 	cvttorunes(name, strlen(name), rb, &nb, &nr, nil);
 	free(p);
 	rs = cleanrname(runestr(rb, nr));
-	winsetname(w, rs.r, rs.nr);
+	winsetname_contract(w, rs.r, rs.nr);
 	rulerprefont(w);
 	r = runemalloc(m->ndata);
 	cvttorunes(m->data, m->ndata, r, &nb, &nr, nil);
@@ -557,6 +557,24 @@ dirname(Text *t, Rune *r, int n)
 	if(n>=1 && r[0]=='/')
 		goto Rescue;
 	b = parsetag(t->w, n, &i);
+	/* expand ~ / $HOME / $home in the tag path into a fresh buffer
+	 * with n extra runes at the end for the filename we'll append */
+	{
+		Rune *expanded;
+		int ei = i;
+		expanded = runemalloc(i);
+		runemove(expanded, b, i);
+		expanded = expandhome(expanded, &ei);
+		if(ei != i){
+			/* re-allocate with room for n extra runes */
+			Rune *tmp = runemalloc(ei + n + 1);
+			runemove(tmp, expanded, ei);
+			free(expanded);
+			free(b);
+			b = tmp;
+			i = ei;
+		}
+	}
 	slash = -1;
 	for(i--; i >= 0; i--){
 		if(b[i] == '/'){
@@ -857,7 +875,7 @@ openfile(Text *t, Expand *e)
 			ow = t->w;
 		w = makenewwindow(t);
 		t = &w->body;
-		winsetname(w, e->name, e->nname);
+		winsetname_contract(w, e->name, e->nname);
 		rulerprefont(w);
 		if(textload(t, 0, e->bname, 1) >= 0)
 			t->file->unread = FALSE;
