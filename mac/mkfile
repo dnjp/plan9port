@@ -36,7 +36,7 @@ apps:V:
 # tree so no root-owned directories need to be written.
 daemons:V:
 	mkdir -p $LOG_DIR $LAUNCH_AGENTS
-	chmod +x daemons/run-with-env.sh daemons/9p-status
+	chmod +x daemons/run-with-env.sh daemons/9p-status daemons/p9p-notify
 	for d in $DAEMONS; do \
 		sed \
 			-e 's|@HOME@|'$HOME'|g' \

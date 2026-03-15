@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Send a macOS notification for a plan9port daemon event.
+# Usage: p9p-notify <title> <message>
+#
+# Uses osascript (always available on macOS) to post a notification via
+# System Events. The notification appears in Notification Center and, if
+# Do Not Disturb is off, as a banner.
+#
+# This script is intentionally dependency-free: no terminal-notifier,
+# no brew packages required.
+
+title=${1:-"plan9port"}
+message=${2:-""}
+
+osascript -e "display notification \"$message\" with title \"$title\""
