@@ -634,6 +634,37 @@ wkeyctl(Window *w, Rune r)
 				wshow(w, q1);
 			}
 			return;
+		case Kaltleft: {
+			/* move cursor to start of previous word (TextEdit-style) */
+			q0 = w->q0;
+			/* if already at start of a word, jump to start of previous word */
+			if(q0 > 0 && isalpharune(w->r[q0 > 0 ? q0-1 : 0])){
+				/* skip back over current word */
+				while(q0 > 0 && isalpharune(w->r[q0-1]))
+					q0--;
+			} else {
+				/* skip non-word chars, then skip word */
+				while(q0 > 0 && !isalpharune(w->r[q0-1]))
+					q0--;
+				while(q0 > 0 && isalpharune(w->r[q0-1]))
+					q0--;
+			}
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kaltright: {
+			/* move cursor to end of next word (TextEdit-style) */
+			q0 = w->q0;
+			/* skip non-word chars, then skip over word */
+			while(q0 < w->nr && !isalpharune(w->r[q0]))
+				q0++;
+			while(q0 < w->nr && isalpharune(w->r[q0]))
+				q0++;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
 		case Khome:
 			if(w->org > w->iq1) {
 				q0 = wbacknl(w, w->iq1, 1);
