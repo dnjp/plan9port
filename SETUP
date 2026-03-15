@@ -1,17 +1,22 @@
 #!/bin/sh
 
-git remote add upstream https://github.com/9fans/plan9port.git
+git remote add upstream https://github.com/9fans/plan9port.git 2>/dev/null || true
 
 export PLAN9=/usr/local/plan9
 
-# TODO: add flag for a "clean" build which executes the following. This is
-# probably not the best approach an initial setup on a new system.
-sudo rm -rf /usr/local/plan9/*
-sudo mkdir -p /usr/local/plan9
-sudo cp -r ./* /usr/local/plan9/
-cd /usr/local/plan9
-sudo ./INSTALL
-
+# If we're already running from $PLAN9, skip the wipe-and-copy — the repo
+# lives here directly. Otherwise copy from the current directory into $PLAN9.
+SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ "$SETUP_DIR" = "$PLAN9" ]; then
+	echo "Running SETUP from $PLAN9 directly, skipping copy step."
+	./INSTALL
+else
+	sudo rm -rf /usr/local/plan9/*
+	sudo mkdir -p /usr/local/plan9
+	sudo cp -r ./* /usr/local/plan9/
+	cd /usr/local/plan9
+	sudo ./INSTALL
+fi
 
 # Setup path to use plan9 utilities in following steps
 export PATH=$PATH:$PLAN9/bin
