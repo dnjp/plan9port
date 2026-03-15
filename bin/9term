@@ -12,6 +12,10 @@
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 
+# Ensure NAMESPACE is set so plan9port services (plumber, etc.) are reachable.
+: "${NAMESPACE:=/tmp/ns.${USER}.:0}"
+export NAMESPACE
+
 # 9term.app launches this script before the login shell environment is loaded.
 if [[ "${INSIDE_P9P}" == "true" ]]; then
 	cd "$HOME"
