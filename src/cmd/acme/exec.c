@@ -16,6 +16,7 @@
 
 Buffer	snarfbuf;
 
+
 /*
  * These functions get called as:
  *
@@ -556,8 +557,21 @@ getname(Text *t, Text *argt, Rune *arg, int narg, int isput)
 	if(promote){
 		n = narg;
 		if(n <= 0){
-			s = runetobyte(t->file->name, t->file->nname);
+			/* expand ~ / $HOME / $home in the file's stored name */
+			int nn = t->file->nname;
+			Rune *tmp = runemalloc(nn);
+			runemove(tmp, t->file->name, nn);
+			tmp = expandhome(tmp, &nn);
+			s = runetobyte(tmp, nn);
+			free(tmp);
 			return s;
+		}
+		/* expand ~ / $HOME / $home before checking if path is absolute */
+		{
+			Rune *tmp = runemalloc(n);
+			runemove(tmp, arg, n);
+			tmp = expandhome(tmp, &n);
+			arg = tmp;
 		}
 		/* prefix with directory name if necessary */
 		dir.r = nil;

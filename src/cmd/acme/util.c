@@ -495,3 +495,43 @@ makenewwindow(Text *t)
 		colgrow(w->col, w, 1);
 	return w;
 }
+
+/* expand leading ~ or $HOME/$home in a Rune path to the real home directory.
+ * takes ownership of arg (frees it if expanded); updates *np. */
+Rune*
+expandhome(Rune *arg, int *np)
+{
+	char *home;
+	Rune *homer, *expanded;
+	int homelen, skip, n;
+
+	n = *np;
+	if(n <= 0)
+		return arg;
+
+	skip = 0;
+	if(arg[0] == '~' && (n == 1 || arg[1] == '/'))
+		skip = 1;
+	else if(n >= 5
+		&& arg[0]=='$' && arg[1]=='h' && arg[3]=='m' && arg[4]=='e'
+		&& (arg[2]=='o' || arg[2]=='O')
+		&& (n == 5 || arg[5] == '/'))
+		skip = 5;
+
+	if(skip == 0)
+		return arg;
+
+	home = getenv("HOME");
+	if(home == nil)
+		return arg;
+
+	homer = runesmprint("%s", home);
+	homelen = runestrlen(homer);
+	expanded = runemalloc(homelen + (n - skip) + 1);
+	runemove(expanded, homer, homelen);
+	runemove(expanded + homelen, arg + skip, n - skip);
+	free(homer);
+	free(arg);
+	*np = homelen + (n - skip);
+	return expanded;
+}

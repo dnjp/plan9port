@@ -557,6 +557,24 @@ dirname(Text *t, Rune *r, int n)
 	if(n>=1 && r[0]=='/')
 		goto Rescue;
 	b = parsetag(t->w, n, &i);
+	/* expand ~ / $HOME / $home in the tag path into a fresh buffer
+	 * with n extra runes at the end for the filename we'll append */
+	{
+		Rune *expanded;
+		int ei = i;
+		expanded = runemalloc(i);
+		runemove(expanded, b, i);
+		expanded = expandhome(expanded, &ei);
+		if(ei != i){
+			/* re-allocate with room for n extra runes */
+			Rune *tmp = runemalloc(ei + n + 1);
+			runemove(tmp, expanded, ei);
+			free(expanded);
+			free(b);
+			b = tmp;
+			i = ei;
+		}
+	}
 	slash = -1;
 	for(i--; i >= 0; i--){
 		if(b[i] == '/'){
