@@ -11,4 +11,8 @@ export PATH="$PLAN9/bin:$PATH"
 # display server process inherits the bundle's icon and app name.
 export DEVDRAW="$(dirname "$0")/devdraw"
 
+# Ensure acme starts in $HOME regardless of how the app was launched.
+# open -a and Launch Services set cwd to / by default.
+cd "$HOME"
+
 exec "$PLAN9/bin/acme"

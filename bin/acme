@@ -14,11 +14,15 @@
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 
+# Always start in $HOME so relative paths in acme windows resolve correctly.
+# open -a and Launch Services set cwd to /; the plumber may also launch us
+# from an arbitrary directory.
+cd "$HOME"
+
 # Source the user's login profile if it hasn't been loaded yet.
 # We use fixfont as the sentinel: plan9.sh always sets it, so its absence
 # means we're running in a minimal environment (app bundle or plumber spawn).
 if [[ -z "$fixfont" ]]; then
-	cd "$HOME"
 	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
 	fshell=${fshell:-$SHELL}
 	case "$fshell" in

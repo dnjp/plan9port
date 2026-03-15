@@ -9,7 +9,11 @@ addr="$2"
 
 # Start acme if not running, then wait for its 9P server.
 if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
-	"$PLAN9/bin/acme" &
+	if [[ "$(uname)" == "Darwin" ]] && [[ -d "/Applications/Acme.app" ]]; then
+		open -a Acme.app
+	else
+		"$PLAN9/bin/acme" &
+	fi
 	# Wait up to 10 seconds for acme's 9P server to come up.
 	for i in $(seq 1 20); do
 		"$PLAN9/bin/9p" stat acme > /dev/null 2>&1 && break
