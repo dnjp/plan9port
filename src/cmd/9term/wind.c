@@ -88,6 +88,15 @@ wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 	w->scrolling = scrolling;
 	w->dir = estrdup(startdir);
 	w->label = estrdup("<unnamed>");
+	w->histsize = 256;
+	w->hist = emalloc(w->histsize * sizeof(Rune*));
+	w->histlen = emalloc(w->histsize * sizeof(int));
+	memset(w->hist, 0, w->histsize * sizeof(Rune*));
+	w->histnext = 0;
+	w->histcount = 0;
+	w->histidx = -1;
+	w->histpending = nil;
+	w->histpendinglen = 0;
 	r = insetrect(w->i->r, wscale(w, Selborder));
 	draw(w->i, r, cols[BACK], nil, w->f.entire.min);
 	wborder(w, wscale(w, Selborder));
@@ -577,6 +586,49 @@ namecomplete(Window *w)
 	return rp;
 }
 
+static void
+whistsave(Window *w)
+{
+	uint len;
+	Rune *cmd;
+	int slot;
+
+	/* capture text from qh to nr (the current input line, without the newline) */
+	len = w->nr - w->qh;
+	if(len == 0)
+		return;
+	/* skip duplicate of most recent entry */
+	if(w->histcount > 0){
+		int prev = (w->histnext - 1 + w->histsize) % w->histsize;
+		if(w->histlen[prev] == (int)len &&
+		   runestrncmp(w->hist[prev], w->r + w->qh, len) == 0)
+			return;
+	}
+	cmd = emalloc(len * sizeof(Rune));
+	runemove(cmd, w->r + w->qh, len);
+	slot = w->histnext;
+	free(w->hist[slot]);
+	w->hist[slot] = cmd;
+	w->histlen[slot] = len;
+	w->histnext = (slot + 1) % w->histsize;
+	if(w->histcount < w->histsize)
+		w->histcount++;
+}
+
+static void
+whistreplace(Window *w, Rune *cmd, int len)
+{
+	/* replace current input (qh..nr) with cmd[0..len] */
+	if(w->nr > w->qh)
+		wdelete(w, w->qh, w->nr);
+	if(len > 0){
+		winsert(w, cmd, len, w->qh);
+		wsetselect(w, w->qh + len, w->qh + len);
+	} else
+		wsetselect(w, w->qh, w->qh);
+	wshow(w, w->q0);
+}
+
 void
 wkeyctl(Window *w, Rune r)
 {
@@ -606,7 +658,13 @@ wkeyctl(Window *w, Rune r)
 			q0 = w->org+frcharofpt(&w->f, Pt(w->f.r.min.x, w->f.r.min.y+n*w->f.font->height));
 			wsetorigin(w, q0, TRUE);
 			return;
+		case Kshiftdown:
+			n = w->f.maxlines/3;
+			goto case_Down;
 		case Kup:
+			n = w->f.maxlines/3;
+			goto case_Up;
+		case Kshiftup:
 			n = w->f.maxlines/3;
 			goto case_Up;
 		case Kscrolloneup:
@@ -868,6 +926,40 @@ wkeyctl(Window *w, Rune r)
 		waddraw(w, &r, 1);
 		return;
 	}
+	/* ^P: history back; ^N: history forward (readline-style, only in cooked mode) */
+	if(r == 0x10){	/* ^P */
+		if(w->histcount > 0){
+			if(w->histidx < 0){
+				uint pendlen = w->nr - w->qh;
+				free(w->histpending);
+				w->histpending = emalloc((pendlen+1) * sizeof(Rune));
+				runemove(w->histpending, w->r + w->qh, pendlen);
+				w->histpendinglen = pendlen;
+				w->histidx = (w->histnext - 1 + w->histsize) % w->histsize;
+			} else {
+				int oldest = (w->histnext - w->histcount + w->histsize) % w->histsize;
+				if(w->histidx != oldest)
+					w->histidx = (w->histidx - 1 + w->histsize) % w->histsize;
+			}
+			whistreplace(w, w->hist[w->histidx], w->histlen[w->histidx]);
+		}
+		return;
+	}
+	if(r == 0x0E){	/* ^N */
+		if(w->histidx >= 0){
+			w->histidx = (w->histidx + 1) % w->histsize;
+			if(w->histidx == w->histnext){
+				whistreplace(w, w->histpending, w->histpendinglen);
+				free(w->histpending);
+				w->histpending = nil;
+				w->histpendinglen = 0;
+				w->histidx = -1;
+			} else {
+				whistreplace(w, w->hist[w->histidx], w->histlen[w->histidx]);
+			}
+		}
+		return;
+	}
 	if(r == Kcmd+'x'){
 		wsnarf(w);
 		wcut(w);
@@ -943,6 +1035,17 @@ wkeyctl(Window *w, Rune r)
 		return;
 	}
 	/* otherwise ordinary character; just insert */
+	if(r == '\n' && !w->rawing){
+		/* save command to history before the newline is consumed by the shell */
+		whistsave(w);
+		/* cancel any in-progress history browsing */
+		if(w->histidx >= 0){
+			free(w->histpending);
+			w->histpending = nil;
+			w->histpendinglen = 0;
+			w->histidx = -1;
+		}
+	}
 	q0 = w->q0;
 	q0 = winsert(w, &r, 1, q0);
 	wshow(w, q0+1);

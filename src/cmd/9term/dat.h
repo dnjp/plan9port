@@ -145,6 +145,16 @@ struct Window
 	int			pid;
 	char			*dir;
 	int			cursoratq1;	/* for shift-selection: which end is the moving cursor */
+
+	/* command history */
+	Rune		**hist;		/* ring buffer of saved command rune strings */
+	int		*histlen;	/* rune lengths of each entry */
+	int		histsize;	/* allocated slots */
+	int		histnext;	/* index where next entry will be written */
+	int		histcount;	/* total entries recorded (capped at histsize) */
+	int		histidx;	/* current browsing position; -1 = not browsing */
+	Rune		*histpending;	/* saved current input while browsing */
+	int		histpendinglen;
 };
 
 int		winborder(Window*, Point);
