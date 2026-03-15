@@ -862,6 +862,23 @@ windows follow the same scrolling heuristic as in
 .MR 9term 1 :
 the window scrolls on output only if the window is displaying the end of the buffer.
 .PP
+.I Win
+maintains a per-window command history of up to 256 entries.
+Because acme intercepts most special key sequences before
+.I win
+sees them, history is navigated with control characters that
+acme passes through:
+.B ^P
+(control-P) replaces the current input with the previous history entry;
+.B ^N
+(control-N) moves forward.
+When the most recent entry is reached,
+.B ^N
+restores the original unsent input.
+Pressing Enter records the current command and exits history browsing.
+Consecutive duplicate commands are not recorded.
+History is per-window and not persisted across sessions.
+.PP
 .I Awd
 loads the tag line of its window with the directory in which it's running, suffixed
 .BI - label

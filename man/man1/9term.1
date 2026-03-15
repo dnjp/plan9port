@@ -8,7 +8,11 @@
 ]
 [
 .B -f
-.I font
+.I fixfont
+]
+[
+.B -F
+.I varfont
 ]
 [
 .I cmd
@@ -40,15 +44,11 @@ option starts the window in forced cooked mode,
 described below.
 .PP
 The
-.I font
-argument to 
+.I fixfont
+argument to
 .B -f
-names a font used to display text, both in
-.IR 9term 's
-menus
-and as a default for any programs running in its windows; it also
-establishes the
-environment variable
+names a monospace font used to display terminal text; it also
+establishes the environment variable
 .BR $font .
 If
 .B -f
@@ -57,6 +57,17 @@ is not given,
 uses the imported value of
 .B $font
 if set; otherwise it uses the graphics system default.
+.PP
+The
+.I varfont
+argument to
+.B -F
+names a proportional font used for button 2 popup menus.
+If
+.B -F
+is not given,
+.I 9term
+falls back to the fixed font.
 (See
 .MR font 7
 for a full discussion of font syntaxes.)
@@ -190,10 +201,32 @@ typing End scrolls to the end.
 The DEL character sends an
 .L interrupt
 note to all processes in the window's process group.
+Control-C also sends an interrupt.
 Unlike the other characters, the DEL and arrow
 keys do not affect the selected text.
-The left (right) arrow key moves the selection to one character
+The left (right) arrow key moves the selection one character
 before (after) the current selection.
+Alt-left (alt-right) moves the selection to the start of the
+previous (end of the next) word.
+Cmd-left (cmd-right) moves the selection to the beginning (end)
+of the current line, stopping at the prompt boundary rather than
+the previous newline.
+Holding shift while pressing any of the above arrow keys extends
+or shrinks the selection instead of moving the cursor:
+shift-left/right extends by one character;
+shift-alt-left/right extends by one word;
+shift-cmd-left/right extends to the start/end of the line.
+.PP
+.I 9term
+maintains a per-window command history.
+Control-P (previous) replaces the current input with the
+previous command; control-N (next) moves forward through the
+history.
+Pressing Enter records the current command and exits history
+browsing mode.
+Duplicate consecutive commands are not recorded.
+The history is local to each window and is not persisted across
+sessions.
 .PP
 .I 9term
 relies on the kernel's terminal processing to handle
@@ -284,6 +317,10 @@ If the selection is empty, it sends the white-space-delimited text
 containing the selection (typing cursor).
 A typical use of this feature is to tell the editor to find the source of an error
 by plumbing the file and line information in a compiler's diagnostic.
+.PP
+Button 3 (right-click) also plumbs: it sends the word under the pointer
+to the plumber without requiring a prior selection.
+If text is already selected, the selection is plumbed instead.
 .PP
 The
 .B look
