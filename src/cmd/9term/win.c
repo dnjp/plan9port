@@ -61,6 +61,15 @@ int	israw(int);
 
 char *name;
 
+/* command history */
+#define HISTSIZE 256
+static char	*hist[HISTSIZE];
+static int	histnext;
+static int	histcount;
+static int	histidx = -1;
+static char	*histpending;	/* saved current typing while browsing */
+static int	histpendingb;	/* byte length of histpending */
+
 char **prog;
 Channel *cwait;
 int pid = -1;
@@ -76,6 +85,7 @@ int	delete(Event*);
 void	deltype(uint, uint);
 void	sendbs(int, int);
 void	runproc(void*);
+int	nrunes(char*, int);
 
 int
 fsfidprint(CFid *fid, char *fmt, ...)
@@ -259,6 +269,60 @@ onestring(int argc, char **argv)
 	return buf;
 }
 
+/* replace current typing buffer and Acme body [q.p, q.p+ntyper) with s[0..nb] */
+static void
+histreplace(CFid *afd, CFid *dfd, char *s, int nb)
+{
+	char abuf[32];
+	int n;
+
+	/* delete current typing from acme body */
+	if(ntyper > 0){
+		n = sprint(abuf, "#%d,#%d", q.p, q.p+ntyper);
+		fswrite(afd, abuf, n);
+		fswrite(dfd, "", 0);
+	}
+	/* reset typing buffer */
+	free(typing);
+	typing = nil;
+	ntypeb = 0;
+	ntyper = 0;
+	ntypebreak = 0;
+
+	if(nb > 0){
+		/* insert new text into acme body at q.p */
+		n = sprint(abuf, "#%d", q.p);
+		fswrite(afd, abuf, n);
+		fswrite(dfd, s, nb);
+		/* update typing buffer */
+		typing = malloc(nb);
+		memmove(typing, s, nb);
+		ntypeb = nb;
+		ntyper = nrunes(s, nb);
+	}
+}
+
+static void
+histsave(void)
+{
+	if(ntypeb == 0)
+		return;
+	/* skip duplicate of most recent entry */
+	if(histcount > 0){
+		int prev = (histnext - 1 + HISTSIZE) % HISTSIZE;
+		if(hist[prev] && strlen(hist[prev]) == (size_t)ntypeb &&
+		   memcmp(hist[prev], typing, ntypeb) == 0)
+			return;
+	}
+	free(hist[histnext]);
+	hist[histnext] = malloc(ntypeb + 1);
+	memmove(hist[histnext], typing, ntypeb);
+	hist[histnext][ntypeb] = 0;
+	histnext = (histnext + 1) % HISTSIZE;
+	if(histcount < HISTSIZE)
+		histcount++;
+}
+
 int
 getec(CFid *efd)
 {
@@ -402,6 +466,70 @@ stdinproc(void *v)
 					buf[0] = 0x7F;
 					write(fd0, buf, 1);
 					break;
+				}
+				/* ^P: history back (readline-style, only in cooked mode) */
+				if(e.c1 == 'K' && e.nr == 1 && e.r[0] == 0x10){
+					if(!israw(fd0)){
+						/* always account for the inserted ^P and remove it */
+						ntyper += e.nr;
+						ntypeb += e.nb;
+						if(histcount > 0){
+							if(histidx < 0){
+								free(histpending);
+								/* save current input minus the just-inserted ^P */
+								int saveb = ntypeb - e.nb;
+								histpending = saveb > 0 ? malloc(saveb) : nil;
+								if(histpending) memmove(histpending, typing, saveb);
+								histpendingb = saveb;
+								histidx = (histnext - 1 + HISTSIZE) % HISTSIZE;
+							} else {
+								int oldest = (histnext - histcount + HISTSIZE) % HISTSIZE;
+								if(histidx != oldest)
+									histidx = (histidx - 1 + HISTSIZE) % HISTSIZE;
+							}
+							histreplace(afd, dfd, hist[histidx], strlen(hist[histidx]));
+						} else {
+							/* no history: just delete the ^P from the body */
+							histreplace(afd, dfd, typing, ntypeb - e.nb);
+						}
+					}
+					break;
+				}
+				/* ^N: history forward */
+				if(e.c1 == 'K' && e.nr == 1 && e.r[0] == 0x0E){
+					if(!israw(fd0)){
+						/* always account for the inserted ^N and remove it */
+						ntyper += e.nr;
+						ntypeb += e.nb;
+						if(histidx >= 0){
+							histidx = (histidx + 1) % HISTSIZE;
+							if(histidx == histnext){
+								histreplace(afd, dfd, histpending, histpendingb);
+								free(histpending);
+								histpending = nil;
+								histpendingb = 0;
+								histidx = -1;
+							} else {
+								histreplace(afd, dfd, hist[histidx], strlen(hist[histidx]));
+							}
+						} else {
+							/* not browsing history: just delete the ^N from the body */
+							histreplace(afd, dfd, typing, ntypeb - e.nb);
+						}
+					}
+					break;
+				}
+				/* record history and cancel browsing on newline */
+				if(e.c1 == 'K' && e.nr == 1 && (e.r[0] == '\n' || e.r[0] == 0x04)){
+					if(!israw(fd0)){
+						histsave();
+						if(histidx >= 0){
+							free(histpending);
+							histpending = nil;
+							histpendingb = 0;
+							histidx = -1;
+						}
+					}
 				}
 				if(e.q0 < q.p){
 					if(debug)

@@ -88,6 +88,15 @@ wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 	w->scrolling = scrolling;
 	w->dir = estrdup(startdir);
 	w->label = estrdup("<unnamed>");
+	w->histsize = 256;
+	w->hist = emalloc(w->histsize * sizeof(Rune*));
+	w->histlen = emalloc(w->histsize * sizeof(int));
+	memset(w->hist, 0, w->histsize * sizeof(Rune*));
+	w->histnext = 0;
+	w->histcount = 0;
+	w->histidx = -1;
+	w->histpending = nil;
+	w->histpendinglen = 0;
 	r = insetrect(w->i->r, wscale(w, Selborder));
 	draw(w->i, r, cols[BACK], nil, w->f.entire.min);
 	wborder(w, wscale(w, Selborder));
@@ -577,6 +586,49 @@ namecomplete(Window *w)
 	return rp;
 }
 
+static void
+whistsave(Window *w)
+{
+	uint len;
+	Rune *cmd;
+	int slot;
+
+	/* capture text from qh to nr (the current input line, without the newline) */
+	len = w->nr - w->qh;
+	if(len == 0)
+		return;
+	/* skip duplicate of most recent entry */
+	if(w->histcount > 0){
+		int prev = (w->histnext - 1 + w->histsize) % w->histsize;
+		if(w->histlen[prev] == (int)len &&
+		   runestrncmp(w->hist[prev], w->r + w->qh, len) == 0)
+			return;
+	}
+	cmd = emalloc(len * sizeof(Rune));
+	runemove(cmd, w->r + w->qh, len);
+	slot = w->histnext;
+	free(w->hist[slot]);
+	w->hist[slot] = cmd;
+	w->histlen[slot] = len;
+	w->histnext = (slot + 1) % w->histsize;
+	if(w->histcount < w->histsize)
+		w->histcount++;
+}
+
+static void
+whistreplace(Window *w, Rune *cmd, int len)
+{
+	/* replace current input (qh..nr) with cmd[0..len] */
+	if(w->nr > w->qh)
+		wdelete(w, w->qh, w->nr);
+	if(len > 0){
+		winsert(w, cmd, len, w->qh);
+		wsetselect(w, w->qh + len, w->qh + len);
+	} else
+		wsetselect(w, w->qh, w->qh);
+	wshow(w, w->q0);
+}
+
 void
 wkeyctl(Window *w, Rune r)
 {
@@ -606,7 +658,13 @@ wkeyctl(Window *w, Rune r)
 			q0 = w->org+frcharofpt(&w->f, Pt(w->f.r.min.x, w->f.r.min.y+n*w->f.font->height));
 			wsetorigin(w, q0, TRUE);
 			return;
+		case Kshiftdown:
+			n = w->f.maxlines/3;
+			goto case_Down;
 		case Kup:
+			n = w->f.maxlines/3;
+			goto case_Up;
+		case Kshiftup:
 			n = w->f.maxlines/3;
 			goto case_Up;
 		case Kscrolloneup:
@@ -621,6 +679,7 @@ wkeyctl(Window *w, Rune r)
 			wsetorigin(w, q0, TRUE);
 			return;
 		case Kleft:
+			w->cursoratq1 = 0;
 			if(w->q0 > 0){
 				q0 = w->q0-1;
 				wsetselect(w, q0, q0);
@@ -628,12 +687,180 @@ wkeyctl(Window *w, Rune r)
 			}
 			return;
 		case Kright:
+			w->cursoratq1 = 0;
 			if(w->q1 < w->nr){
 				q1 = w->q1+1;
 				wsetselect(w, q1, q1);
 				wshow(w, q1);
 			}
 			return;
+		case Kshiftleft: {
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			if(atq1){ if(q1 > 0) q1--; }
+			else    { if(q0 > 0) q0--; }
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftright: {
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			if(atq1){ if(q1 < w->nr) q1++; }
+			else    { if(q0 < w->nr) q0++; }
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kaltleft: {
+			w->cursoratq1 = 0;
+			q0 = w->q0;
+			if(q0 > 0 && isalpharune(w->r[q0-1])){
+				while(q0 > 0 && isalpharune(w->r[q0-1]))
+					q0--;
+			} else {
+				while(q0 > 0 && !isalpharune(w->r[q0-1]))
+					q0--;
+				while(q0 > 0 && isalpharune(w->r[q0-1]))
+					q0--;
+			}
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kaltright: {
+			w->cursoratq1 = 0;
+			q0 = w->q0;
+			while(q0 < w->nr && !isalpharune(w->r[q0]))
+				q0++;
+			while(q0 < w->nr && isalpharune(w->r[q0]))
+				q0++;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kshiftaltleft: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			if(cur > 0 && isalpharune(w->r[cur-1])){
+				while(cur > 0 && isalpharune(w->r[cur-1]))
+					cur--;
+			} else {
+				while(cur > 0 && !isalpharune(w->r[cur-1]))
+					cur--;
+				while(cur > 0 && isalpharune(w->r[cur-1]))
+					cur--;
+			}
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftaltright: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			while(cur < w->nr && !isalpharune(w->r[cur]))
+				cur++;
+			while(cur < w->nr && isalpharune(w->r[cur]))
+				cur++;
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kcmdleft: {
+			w->cursoratq1 = 0;
+			if(w->q0 == 0 || w->q0 == w->qh || w->r[w->q0-1] == '\n')
+				return;
+			nb = wbswidth(w, 0x15 /* ^U: back to prompt or newline */);
+			q0 = w->q0 - nb;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kcmdright: {
+			w->cursoratq1 = 0;
+			q0 = w->q0;
+			while(q0 < w->nr && w->r[q0] != '\n')
+				q0++;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kshiftcmdleft: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			/* scan back to prompt boundary (qh) or newline, same as ^A */
+			{
+				uint stop = (cur > w->qh) ? w->qh : 0;
+				while(cur > stop && w->r[cur-1] != '\n')
+					cur--;
+			}
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftcmdright: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			while(cur < w->nr && w->r[cur] != '\n')
+				cur++;
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
 		case Khome:
 			if(w->org > w->iq1) {
 				q0 = wbacknl(w, w->iq1, 1);
@@ -680,8 +907,57 @@ wkeyctl(Window *w, Rune r)
 		if(r == 0x1B)
 			return;
 	}
+	/* ^C and ^D are always handled as signals, even in raw mode. */
+	if(r == 0x03){
+		w->qh = w->nr;
+		wshow(w, w->qh);
+		winterrupt(w);
+		w->iq1 = w->q0;
+		return;
+	}
+	if(r == 0x04){
+		w->qh = w->nr;
+		wshow(w, w->qh);
+		weot(w);
+		w->iq1 = w->q0;
+		return;
+	}
 	if(!w->holding && w->rawing && (w->q0==w->nr || w->mouseopen)){
 		waddraw(w, &r, 1);
+		return;
+	}
+	/* ^P: history back; ^N: history forward (readline-style, only in cooked mode) */
+	if(r == 0x10){	/* ^P */
+		if(w->histcount > 0){
+			if(w->histidx < 0){
+				uint pendlen = w->nr - w->qh;
+				free(w->histpending);
+				w->histpending = emalloc((pendlen+1) * sizeof(Rune));
+				runemove(w->histpending, w->r + w->qh, pendlen);
+				w->histpendinglen = pendlen;
+				w->histidx = (w->histnext - 1 + w->histsize) % w->histsize;
+			} else {
+				int oldest = (w->histnext - w->histcount + w->histsize) % w->histsize;
+				if(w->histidx != oldest)
+					w->histidx = (w->histidx - 1 + w->histsize) % w->histsize;
+			}
+			whistreplace(w, w->hist[w->histidx], w->histlen[w->histidx]);
+		}
+		return;
+	}
+	if(r == 0x0E){	/* ^N */
+		if(w->histidx >= 0){
+			w->histidx = (w->histidx + 1) % w->histsize;
+			if(w->histidx == w->histnext){
+				whistreplace(w, w->histpending, w->histpendinglen);
+				free(w->histpending);
+				w->histpending = nil;
+				w->histpendinglen = 0;
+				w->histidx = -1;
+			} else {
+				whistreplace(w, w->hist[w->histidx], w->histlen[w->histidx]);
+			}
+		}
 		return;
 	}
 	if(r == Kcmd+'x'){
@@ -705,15 +981,26 @@ wkeyctl(Window *w, Rune r)
 		wcut(w);
 	}
 	switch(r){
-	case 0x03:		/* maybe send interrupt */
-		/* since ^C is so commonly used as interrupt, special case it */
-		if (intrc() != 0x03)
-			break;
-		/* fall through */
-	case 0x7F:		/* send interrupt */
+	case 0x7F:		/* DEL: send interrupt */
 		w->qh = w->nr;
 		wshow(w, w->qh);
 		winterrupt(w);
+		w->iq1 = w->q0;
+		return;
+	case 0x0B:		/* ^K: delete to end of line */
+		if(w->q0 >= w->nr || w->q0 < w->qh)
+			return;
+		q1 = w->q0;
+		/* delete to end of line, or just the newline if at EOL */
+		if(q1 < w->nr && w->r[q1] == '\n')
+			q1++;	/* delete the newline itself if cursor is on it */
+		else
+			while(q1 < w->nr && w->r[q1] != '\n')
+				q1++;
+		if(q1 > w->q0){
+			wdelete(w, w->q0, q1);
+			wsetselect(w, w->q0, w->q0);
+		}
 		w->iq1 = w->q0;
 		return;
 	case 0x06:	/* ^F: file name completion */
@@ -748,6 +1035,17 @@ wkeyctl(Window *w, Rune r)
 		return;
 	}
 	/* otherwise ordinary character; just insert */
+	if(r == '\n' && !w->rawing){
+		/* save command to history before the newline is consumed by the shell */
+		whistsave(w);
+		/* cancel any in-progress history browsing */
+		if(w->histidx >= 0){
+			free(w->histpending);
+			w->histpending = nil;
+			w->histpendinglen = 0;
+			w->histidx = -1;
+		}
+	}
 	q0 = w->q0;
 	q0 = winsert(w, &r, 1, q0);
 	wshow(w, q0+1);
@@ -856,14 +1154,22 @@ wpaste(Window *w)
 	}
 }
 
+
 void
 wplumb(Window *w)
 {
 	Plumbmsg *m;
 	static CFid *fd;
 	char buf[32];
-	uint p0, p1;
+	uint p0, p1, q;
 	Cursor *c;
+
+	/* If no selection, move cursor to current mouse position first,
+	 * so word expansion picks up the word under the pointer. */
+	if(w->q0 == w->q1 && ptinrect(mouse->xy, w->f.r)){
+		q = w->org + frcharofpt(&w->f, mouse->xy);
+		wsetselect(w, q, q);
+	}
 
 	if(fd == nil)
 		fd = plumbopenfid("send", OWRITE);
@@ -872,7 +1178,16 @@ wplumb(Window *w)
 	m = emalloc(sizeof(Plumbmsg));
 	m->src = estrdup("rio");
 	m->dst = nil;
-	m->wdir = estrdup(w->dir);
+	/* Use w->dir if it's absolute; otherwise fall back to getwd so that
+	 * relative filenames resolve correctly even before the shell has sent
+	 * a directory-change escape sequence. */
+	if(w->dir != nil && w->dir[0] == '/')
+		m->wdir = estrdup(w->dir);
+	else{
+		m->wdir = getwd(nil, 0);
+		if(m->wdir == nil)
+			m->wdir = estrdup(w->dir);
+	}
 	m->type = estrdup("text");
 	p0 = w->q0;
 	p1 = w->q1;

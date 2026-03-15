@@ -12,10 +12,6 @@
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 
-# Ensure NAMESPACE is set so plan9port services (plumber, etc.) are reachable.
-: "${NAMESPACE:=/tmp/ns.${USER}.:0}"
-export NAMESPACE
-
 # 9term.app launches this script before the login shell environment is loaded.
 if [[ "${INSIDE_P9P}" == "true" ]]; then
 	cd "$HOME"
@@ -48,5 +44,4 @@ fi
 
 # exec -a 9term ensures argv[0] is "9term" so the macOS menu bar and pgrep see
 # the process as "9term" rather than the full binary path.
-exec arch -arch "$arch" \
-	/bin/bash -c 'exec -a 9term "$@"' -- "$PLAN9/bin/9term.bin" -s -f "$fixfont" -F "$varfont" "$@"
+./o.9term.bin -s -f "$fixfont" -F "$varfont" 2>/tmp/9term-debug.log &
