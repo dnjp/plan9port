@@ -473,6 +473,18 @@ to the named external file.
 Set the file name and print the resulting menu entry.
 .PP
 If the file name is absent from any of these, the current file name is used.
+.PP
+In all file name arguments,
+.BR ~ ,
+.BR $HOME ,
+and
+.B $home
+are expanded to the user's home directory.
+For example,
+.B e ~/.profile
+opens
+.B $HOME/.profile
+in the editor.
 .B e
 always sets the file name;
 .B r

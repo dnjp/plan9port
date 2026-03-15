@@ -306,6 +306,30 @@ directory or a real directory associated with a non-existent file
 .BR /adm/not-a-file ).
 File names beginning with a slash
 are assumed to be absolute file names.
+.PP
+.I Acme
+recognizes
+.BR ~ ,
+.BR $HOME ,
+and
+.B $home
+as prefixes in window names and file arguments.
+When a window is opened or a
+.B Get
+command is executed, any such prefix is expanded to the user's home directory.
+Conversely, when a window name is set, any leading home directory path is
+automatically shortened to
+.BR ~ .
+For example, entering
+.B ~/src
+in a tag and executing
+.B Get
+opens
+.BR /Users/you/src ,
+and the tag is then displayed as
+.BR ~/src/ .
+Filename completion (Control-F) also expands these prefixes before searching
+the filesystem.
 .SS Errors
 Windows whose names begin with
 .B -
