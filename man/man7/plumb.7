@@ -343,6 +343,35 @@ The root directory of the Plan 9 tree
 (see
 .MR get9root 3 ).
 .RE
+.PP
+If a variable is not defined in the plumbing rules file and is not one of the
+built-in variables above, the plumber falls back to the Unix environment.
+This allows rules to reference environment variables such as
+.B $HOME
+directly.
+.PP
+To match file paths beginning with
+.B ~/
+or
+.BR $home/ ,
+define a plumbing variable for the home directory in the rules file and
+write explicit rules for each prefix.
+For example, in
+.BR \*9/plumb/initial.plumbing :
+.EX
+	homedir = /Users/you
+	home = /Users/you
+	include basic
+.EE
+The included
+.B basic
+rules then use
+.B $homedir
+and
+.B $home
+in
+.B arg isfile
+checks to resolve the captured path against the home directory.
 .SH EXAMPLE
 The following is a modest, representative file of plumbing rules.
 .EX

@@ -622,9 +622,48 @@ textcomplete(Text *t)
 	for(i=0; i<npath; i++)
 		path[i] = textreadc(t, q++);
 	/* is path rooted? if not, we need to make it relative to window path */
-	if(npath>0 && path[0]=='/')
+	if(npath>0 && path[0]=='/'){
 		dir = runestr(path, npath);
-	else{
+	}else if(npath>0 && path[0]=='~' && (npath==1 || path[1]=='/')){
+		/* ~/... -> expand ~ to $HOME */
+		char *home = getenv("HOME");
+		if(home == nil)
+			goto Return;
+		Rune *homer = runesmprint("%s", home);
+		int homelen = runestrlen(homer);
+		int restlen = npath - 1; /* skip the ~ */
+		if(homelen + restlen > nelem(tmp)){
+			free(homer);
+			goto Return;
+		}
+		runemove(tmp, homer, homelen);
+		runemove(tmp+homelen, path+1, restlen);
+		free(homer);
+		dir.r = tmp;
+		dir.nr = homelen + restlen;
+		dir = cleanrname(dir);
+	}else if(npath>=5
+		&& path[0]=='$' && path[1]=='h' && path[3]=='m' && path[4]=='e'
+		&& (path[2]=='o' || path[2]=='O')  /* $home or $HOME */
+		&& (npath==5 || path[5]=='/')){
+		/* $HOME/... or $home/... -> expand to $HOME */
+		char *home = getenv("HOME");
+		if(home == nil)
+			goto Return;
+		Rune *homer = runesmprint("%s", home);
+		int homelen = runestrlen(homer);
+		int restlen = npath - 5; /* skip $HOME or $home */
+		if(homelen + restlen > nelem(tmp)){
+			free(homer);
+			goto Return;
+		}
+		runemove(tmp, homer, homelen);
+		runemove(tmp+homelen, path+5, restlen);
+		free(homer);
+		dir.r = tmp;
+		dir.nr = homelen + restlen;
+		dir = cleanrname(dir);
+	}else{
 		dir = dirname(t, nil, 0);
 		if(dir.nr + 1 + npath > nelem(tmp)){
 			free(dir.r);

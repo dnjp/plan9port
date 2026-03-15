@@ -4,6 +4,8 @@
 */
 
 void	warning(Mntdir*, char*, ...);
+Rune*	expandhome(Rune*, int*);
+Rune*	contracthome(Rune*, int, int*);
 void	warningew(Window*, Mntdir*, char*, ...);
 
 #define	fbufalloc()	emalloc(BUFSIZE)
