@@ -1,35 +1,104 @@
 #!/bin/bash
-# plumb-edit — open a file in acme, starting acme first if needed.
-# Called by the plumber's start rule when no editor client is listening.
+# plumb-edit — open a file in the configured editor, starting it if needed.
+#
+# Called by the plumber via `plumb client $editor` when no editor client is
+# listening on the edit port. Falls back to starting the editor automatically.
+#
 # Usage: plumb-edit file [addr]
+#
+# The editor to start is determined by $EDITOR (or $editor, the plumber's
+# variable). Recognised values and their macOS app bundles:
+#   acme, editinacme  → Acme.app
+#   sam, B            → Sam.app
+# Any other value is exec'd directly as a command.
+#
+# On macOS, if the matching .app bundle exists in /Applications it is opened
+# via `open -a` so the process gets a proper Dock icon and menu bar. On other
+# systems (or if the bundle is absent) the binary is started directly.
+#
+# Filenames with spaces are handled by sending the file content as inline
+# plumb data (action=showdata), matching the behaviour of the original macedit.
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 file="$1"
 addr="$2"
 
-# Start acme if not running, then wait for its 9P server.
-if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
-	if [[ "$(uname)" == "Darwin" ]] && [[ -d "/Applications/Acme.app" ]]; then
-		open -a Acme.app
+# ---------------------------------------------------------------------------
+# Determine which editor binary / app to use.
+# $EDITOR takes precedence; fall back to $editor (set by the plumber), then
+# to the plan9port acme binary as a last resort.
+# ---------------------------------------------------------------------------
+editor_cmd="${EDITOR:-${editor:-acme}}"
+editor_base=$(basename "$editor_cmd")
+
+# Map editor name → macOS app bundle name.
+app_for_editor() {
+	case "$1" in
+	acme|editinacme) echo "Acme.app" ;;
+	sam|B)           echo "Sam.app"  ;;
+	*)               echo ""         ;;
+	esac
+}
+
+# Start the editor if no client is listening on the edit port.
+start_editor() {
+	local app
+	app=$(app_for_editor "$editor_base")
+
+	if [[ "$(uname)" == "Darwin" ]] && [[ -n "$app" ]] && [[ -d "/Applications/$app" ]]; then
+		open -a "$app"
 	else
-		"$PLAN9/bin/acme" &
+		# Generic fallback: run the editor binary in the background.
+		# Try the full command first, then look in $PLAN9/bin.
+		if command -v "$editor_cmd" >/dev/null 2>&1; then
+			"$editor_cmd" &
+		else
+			"$PLAN9/bin/$editor_base" &
+		fi
 	fi
+}
+
+# ---------------------------------------------------------------------------
+# Ensure the editor is running.
+# ---------------------------------------------------------------------------
+if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
+	# Pass the file's directory to the editor via P9P_START_DIR so acme's
+	# getwd() picks up a meaningful initial directory rather than / or $HOME.
+	# open -a doesn't inherit cwd, so we use an env var instead.
+	if [[ -n "$file" ]]; then
+		if [[ -d "$file" ]]; then
+			export P9P_START_DIR=$(cd "$file" && pwd)
+		else
+			export P9P_START_DIR=$(cd "$(dirname "$file")" && pwd)
+		fi
+	else
+		export P9P_START_DIR="$HOME"
+	fi
+	start_editor
 	# Wait up to 10 seconds for acme's 9P server to come up.
 	for i in $(seq 1 20); do
 		"$PLAN9/bin/9p" stat acme > /dev/null 2>&1 && break
 		sleep 0.5
 	done
 	if ! "$PLAN9/bin/9p" stat acme > /dev/null 2>&1; then
-		echo "plumb-edit: timed out waiting for acme" >&2
+		echo "plumb-edit: timed out waiting for editor" >&2
 		exit 1
 	fi
 fi
 
-# Send directly to acme's edit port.
-# Using -d edit avoids re-running the plumber rules (which would call
-# plumb-edit again, creating a loop).
-if [ -n "$addr" ]; then
-	"$PLAN9/bin/plumb" -d edit -a "addr=$addr" "$file"
+# ---------------------------------------------------------------------------
+# Send the file to the editor's edit port.
+# Filenames with spaces are sent as inline data (action=showdata) because the
+# plumber splits $file on spaces into multiple argv elements.
+# ---------------------------------------------------------------------------
+if [[ "$file" == *" "* ]]; then
+	base=$(basename "$file" | tr ' ' '_')
+	attr="action=showdata filename=/BadName/$base"
+	cat "$file" | "$PLAN9/bin/plumb" -i -d edit -a "$attr"
 else
-	"$PLAN9/bin/plumb" -d edit "$file"
+	if [[ -n "$addr" ]]; then
+		"$PLAN9/bin/plumb" -d edit -a "addr=$addr" "$file"
+	else
+		"$PLAN9/bin/plumb" -d edit "$file"
+	fi
 fi
