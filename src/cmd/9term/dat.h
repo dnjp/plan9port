@@ -29,8 +29,8 @@ enum
 
 enum
 {
-	Kscrolloneup = KF|0x20,
-	Kscrollonedown = KF|0x21
+	Kscrolloneup = KF|0x26,
+	Kscrollonedown = KF|0x27
 };
 
 enum	/* control messages */
@@ -144,6 +144,7 @@ struct Window
 	char			*label;
 	int			pid;
 	char			*dir;
+	int			cursoratq1;	/* for shift-selection: which end is the moving cursor */
 };
 
 int		winborder(Window*, Point);

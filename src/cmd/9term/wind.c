@@ -621,6 +621,7 @@ wkeyctl(Window *w, Rune r)
 			wsetorigin(w, q0, TRUE);
 			return;
 		case Kleft:
+			w->cursoratq1 = 0;
 			if(w->q0 > 0){
 				q0 = w->q0-1;
 				wsetselect(w, q0, q0);
@@ -628,22 +629,48 @@ wkeyctl(Window *w, Rune r)
 			}
 			return;
 		case Kright:
+			w->cursoratq1 = 0;
 			if(w->q1 < w->nr){
 				q1 = w->q1+1;
 				wsetselect(w, q1, q1);
 				wshow(w, q1);
 			}
 			return;
-		case Kaltleft: {
-			/* move cursor to start of previous word (TextEdit-style) */
+		case Kshiftleft: {
+			int atq1;
 			q0 = w->q0;
-			/* if already at start of a word, jump to start of previous word */
-			if(q0 > 0 && isalpharune(w->r[q0 > 0 ? q0-1 : 0])){
-				/* skip back over current word */
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			if(atq1){ if(q1 > 0) q1--; }
+			else    { if(q0 > 0) q0--; }
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftright: {
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			if(atq1){ if(q1 < w->nr) q1++; }
+			else    { if(q0 < w->nr) q0++; }
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kaltleft: {
+			w->cursoratq1 = 0;
+			q0 = w->q0;
+			if(q0 > 0 && isalpharune(w->r[q0-1])){
 				while(q0 > 0 && isalpharune(w->r[q0-1]))
 					q0--;
 			} else {
-				/* skip non-word chars, then skip word */
 				while(q0 > 0 && !isalpharune(w->r[q0-1]))
 					q0--;
 				while(q0 > 0 && isalpharune(w->r[q0-1]))
@@ -654,15 +681,63 @@ wkeyctl(Window *w, Rune r)
 			return;
 		}
 		case Kaltright: {
-			/* move cursor to end of next word (TextEdit-style) */
+			w->cursoratq1 = 0;
 			q0 = w->q0;
-			/* skip non-word chars, then skip over word */
 			while(q0 < w->nr && !isalpharune(w->r[q0]))
 				q0++;
 			while(q0 < w->nr && isalpharune(w->r[q0]))
 				q0++;
 			wsetselect(w, q0, q0);
 			wshow(w, q0);
+			return;
+		}
+		case Kshiftaltleft: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			if(cur > 0 && isalpharune(w->r[cur-1])){
+				while(cur > 0 && isalpharune(w->r[cur-1]))
+					cur--;
+			} else {
+				while(cur > 0 && !isalpharune(w->r[cur-1]))
+					cur--;
+				while(cur > 0 && isalpharune(w->r[cur-1]))
+					cur--;
+			}
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftaltright: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			while(cur < w->nr && !isalpharune(w->r[cur]))
+				cur++;
+			while(cur < w->nr && isalpharune(w->r[cur]))
+				cur++;
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
 			return;
 		}
 		case Khome:
