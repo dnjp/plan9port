@@ -1390,7 +1390,7 @@ cmdname(File *f, String *str, int set)
 		filemark(f);
 		f->mod = TRUE;
 		f->curtext->w->dirty = TRUE;
-		winsetname(f->curtext->w, r, n);
+		winsetname_contract(f->curtext->w, r, n);
 	}
 	return r;
 }

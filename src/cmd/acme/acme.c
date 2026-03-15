@@ -317,7 +317,7 @@ readfile(Column *c, char *s)
 		runesnprint(rb, sizeof rb, "%s", s);
 	nr = runestrlen(rb);
 	rs = cleanrname(runestr(rb, nr));
-	winsetname(w, rs.r, rs.nr);
+	winsetname_contract(w, rs.r, rs.nr);
 	textload(&w->body, 0, s, 1);
 	w->body.file->mod = FALSE;
 	w->dirty = FALSE;

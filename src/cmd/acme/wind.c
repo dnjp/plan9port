@@ -412,6 +412,17 @@ winsetname(Window *w, Rune *name, int n)
 }
 
 void
+winsetname_contract(Window *w, Rune *name, int n)
+{
+	Rune *cname;
+	int cn;
+
+	cname = contracthome(name, n, &cn);
+	winsetname(w, cname, cn);
+	free(cname);
+}
+
+void
 wintype(Window *w, Text *t, Rune r)
 {
 	int i;

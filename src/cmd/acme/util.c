@@ -496,6 +496,46 @@ makenewwindow(Text *t)
 	return w;
 }
 
+/* contract leading $HOME to ~ in a Rune path.
+ * returns a new allocation; caller must free. */
+Rune*
+contracthome(Rune *name, int n, int *outn)
+{
+	char *home;
+	Rune *homer;
+	int homelen;
+
+	home = getenv("HOME");
+	if(home == nil){
+		*outn = n;
+		return runemalloc(n); /* caller will runemove into it */
+	}
+	homer = runesmprint("%s", home);
+	homelen = runestrlen(homer);
+	free(homer);
+
+	if(n >= homelen){
+		/* check if name starts with $HOME followed by / or end-of-string */
+		Rune *htmp = runesmprint("%s", home);
+		int match = runestrncmp(name, htmp, homelen) == 0
+			&& (n == homelen || (n > homelen && name[homelen] == '/'));
+		free(htmp);
+		if(match){
+			int rest = n - homelen; /* 0 if exact match, else includes leading / */
+			Rune *out = runemalloc(1 + rest + 1);
+			out[0] = '~';
+			if(rest > 0)
+				runemove(out+1, name+homelen, rest);
+			*outn = 1 + rest;
+			return out;
+		}
+	}
+	*outn = n;
+	Rune *out = runemalloc(n);
+	runemove(out, name, n);
+	return out;
+}
+
 /* expand leading ~ or $HOME/$home in a Rune path to the real home directory.
  * takes ownership of arg (frees it if expanded); updates *np. */
 Rune*

@@ -288,6 +288,7 @@ void	winunlock(Window*);
 void	wintype(Window*, Text*, Rune);
 void	winundo(Window*, int);
 void	winsetname(Window*, Rune*, int);
+void	winsetname_contract(Window*, Rune*, int);
 void	winsettag(Window*);
 void	winsettag1(Window*);
 void	wincommit(Window*, Text*);

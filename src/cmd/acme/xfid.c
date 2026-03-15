@@ -698,7 +698,7 @@ xfidctlwrite(Xfid *x, Window *w)
 out:
 			seq++;
 			filemark(w->body.file);
-			winsetname(w, r, nr);
+			winsetname_contract(w, r, nr);
 			rulerapply(w);
 			m += (q+1) - pp;
 		}else

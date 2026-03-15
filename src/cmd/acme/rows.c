@@ -749,7 +749,7 @@ rowload(Row *row, char *file, int initing)
 				break;
 		}
 		if(dumpid == 0)
-			winsetname(w, r, n);
+			winsetname_contract(w, r, n);
 		for(; n<nr; n++)
 			if(r[n] == '|')
 				break;

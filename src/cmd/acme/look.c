@@ -297,7 +297,7 @@ plumbshow(Plumbmsg *m)
 	cvttorunes(name, strlen(name), rb, &nb, &nr, nil);
 	free(p);
 	rs = cleanrname(runestr(rb, nr));
-	winsetname(w, rs.r, rs.nr);
+	winsetname_contract(w, rs.r, rs.nr);
 	rulerprefont(w);
 	r = runemalloc(m->ndata);
 	cvttorunes(m->data, m->ndata, r, &nb, &nr, nil);
@@ -875,7 +875,7 @@ openfile(Text *t, Expand *e)
 			ow = t->w;
 		w = makenewwindow(t);
 		t = &w->body;
-		winsetname(w, e->name, e->nname);
+		winsetname_contract(w, e->name, e->nname);
 		rulerprefont(w);
 		if(textload(t, 0, e->bname, 1) >= 0)
 			t->file->unread = FALSE;
