@@ -2,24 +2,31 @@
 
 git remote add upstream https://github.com/9fans/plan9port.git
 
-# sudo rm -rf /usr/local/plan9/*
-# sudo mkdir -p /usr/local/plan9
+export PLAN9=/usr/local/plan9
+
+# TODO: add flag for a "clean" build which executes the following. This is
+# probably not the best approach an initial setup on a new system.
+sudo rm -rf /usr/local/plan9/*
+sudo mkdir -p /usr/local/plan9
 sudo cp -r ./* /usr/local/plan9/
 cd /usr/local/plan9
 sudo ./INSTALL
+
+
+# Setup path to use plan9 utilities in following steps
+export PATH=$PATH:$PLAN9/bin
+# make sure we are where we expect
+cd /usr/local/plan9
 
 # Generate shell environment files with the actual install path baked in.
 # Delegated to shell/mkfile so you can re-run this step independently:
 #   cd /usr/local/plan9/shell && mk install-sudo
 PLAN9=`pwd`
-cd shell && PLAN9=$PLAN9 ../bin/mk install-sudo && cd ..
+(cd shell && PLAN9=$PLAN9 $PLAN9/bin/mk install-sudo)
 
 # On macOS, install and start the background daemons (plumber, fontsrv, ruler).
 if [ "$(uname)" = "Darwin" ]; then
-	cd mac
-	../bin/mk daemons
-	../bin/mk load
-	cd ..
+	(cd mac && ../bin/mk daemons && ../bin/mk load)
 fi
 
 echo
