@@ -740,6 +740,69 @@ wkeyctl(Window *w, Rune r)
 			w->cursoratq1 = atq1;
 			return;
 		}
+		case Kcmdleft: {
+			w->cursoratq1 = 0;
+			if(w->q0 == 0 || w->q0 == w->qh || w->r[w->q0-1] == '\n')
+				return;
+			nb = wbswidth(w, 0x15 /* ^U: back to prompt or newline */);
+			q0 = w->q0 - nb;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kcmdright: {
+			w->cursoratq1 = 0;
+			q0 = w->q0;
+			while(q0 < w->nr && w->r[q0] != '\n')
+				q0++;
+			wsetselect(w, q0, q0);
+			wshow(w, q0);
+			return;
+		}
+		case Kshiftcmdleft: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 0;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			/* scan back to prompt boundary (qh) or newline, same as ^A */
+			{
+				uint stop = (cur > w->qh) ? w->qh : 0;
+				while(cur > stop && w->r[cur-1] != '\n')
+					cur--;
+			}
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
+		case Kshiftcmdright: {
+			uint anchor, cur;
+			int atq1;
+			q0 = w->q0;
+			q1 = w->q1;
+			if(q0 == q1)
+				w->cursoratq1 = 1;
+			atq1 = w->cursoratq1;
+			cur = atq1 ? q1 : q0;
+			anchor = atq1 ? q0 : q1;
+			while(cur < w->nr && w->r[cur] != '\n')
+				cur++;
+			q0 = cur < anchor ? cur : anchor;
+			q1 = cur < anchor ? anchor : cur;
+			atq1 = (cur >= anchor);
+			wsetselect(w, q0, q1);
+			wshow(w, atq1 ? q1 : q0);
+			w->cursoratq1 = atq1;
+			return;
+		}
 		case Khome:
 			if(w->org > w->iq1) {
 				q0 = wbacknl(w, w->iq1, 1);
