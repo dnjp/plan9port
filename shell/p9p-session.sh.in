@@ -41,5 +41,8 @@ export MANPAGER=nobs
 set +o emacs 2>/dev/null || true
 set +o vi    2>/dev/null || true
 
+# Set $home to mirror $HOME so plumbing rules using $home/path work.
+export home="$HOME"
+
 # Auto-export new variable assignments, matching rc shell convention.
 set -a
