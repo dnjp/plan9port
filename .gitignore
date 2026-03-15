@@ -299,3 +299,9 @@ state.journal
 state.old
 unix/*.tgz
 y.tab.[ch]
+bin/9term.bin
+bin/acme.bin
+bin/acmeaddr
+bin/rule
+bin/ruler
+bin/sam.bin
