@@ -17,9 +17,10 @@ The plan9port submodule lives at `plan9/modules/plan9port/`. It is a fork of
 | `plan9/modules/plan9port/src/cmd/acme/` | Acme editor source |
 | `plan9/modules/plan9port/src/cmd/devdraw/` | Display server (NSApplication process on macOS) |
 | `plan9/modules/plan9port/src/cmd/plumb/` | Plumber source |
+| `plan9/modules/plan9port/src/cmd/9term/` | 9term terminal and `win` (Acme terminal window) source |
 | `plan9/modules/plan9port/src/libdraw/` | Drawing library (spawns devdraw) |
 | `plan9/modules/plan9port/mac/` | macOS app bundles and LaunchAgent daemons |
-| `plan9/modules/plan9port/bin/` | Shell scripts: `editinacme`, `plumb-edit`, `p9p-open`, `acme` wrapper |
+| `plan9/modules/plan9port/bin/` | Shell scripts: `editinacme`, `plumb-edit`, `p9p-open`, `acme` wrapper, `9term` wrapper |
 | `plan9/modules/plan9port/plumb/macos` | Fallback rules routing files to native macOS apps via `p9p-open` |
 | `plan9/modules/plan9port/tests/plumb/` | Automated plumbing routing tests |
 | `plan9/modules/plan9port/plumb/basic` | Default plumbing rules |
@@ -126,6 +127,44 @@ Files ending in `.sh.in`, `.fish.in`, `.rc.in` in `shell/` are templates.
 `SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g" | sudo tee` to
 produce the final files in the installed location. **Edit the `.in` files, never
 the generated ones.**
+
+## 9term and win
+
+### 9term key bindings (additions over upstream)
+
+| Key | Action |
+|-----|--------|
+| Ctrl+C | Send interrupt (unconditional, even in raw mode) |
+| Ctrl+D | Send EOT (unconditional, even in raw mode) |
+| Ctrl+K | Delete from cursor to end of line |
+| Ctrl+P | Previous command history entry |
+| Ctrl+N | Next command history entry |
+| Alt+Left/Right | Move cursor by word |
+| Cmd+Left/Right | Move to start/end of line (stops at prompt boundary, like `^A`/`^E`) |
+| Shift+Left/Right | Extend/shrink selection by one character |
+| Shift+Alt+Left/Right | Extend/shrink selection by one word |
+| Shift+Cmd+Left/Right | Extend/shrink selection to start/end of line |
+| Button 3 (right-click) | Plumb word under pointer (or current selection) |
+
+### 9term internals
+
+- `Window.cursoratq1`: tracks which end of the selection is the moving cursor for shift-selection. Reset to 0 on plain left/right moves.
+- `Window.hist[]` / `Window.histidx`: per-window ring buffer (256 entries). `histidx == -1` means not browsing. `histpending` saves the live input while browsing.
+- `Kscrolloneup`/`Kscrollonedown` in `dat.h` are at `KF|0x26`/`KF|0x27` (not `0x20`/`0x21` which conflict with `keyboard.h`'s `Kshiftaltright`/`Kcmdleft`).
+- `-f fixfont`: monospace font for terminal text. `-F varfont`: proportional font for button-2 menus.
+
+### win internals
+
+`win` is an Acme client (`src/cmd/9term/win.c`). It communicates via Acme's 9P event protocol — it never sees raw key codes. Keyboard input arrives as `'K'` `'I'` events with the character already inserted into the Acme body.
+
+**Critical**: when `win` intercepts a `'K'` `'I'` event and `break`s before calling `type()`, `ntyper`/`ntypeb` do not yet reflect the inserted character, but the Acme body does. Before calling `histreplace`, always do:
+```c
+ntyper += e.nr;
+ntypeb += e.nb;
+```
+This makes the delete range `[q.p, q.p+ntyper)` cover the inserted control character so `histreplace` wipes it cleanly.
+
+History uses Ctrl+P/Ctrl+N (plain control characters that Acme passes through). Shift+Up/Down and other special keys are intercepted by Acme for text selection before `win` sees them.
 
 ## Keeping knowledge up to date
 

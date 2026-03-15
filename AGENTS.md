@@ -25,6 +25,15 @@ Notable additions over upstream:
 - **`plumb-edit`**: script that opens files in acme; used as `$editor` in plumbing rules via `plumb client $editor`.
 - **`Plumb.app` file routing**: double-clicking any file in Finder routes it through the plumber, dispatching to acme, Preview, QuickTime, etc. based on type.
 - **`p9p-open`**: thin wrapper around `open -b <bundleID>` used by `plumb/macos`; reassembles space-split filenames from `buildargv`.
+- **9term enhancements** (see `src/cmd/9term/`):
+  - `-F varfont`: proportional font for button-2 popup menus; fixed font (`-f`) for terminal text.
+  - **Right-click plumb**: button 3 plumbs the word under the pointer (or the current selection).
+  - **Ctrl+C / Ctrl+D**: send interrupt / EOT unconditionally, even in raw mode.
+  - **Ctrl+K**: delete from cursor to end of line (discards text).
+  - **Word movement**: Alt+Left/Right moves by word; Cmd+Left/Right moves to start/end of line (respecting the prompt boundary, like `^A`/`^E`).
+  - **Shift-selection**: Shift+Left/Right, Shift+Alt+Left/Right, Shift+Cmd+Left/Right extend/shrink the selection using an anchor model (`cursoratq1` field on `Window`).
+  - **Command history**: Ctrl+P (previous) / Ctrl+N (next) browse per-window history (256 entries, no consecutive duplicates). Enter records and exits browsing. History is in-memory only.
+- **`win` enhancements** (`src/cmd/9term/win.c`): same Ctrl+P/Ctrl+N history as 9term. Acme intercepts most special keys before `win` sees them; Ctrl+P/Ctrl+N are plain control characters that Acme passes through. Acme inserts the character into the body before sending the `'K'` `'I'` event — `win` accounts for this by bumping `ntyper`/`ntypeb` by `e.nr`/`e.nb` before calling `histreplace`, so the delete range covers the inserted control character.
 
 ## Build system
 
@@ -244,5 +253,8 @@ etc.) are produced at install time and should not be committed.
 | Secondary instances lose Dock icon when primary exits | `NSApplicationActivationPolicyAccessory` persists after primary dies | `winreg_promote()` switches to `Regular` policy; needs 200 ms delay before `activateIgnoringOtherApps` for Dock to pick up the change |
 | New secondary always thinks a primary exists (stale socket file) | Checking socket file existence on disk is unreliable — stale files persist after crashes | Detect secondary status via `P9P_SECONDARY` env var (set by `open -n --env`), not by probing the socket path |
 | `9c error: too many arguments to function call` for `accept`/`listen`/`close`/`write` in `mac-screen.m` | `libc.h` redefines these to `p9accept` etc. with different signatures | `#undef` the macros before the IPC section, declare POSIX prototypes explicitly, `#define` them back afterwards |
+| `win` history: stray control character printed after Ctrl+P/Ctrl+N | Acme inserts the character into the body before sending the `'K'` `'I'` event; `win` breaks before `type()` so `ntyper` doesn't include it, but the body does | Bump `ntyper += e.nr; ntypeb += e.nb` before calling `histreplace`; the delete range `[q.p, q.p+ntyper)` then covers the inserted character |
+| `win` history: stray character printed when Ctrl+N with no forward history | `break` without consuming the already-inserted `^N` | Always bump `ntyper`/`ntypeb` and call `histreplace` even when not browsing; pass `typing, ntypeb - e.nb` to restore the pre-`^N` state |
+| `Kscrolloneup`/`Kscrollonedown` conflict with `Kshiftaltright`/`Kcmdleft` | 9term's `dat.h` defined scroll constants at `KF\|0x20` and `KF\|0x21`, which collide with `keyboard.h` values added later | Renumbered to `KF\|0x26` and `KF\|0x27`; safe because these are only sent internally via `wkeyctl(w, Kscrolloneup)`, never from the keyboard driver |
 | `cannot refer to declaration with an array type inside block` in Objective-C block | C-style stack arrays cannot be captured by blocks | Heap-allocate with `malloc`/`strdup`, `free` after use inside the block |
 | Dock menu shows app name for all windows instead of file paths | `setlabel:` was setting `[win setTitle:label]`, making window title and Dock label the same | Set `[win setTitle:bundleName]` for the title bar; store full label separately in `winreg_pending_title` for the Dock menu |
