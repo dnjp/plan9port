@@ -124,7 +124,9 @@ threadmain(int argc, char *argv[])
 		maxtab = 4;
 	free(p);
 
-	startdir = ".";
+	startdir = getwd(nil, 0);
+	if(startdir == nil)
+		startdir = ".";
 
 	if(initdraw(derror, fontname, "9term") < 0)
 		sysfatal("initdraw: %r");

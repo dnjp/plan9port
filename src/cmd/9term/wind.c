@@ -882,14 +882,22 @@ wpaste(Window *w)
 	}
 }
 
+
 void
 wplumb(Window *w)
 {
 	Plumbmsg *m;
 	static CFid *fd;
 	char buf[32];
-	uint p0, p1;
+	uint p0, p1, q;
 	Cursor *c;
+
+	/* If no selection, move cursor to current mouse position first,
+	 * so word expansion picks up the word under the pointer. */
+	if(w->q0 == w->q1 && ptinrect(mouse->xy, w->f.r)){
+		q = w->org + frcharofpt(&w->f, mouse->xy);
+		wsetselect(w, q, q);
+	}
 
 	if(fd == nil)
 		fd = plumbopenfid("send", OWRITE);
@@ -898,7 +906,16 @@ wplumb(Window *w)
 	m = emalloc(sizeof(Plumbmsg));
 	m->src = estrdup("rio");
 	m->dst = nil;
-	m->wdir = estrdup(w->dir);
+	/* Use w->dir if it's absolute; otherwise fall back to getwd so that
+	 * relative filenames resolve correctly even before the shell has sent
+	 * a directory-change escape sequence. */
+	if(w->dir != nil && w->dir[0] == '/')
+		m->wdir = estrdup(w->dir);
+	else{
+		m->wdir = getwd(nil, 0);
+		if(m->wdir == nil)
+			m->wdir = estrdup(w->dir);
+	}
 	m->type = estrdup("text");
 	p0 = w->q0;
 	p1 = w->q1;
