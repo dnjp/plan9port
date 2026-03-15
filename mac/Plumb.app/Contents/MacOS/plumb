@@ -19,6 +19,16 @@ if [[ -z "$NAMESPACE" ]]; then
 	export NAMESPACE="/tmp/ns.${USER}.:0"
 fi
 
+# Source the login profile so $EDITOR and other user settings are available
+# to plumb-edit when it decides which app to open.
+for f in "$HOME/.bash_profile" "$HOME/.zprofile" "$HOME/.profile"; do
+	if [[ -f "$f" ]]; then
+		# shellcheck source=/dev/null
+		source "$f"
+		break
+	fi
+done
+
 bin=$PLAN9/bin
 IFS=$'\n'
 

@@ -14,11 +14,21 @@
 
 PLAN9=${PLAN9:-/usr/local/plan9}
 
+# Set the working directory. P9P_START_DIR is set by plumb-edit to the
+# directory of the file being opened, giving acme a meaningful initial cwd.
+# When launched from the app bundle with no file context, fall back to $HOME.
+# On a plain terminal launch, leave cwd as-is.
+if [[ -n "$P9P_START_DIR" ]]; then
+	cd "$P9P_START_DIR"
+	unset P9P_START_DIR
+elif [[ -n "$INSIDE_P9P" ]]; then
+	cd "$HOME"
+fi
+
 # Source the user's login profile if it hasn't been loaded yet.
 # We use fixfont as the sentinel: plan9.sh always sets it, so its absence
 # means we're running in a minimal environment (app bundle or plumber spawn).
 if [[ -z "$fixfont" ]]; then
-	cd "$HOME"
 	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
 	fshell=${fshell:-$SHELL}
 	case "$fshell" in
