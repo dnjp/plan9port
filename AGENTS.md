@@ -221,11 +221,76 @@ Each "New Window" spawns a separate process. A primary/secondary model in
 ## Shell environment
 
 Files in `shell/` ending in `.sh.in`, `.fish.in`, `.rc.in` are templates.
-`SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g" | sudo tee`
-(sudo required because `/usr/local/plan9` is root-owned after `INSTALL`).
+`SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g"` and installs
+them via `mk install` (no sudo — `/usr/local/plan9` is user-owned in this fork).
 
 **Always edit the `.in` files.** The generated files (`plan9.sh`, `p9p-session.sh`,
 etc.) are produced at install time and should not be committed.
+
+**PATH ordering**: `plan9.sh` prepends `$PLAN9/bin` to `PATH`. For this to take
+effect, `plan9.sh` must be sourced **last** in `~/.profile`, after all other tools
+(homebrew, asdf, go, tfenv, etc.) have added their entries. If sourced early,
+those tools will prepend over it and plan9 executables will lose priority.
+
+**`shell/mkfile`**: the `install` target uses `cmp -s` before `cp` to avoid
+errors when source and destination are identical (macOS `cp` errors on same-file
+copy). The `install-sudo` target has been removed — it is no longer needed.
+
+## `src/cmd/walk/` — walk, field, sor
+
+`walk` is a Plan 9-style `find` replacement. `field` extracts tabular fields.
+`sor` (select on rc) filters filenames from stdin using rc snippet expressions.
+
+### sor design
+
+`sor` reads filenames from stdin via `9 read` (plan9port's `read` binary, not a
+shell builtin) and for each filename runs a set of rc snippet tests.
+
+**Snippet convention**: snippets receive the filename as `$1` (positional arg).
+Example: `walk | sor '~ $1 *.go'`.
+
+**`eval` is broken for this use case in plan9port rc.** The original Plan 9 `sor`
+used `eval $1 ''''$file''''` inside `runtests`. This worked in Plan 9 rc because
+`eval` set `$*` from its extra arguments (making `$1` inside the eval'd code equal
+to the filename). Plan9port's `eval` does NOT do this — it concatenates all
+arguments with spaces and re-parses in the current scope. So `$1` inside the
+eval'd string remains the outer `$1` (the snippet text), not the filename.
+
+The specific failure mode: with snippet `~ $1 *.go` and file `foo.c`, eval runs
+`~ '~ $1 *.go' *.go foo.c` — and the snippet text `~ $1 *.go` itself matches the
+`*.go` pattern, so the test always returns true regardless of the filename.
+
+**Current workaround**: `sor` is an rc script that uses `9 read` for streaming
+input. The `eval` bug means it does not currently work correctly with glob
+snippets. The proper fix is to patch `eval` in plan9port's `src/cmd/rc/exec.c`
+to set `$*` from extra arguments as original Plan 9 rc did.
+
+### `src/cmd/walk/mkfile` conventions
+
+- Local build outputs are named `o.<name>` (e.g. `o.walk`, `o.field`) so the
+  standard `o.*` gitignore rule excludes them.
+- Object files use `o.<name>.o` as an intermediate name, also caught by `o.*`.
+- `sor` is an rc script — no build step, installed directly with `install -m 755`.
+
+### plan9port rc gotchas
+
+| Behaviour | Plan 9 rc | Plan9port rc |
+|-----------|-----------|--------------|
+| `read` in a loop | builtin; returns false at EOF, loop terminates cleanly | external binary at `$PLAN9/bin/read`; exits 1 at EOF but `` `{read} `` at EOF returns empty list `()`, causing "null list in concatenation" error in `while(var = `{read})` |
+| `eval cmd arg` | sets `$1=arg` for the eval'd code | concatenates all args with spaces; `$1` inside eval is the outer `$1`, not the new arg |
+| `break` | builtin | not a builtin — `break: No such file or directory` |
+| `while` loop streaming | `while(line = `{read})` works | use `for (line in `{cat})` to buffer all input, or a recursive function |
+
+**Streaming lines in plan9port rc**: use `while (var = `{9 read})` — calling
+`9 read` (the plan9port binary via the `9` wrapper) works correctly because `9`
+ensures `$PLAN9/bin/read` is used. The `while` loop terminates when `read` exits
+non-zero at EOF and the assignment returns an empty list (rc treats a failed
+command substitution in a `while` condition as loop termination, not an error,
+when the command itself exits non-zero).
+
+**Why `9 read` and not just `read`**: without `$PLAN9/bin` taking precedence in
+`PATH`, `read` may resolve to `/bin/read` (macOS) which has different behaviour.
+Always use `9 read` in rc scripts that need plan9port's `read`.
 
 ## Common debugging
 
@@ -258,3 +323,9 @@ etc.) are produced at install time and should not be committed.
 | `Kscrolloneup`/`Kscrollonedown` conflict with `Kshiftaltright`/`Kcmdleft` | 9term's `dat.h` defined scroll constants at `KF\|0x20` and `KF\|0x21`, which collide with `keyboard.h` values added later | Renumbered to `KF\|0x26` and `KF\|0x27`; safe because these are only sent internally via `wkeyctl(w, Kscrolloneup)`, never from the keyboard driver |
 | `cannot refer to declaration with an array type inside block` in Objective-C block | C-style stack arrays cannot be captured by blocks | Heap-allocate with `malloc`/`strdup`, `free` after use inside the block |
 | Dock menu shows app name for all windows instead of file paths | `setlabel:` was setting `[win setTitle:label]`, making window title and Dock label the same | Set `[win setTitle:bundleName]` for the title bar; store full label separately in `winreg_pending_title` for the Dock menu |
+| `sor '~ $1 *.go'` matches every file regardless of extension | `eval` in plan9port rc does not set `$*` from extra args; snippet text `~ $1 *.go` ends in `.go` and matches its own pattern | Fix `eval` in `src/cmd/rc/exec.c` to set `$*` from extra arguments as original Plan 9 rc did |
+| `while(file = `{read})` loop never terminates or errors with "null list in concatenation" | `read` resolves to macOS `/bin/read` or plan9port's external `read` binary; at EOF it exits non-zero and `` `{read} `` returns `()`, which errors on assignment | Use `while (file = `{9 read})` to force plan9port's `read`, or `for (file in `{cat})` to buffer all input first |
+| Plan9 executables not taking precedence over system tools (e.g. wrong `read` used) | `plan9.sh` is sourced early in `~/.profile`; later tools (homebrew, asdf, etc.) prepend to `PATH` and bury `$PLAN9/bin` | Source `plan9.sh` **last** in `~/.profile`, after all other PATH-modifying tool setup |
+| `mk install` in `shell/` fails with "are identical (not copied)" | macOS `cp` errors when source and destination are the same file | Use `cmp -s src dst \|\| cp src dst` pattern in the install loop |
+| `field.c` fails to compile: `match[0].sp` / `match[0].ep` not found | plan9port's `regexp9.h` uses nested unions: `Resub.s.sp` / `Resub.e.ep`, not flat `.sp` / `.ep` | Change to `match[0].s.sp` and `match[0].e.ep` |
+| `field.c` warning: passing `const char*` to `utflen(char*)` | `insep` is `const char*` but `utflen` takes `char*` | Cast: `utflen((char*)sep)` |
