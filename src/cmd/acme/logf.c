@@ -190,8 +190,11 @@ xfidlog(Window *w, char *op)
 	name = runetobyte(f->name, f->nname);
 	if(name == nil)
 		name = estrdup("");
-	eventlog.ev[eventlog.nev++] = smprint("%d %s %s\n", w->id, op, name);
+	/* expand ~ to absolute path so external tools always see real paths */
+	char *ename = expandhome_c(name);
 	free(name);
+	eventlog.ev[eventlog.nev++] = smprint("%d %s %s\n", w->id, op, ename);
+	free(ename);
 	if(eventlog.r.l == nil)
 		eventlog.r.l = &eventlog.lk;
 	rwakeupall(&eventlog.r);

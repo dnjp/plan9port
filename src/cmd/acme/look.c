@@ -779,10 +779,16 @@ expand(Text *t, uint q0, uint q1, Expand *e, int reverse)
 Window*
 lookfile(Rune *s, int n)
 {
-	int i, j, k;
+	int i, j, k, cn;
 	Window *w;
 	Column *c;
 	Text *t;
+	Rune *cs;
+
+	/* contract $HOME to ~ so lookup matches stored window names */
+	cs = contracthome(s, n, &cn);
+	s = cs;
+	n = cn;
 
 	/* avoid terminal slash on directories */
 	if(n>1 && s[n-1] == '/')
@@ -796,12 +802,14 @@ lookfile(Rune *s, int n)
 			if(k>1 && t->file->name[k-1] == '/')
 				k--;
 			if(runeeq(t->file->name, k, s, n)){
+				free(cs);
 				w = w->body.file->curtext->w;
 				if(w->col != nil)	/* protect against race deleting w */
 					return w;
 			}
 		}
 	}
+	free(cs);
 	return nil;
 }
 

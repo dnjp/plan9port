@@ -6,6 +6,7 @@
 void	warning(Mntdir*, char*, ...);
 Rune*	expandhome(Rune*, int*);
 Rune*	contracthome(Rune*, int, int*);
+char*	expandhome_c(char*);
 void	warningew(Window*, Mntdir*, char*, ...);
 
 #define	fbufalloc()	emalloc(BUFSIZE)
