@@ -365,6 +365,28 @@ static ClientImpl macimpl = {
 - (void)cycleWindows:(id)sender;
 @end
 
+/* NSApplication subclass that activates on any mouse-down when running as
+ * an Accessory-policy secondary. Without this, clicking a secondary window
+ * focuses it but never activates the app, so the menu bar stays foreign. */
+@interface P9PApplication : NSApplication
+@end
+@implementation P9PApplication
+- (void)sendEvent:(NSEvent*)e
+{
+	if(getenv("P9P_SECONDARY") != nil
+	&& ([e type] == NSEventTypeLeftMouseDown
+	||  [e type] == NSEventTypeRightMouseDown
+	||  [e type] == NSEventTypeOtherMouseDown)
+	&& ![self isActive]){
+		/* Accessory-policy apps cannot own the menu bar. Temporarily promote
+		 * to Regular so the menu bar switches, then activate. */
+		[self setActivationPolicy:NSApplicationActivationPolicyRegular];
+		[self activateIgnoringOtherApps:YES];
+	}
+	[super sendEvent:e];
+}
+@end
+
 static AppDelegate *myApp = NULL;
 
 void
@@ -374,7 +396,7 @@ gfx_main(void)
 		setprocname(argv0);
 
 	@autoreleasepool{
-		[NSApplication sharedApplication];
+		[P9PApplication sharedApplication];
 
 		// Secondary instances are spawned via "New Window" with P9P_SECONDARY=1.
 		// They use Accessory policy (no Dock icon) and connect to the primary's
