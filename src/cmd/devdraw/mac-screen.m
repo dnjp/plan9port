@@ -264,12 +264,14 @@ rpc_shutdown(void)
 		                      keyEquivalent:@"n"];
 		[newWin setTarget:self];
 		[fileMenu addItem:newWin];
-		NSMenuItem *newTab = [[NSMenuItem alloc]
-		                      initWithTitle:@"New Tab"
-		                             action:@selector(newTab:)
-		                      keyEquivalent:@"t"];
-		[newTab setTarget:self];
-		[fileMenu addItem:newTab];
+		if([appName isEqualToString:@"9term"]){
+			NSMenuItem *newTab = [[NSMenuItem alloc]
+			                      initWithTitle:@"New Tab"
+			                             action:@selector(newTab:)
+			                      keyEquivalent:@"t"];
+			[newTab setTarget:self];
+			[fileMenu addItem:newTab];
+		}
 		[fileMenu addItem:[NSMenuItem separatorItem]];
 		NSMenuItem *closeWin = [[NSMenuItem alloc]
 		                        initWithTitle:@"Close Window"
@@ -586,9 +588,12 @@ rpc_attach(Client *c, char *label, char *winsize)
 
 	if(!set)
 		[win center];
-	[win setCollectionBehavior:
-		NSWindowCollectionBehaviorFullScreenPrimary |
-		NSWindowCollectionBehaviorManaged];
+	// NSWindowCollectionBehaviorManaged opts the window into the tab bar.
+	// Only 9term supports tabs; acme and sam use separate windows only.
+	NSWindowCollectionBehavior behavior = NSWindowCollectionBehaviorFullScreenPrimary;
+	if([appName isEqualToString:@"9term"])
+		behavior |= NSWindowCollectionBehaviorManaged;
+	[win setCollectionBehavior:behavior];
 	[win setContentMinSize:NSMakeSize(64,64)];
 	[win setOpaque:YES];
 	[win setRestorable:NO];
