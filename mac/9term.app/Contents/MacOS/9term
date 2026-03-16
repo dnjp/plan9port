@@ -2,12 +2,14 @@
 export INSIDE_P9P=true
 export INSIDE_9TERM=true
 
-PLAN9=${PLAN9:-/usr/local/plan9}
+PLAN9="${PLAN9:-/usr/local/plan9}"
 export PLAN9
 export PATH="$PLAN9/bin:$PATH"
-
-# Point libdraw at the devdraw binary inside this bundle so that the
-# display server process inherits the bundle's icon and app name.
 export DEVDRAW="$(dirname "$0")/devdraw"
 
+# devdraw sets NOLIBTHREADDAEMONIZE=1 to suppress daemonizing in its own
+# libthread. Unset it so 9term's libthread can daemonize normally.
+unset NOLIBTHREADDAEMONIZE
+
+trap '' HUP
 exec "$PLAN9/bin/9term" -l -W600x800

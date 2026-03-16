@@ -33,7 +33,7 @@ AUTOFRAMEWORK(Metal)
 AUTOFRAMEWORK(QuartzCore)
 AUTOFRAMEWORK(CoreFoundation)
 
-#define LOG	if(0)NSLog
+#define LOG	if(1)NSLog
 
 // ── Window registry IPC ───────────────────────────────────────────────────────
 //
@@ -69,6 +69,7 @@ static WinEntry winreg[WINREG_MAXCLIENTS];
 static int      nwinreg = 0;
 static int      winreg_server_fd = -1;
 static int      winreg_focused_pid = -1; /* pid of most-recently-focused secondary */
+static BOOL     winreg_redirect_done = NO; /* YES after applicationDidBecomeActive handled redirect */
 
 static NSString*
 winreg_sockpath(void)
@@ -142,7 +143,6 @@ winreg_server_thread(void *arg)
 				char titlebuf[512];
 				titlebuf[0] = '\0';
 				if(sscanf(line, "title %d %511[^\n]", &pid, titlebuf) == 2){
-					// Copy to heap so the block can capture it.
 					char *titlecopy = strdup(titlebuf);
 					int cpid = pid;
 					dispatch_async(dispatch_get_main_queue(), ^{
@@ -154,58 +154,54 @@ winreg_server_thread(void *arg)
 					dispatch_async(dispatch_get_main_queue(), ^{
 						winreg_remove(cpid);
 					});
-			} else if(strcmp(line, "raise") == 0){
-				dispatch_async(dispatch_get_main_queue(), ^{
-					for(NSWindow *win in [NSApp windows]){
-						if([win isVisible]){
-							[win makeKeyAndOrderFront:nil];
-							break;
-						}
-					}
-					[NSApp activateIgnoringOtherApps:YES];
-				});
-			} else if(sscanf(line, "focus %d", &pid) == 1){
-				int cpid = pid;
-				dispatch_async(dispatch_get_main_queue(), ^{
-					winreg_focused_pid = cpid;
-				});
-			} else if(strcmp(line, "cycle") == 0){
-				dispatch_async(dispatch_get_main_queue(), ^{
-					/* Build ordered list: primary first, then secondaries in order */
-					/* Find index of currently focused entry (-1 = primary) */
-					int total = 1 + nwinreg; /* primary + secondaries */
-					int cur = 0; /* default: primary is current */
-					if(winreg_focused_pid > 0){
-						for(int i = 0; i < nwinreg; i++){
-							if(winreg[i].pid == winreg_focused_pid){
-								cur = 1 + i;
-								break;
-							}
-						}
-					}
-					/* Raise the next entry */
-					int next = (cur + 1) % total;
-					if(next == 0){
-						/* Raise primary's own window */
+				} else if(strcmp(line, "raise") == 0){
+					dispatch_async(dispatch_get_main_queue(), ^{
 						for(NSWindow *win in [NSApp windows]){
 							if([win isVisible]){
 								[win makeKeyAndOrderFront:nil];
-								[NSApp activateIgnoringOtherApps:YES];
 								break;
 							}
 						}
-						winreg_focused_pid = -1;
-					} else {
-						winreg_send_to_pid(winreg[next-1].pid, "raise\n");
-					}
-				});
-			} else if(strcmp(line, "quit") == 0){
-				dispatch_async(dispatch_get_main_queue(), ^{
-					// Kill all secondaries then quit the primary.
-					winreg_quit_all();
-					[NSApp terminate:nil];
-				});
-			}
+						[NSApp activateIgnoringOtherApps:YES];
+					});
+				} else if(sscanf(line, "focus %d", &pid) == 1){
+					int cpid = pid;
+					dispatch_async(dispatch_get_main_queue(), ^{
+						winreg_focused_pid = cpid;
+						NSLog(@"[primary server] winreg_focused_pid set to %d", cpid);
+					});
+				} else if(strcmp(line, "cycle") == 0){
+					dispatch_async(dispatch_get_main_queue(), ^{
+						int total = 1 + nwinreg;
+						int cur = 0;
+						if(winreg_focused_pid > 0){
+							for(int i = 0; i < nwinreg; i++){
+								if(winreg[i].pid == winreg_focused_pid){
+									cur = 1 + i;
+									break;
+								}
+							}
+						}
+						int next = (cur + 1) % total;
+						if(next == 0){
+							for(NSWindow *win in [NSApp windows]){
+								if([win isVisible]){
+									[win makeKeyAndOrderFront:nil];
+									[NSApp activateIgnoringOtherApps:YES];
+									break;
+								}
+							}
+							winreg_focused_pid = -1;
+						} else {
+							winreg_send_to_pid(winreg[next-1].pid, "raise\n");
+						}
+					});
+				} else if(strcmp(line, "quit") == 0){
+					dispatch_async(dispatch_get_main_queue(), ^{
+						winreg_quit_all();
+						[NSApp terminate:nil];
+					});
+				}
 			}
 			// Client disconnected.
 			close(clientfd);
@@ -264,32 +260,35 @@ winreg_connect(void)
 	addr.sun_family = AF_UNIX;
 	strlcpy(addr.sun_path, [path UTF8String], sizeof(addr.sun_path));
 
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if(fd < 0) return;
-	// Retry a few times — primary may not have started the server yet.
-	for(int i = 0; i < 20; i++){
-		if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0){
-			winreg_client_fd = fd;
-			// Flush any title that was set before we connected.
-			if(winreg_pending_title[0] != '\0'){
-				char msg[600];
-				snprintf(msg, sizeof(msg), "title %d %s\n", (int)getpid(), winreg_pending_title);
-				write(fd, msg, strlen(msg));
-			}
-			// Keep reading from the server — if it closes, promote ourselves.
-			char buf[4];
-			while(read(fd, buf, sizeof(buf)) > 0)
-				;
-			// Server gone: promote on main thread.
-			dispatch_async(dispatch_get_main_queue(), ^{
-				winreg_promote();
-			});
-			return;
-		}
-		usleep(100000); // 100ms
+	// Retry indefinitely until we connect. The primary may be slow to start
+	// its server (especially under load), but it will always exist — it was
+	// the process that spawned us via "open -n". We must never time out and
+	// promote ourselves, because that creates a second Dock icon.
+	// The only legitimate reason to promote is when the server *disconnects*
+	// (primary exited), handled below.
+	int fd = -1;
+	for(;;){
+		fd = socket(AF_UNIX, SOCK_STREAM, 0);
+		if(fd < 0){ usleep(50000); continue; }
+		if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0)
+			break;
+		close(fd);
+		fd = -1;
+		usleep(50000); // 50ms between retries
 	}
-	// Could not connect to any primary — become primary ourselves.
-	close(fd);
+
+	winreg_client_fd = fd;
+	// Flush any title that was set before we connected.
+	if(winreg_pending_title[0] != '\0'){
+		char msg[600];
+		snprintf(msg, sizeof(msg), "title %d %s\n", (int)getpid(), winreg_pending_title);
+		write(fd, msg, strlen(msg));
+	}
+	// Keep reading from the server — if it closes, the primary has exited.
+	// Promote ourselves to primary on the main thread.
+	char buf[4];
+	while(read(fd, buf, sizeof(buf)) > 0)
+		;
 	dispatch_async(dispatch_get_main_queue(), ^{
 		winreg_promote();
 	});
@@ -514,9 +513,12 @@ sigusr1_raise(int sig)
 		[[NSApp dockTile] display];
 	}
 
-	/* Secondaries handle SIGUSR1 to raise their window (sent by primary for cycling) */
+	/* Secondaries handle SIGUSR1 to raise their window (sent by primary for cycling).
+	 * Also demote to Accessory here (after the run loop has started) so Launch
+	 * Services can't override the policy we set before [NSApp run]. */
 	if(getenv("P9P_SECONDARY") != nil){
 		signal(SIGUSR1, sigusr1_raise);
+		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 	}
 
 	gfx_started();
@@ -591,21 +593,50 @@ sigusr1_raise(int sig)
 	return NSTerminateNow;
 }
 
-// New Window: spawn a secondary instance via `open -n --env P9P_SECONDARY=1`.
-// The secondary sees P9P_SECONDARY and uses Accessory policy (no Dock icon),
-// sharing the primary's Dock icon and appearing in its right-click menu.
+// New Window: spawn a new terminal session by re-running the bundle's
+// launcher script (e.g. 9term.app/Contents/MacOS/9term).  The launcher
+// sets DEVDRAW to the bundle devdraw, then execs the real 9term binary,
+// which starts its own devdraw child.  That devdraw will see P9P_SECONDARY
+// in the environment (set below) and connect to our winreg server so it
+// shares our Dock icon.
 - (void)newWindow:(id)sender
 {
-	const char *bundlePath = [[[NSBundle mainBundle] bundlePath] UTF8String];
-	char *argv[] = {
-		"/usr/bin/open", "-n",
-		"--env", "P9P_SECONDARY=1",
-		(char*)bundlePath, nil
-	};
+	// The launcher script sits next to the devdraw binary inside the bundle.
+	NSString *exe = [[[NSBundle mainBundle] executablePath]
+	                  stringByDeletingLastPathComponent];
+	// CFBundleExecutable names the launcher (e.g. "9term", "acme", "sam").
+	NSString *launcher = [[NSBundle mainBundle]
+	                       objectForInfoDictionaryKey:@"CFBundleExecutable"];
+	if(launcher == nil) launcher = @"9term";
+	NSString *script = [exe stringByAppendingPathComponent:launcher];
+
+	// Build child environment: inherit everything, add P9P_SECONDARY=1 so
+	// the devdraw that the new 9term spawns connects to our winreg server.
+	NSDictionary *curEnv = [[NSProcessInfo processInfo] environment];
+	NSMutableDictionary *childEnv = [curEnv mutableCopy];
+	childEnv[@"P9P_SECONDARY"] = @"1";
+
+	NSArray *keys = [childEnv allKeys];
+	char **envp = malloc(([keys count] + 1) * sizeof(char*));
+	if(envp == nil){ fprint(2, "devdraw: newWindow: malloc\n"); return; }
+	for(NSUInteger i = 0; i < [keys count]; i++){
+		NSString *k = keys[i];
+		envp[i] = strdup([[NSString stringWithFormat:@"%@=%@", k, childEnv[k]] UTF8String]);
+	}
+	envp[[keys count]] = nil;
+
+	const char *path = [script UTF8String];
+	char *argv[] = { (char*)path, nil };
+	NSLog(@"[newWindow] script=%s", path);
 	pid_t pid;
-	int err = posix_spawn(&pid, "/usr/bin/open", nil, nil, argv, nil);
+	int err = posix_spawn(&pid, path, nil, nil, argv, envp);
 	if(err != 0)
-		fprint(2, "devdraw: newWindow: %s\n", strerror(err));
+		NSLog(@"[newWindow] posix_spawn FAILED: %s: %s", path, strerror(err));
+	else
+		NSLog(@"[newWindow] spawned pid=%d", (int)pid);
+
+	for(NSUInteger i = 0; i < [keys count]; i++) free(envp[i]);
+	free(envp);
 }
 
 // Provide a dock right-click menu listing all open windows by title.
@@ -712,15 +743,103 @@ sigusr1_raise(int sig)
 	}
 }
 
-// Clicking the Dock icon when the app is already running triggers this.
-// Bring the existing window to front rather than doing nothing.
+// Raise the most-recently-focused window across all instances.
+// If a secondary was last focused, activate that process directly via
+// NSRunningApplication (synchronous from the primary's perspective) so it
+// takes focus before macOS settles on the primary's window.
+// Called from applicationShouldHandleReopen and applicationDidBecomeActive.
+- (void)raiseLastFocusedWindow
+{
+	if(winreg_focused_pid > 0){
+		// Promote the secondary to Regular policy so it can own the menu bar,
+		// then activate it. We do this by sending it SIGUSR1 which calls
+		// activateIgnoringOtherApps — but that races with our own activation.
+		// Instead, use NSRunningApplication directly from the primary: this is
+		// synchronous and happens before macOS commits to the primary's window.
+		NSRunningApplication *secondary =
+			[NSRunningApplication runningApplicationWithProcessIdentifier:winreg_focused_pid];
+		if(secondary != nil){
+			[secondary activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+			return; // do NOT activate the primary — secondary takes it
+		}
+		// Secondary no longer exists; clear the stale pid and fall through.
+		winreg_focused_pid = -1;
+	}
+	// Primary was last focused (or secondary is gone).
+	for(NSWindow *win in [NSApp orderedWindows]){
+		if([win isVisible]){
+			[win makeKeyAndOrderFront:nil];
+			break;
+		}
+	}
+	[NSApp activateIgnoringOtherApps:YES];
+}
+
+// Dock icon clicked while app is already running.
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)hasVisibleWindows
 {
-	NSLog(@"devdraw: applicationShouldHandleReopen hasVisibleWindows=%d", (int)hasVisibleWindows);
-	for(NSWindow *win in [NSApp windows])
-		[win makeKeyAndOrderFront:nil];
-	[NSApp activateIgnoringOtherApps:YES];
+	[self raiseLastFocusedWindow];
 	return NO;
+}
+
+// App re-activated via Cmd+Tab or any other means.
+- (void)applicationDidBecomeActive:(NSNotification*)notification
+{
+	if(getenv("P9P_SECONDARY") != nil)
+		return;
+
+	NSLog(@"[primary] applicationDidBecomeActive winreg_focused_pid=%d", winreg_focused_pid);
+
+	winreg_redirect_done = YES; // mark that we've handled this activation
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(50 * NSEC_PER_MSEC)),
+	               dispatch_get_main_queue(), ^{
+		NSLog(@"[primary] after delay winreg_focused_pid=%d", winreg_focused_pid);
+		if(winreg_focused_pid <= 0)
+			return;
+		NSRunningApplication *secondary =
+			[NSRunningApplication runningApplicationWithProcessIdentifier:winreg_focused_pid];
+		NSLog(@"[primary] redirecting to secondary pid=%d app=%@", winreg_focused_pid, secondary);
+		if(secondary != nil){
+			[secondary activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+		} else {
+			winreg_focused_pid = -1;
+		}
+	});
+}
+
+// Secondary: promote to Regular policy and notify primary of focus.
+- (void)applicationWillBecomeActive:(NSNotification*)notification
+{
+	if(getenv("P9P_SECONDARY") == nil)
+		return;
+	NSLog(@"[secondary pid=%d] applicationWillBecomeActive policy=%ld", (int)getpid(), (long)[NSApp activationPolicy]);
+	if([NSApp activationPolicy] != NSApplicationActivationPolicyRegular)
+		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+	// Tell primary we are the last-focused secondary. Do this here (not just
+	// in applicationDidResignActive) so the primary knows before we switch away.
+	if(winreg_client_fd >= 0){
+		char focusmsg[64];
+		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
+		winreg_send(focusmsg);
+		NSLog(@"[secondary pid=%d] sent focus to primary", (int)getpid());
+	}
+}
+
+// Secondary: send focus message to primary synchronously when we lose focus.
+- (void)applicationDidResignActive:(NSNotification*)notification
+{
+	if(getenv("P9P_SECONDARY") == nil)
+		return;
+
+	NSLog(@"[secondary pid=%d] applicationDidResignActive — sending focus", (int)getpid());
+	if(winreg_client_fd >= 0){
+		char focusmsg[64];
+		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
+		winreg_send(focusmsg);
+	}
+
+	if([NSApp activationPolicy] != NSApplicationActivationPolicyAccessory)
+		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification
@@ -1213,19 +1332,22 @@ rpc_resizewindow(Client *c, Rectangle r)
 
 - (void)windowDidBecomeKey:(id)arg {
 	[self sendmouse:0];
-	/* Notify primary of focus so Cmd+` cycling tracks the active window */
+	/* Notify primary of focus so Cmd+` cycling and re-activation tracks the active window.
+	 * Send synchronously on a background thread so it arrives at the primary
+	 * well before the user switches away. */
 	if(winreg_client_fd >= 0){
-		char *focusmsg = malloc(64);
-		if(focusmsg){
-			snprintf(focusmsg, 64, "focus %d\n", (int)getpid());
-			dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-				winreg_send(focusmsg);
-				free(focusmsg);
-			});
-		}
-	} else {
+		/* Secondary: tell primary we are focused */
+		char focusmsg[64];
+		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
+		winreg_send(focusmsg);
+	} else if(winreg_redirect_done){
+		/* Primary window became key after the redirect was already handled —
+		 * the user explicitly focused the primary, so clear the secondary redirect. */
 		winreg_focused_pid = -1;
+		winreg_redirect_done = NO;
 	}
+	/* If redirect hasn't been attempted yet (mid-Cmd+Tab activation), do NOT
+	 * clear winreg_focused_pid — applicationDidBecomeActive needs it. */
 }
 
 - (void)windowDidResignKey:(id)arg {
