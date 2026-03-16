@@ -5,113 +5,114 @@ for the GUI applications and `LaunchAgent` plists for the background daemons.
 
 ## App Bundles
 
-`Acme.app`, `9term.app`, `Sam.app`, and `Plumb.app` are standard macOS application
-bundles. Install them by running `mk` (or `mk apps`) from this directory, which
-copies them to `/Applications`.
+`9term.app`, `Acme.app`, `Sam.app`, and `Plumb.app` are standard macOS
+application bundles. Install them by running `mk` (or `mk apps`) from this
+directory, which copies them to `/Applications`.
 
-### How the app bundles work
+## Architecture
 
-plan9port's GUI applications (acme, sam, 9term) are not native macOS apps. When
-they need to draw to the screen they fork a subprocess called `devdraw`, which is
-the actual `NSApplication` process — the one that owns the Dock icon, menu bar
-entry, and window chrome.
+### Single-process multi-window model
 
-Without intervention, `devdraw` runs as a standalone binary with no bundle
-association, so macOS shows a generic Glenda icon and labels it "devdraw" in the
-Dock. To fix this, each app bundle uses two mechanisms:
+plan9port's GUI applications (`9term`, `acme`, `sam`) draw to the screen
+through a subprocess called `devdraw`. On macOS, `devdraw` is the actual
+`NSApplication` — the process that owns the Dock icon, menu bar, and window
+chrome.
 
-1. **Bundle-internal `devdraw` copy.** `mk apps` copies `$PLAN9/bin/devdraw` into
-   each bundle's `Contents/MacOS/` directory. When `devdraw` runs from that path,
-   `[NSBundle mainBundle]` returns the enclosing `.app` bundle, giving macOS the
-   correct bundle identifier, icon, and display name.
-
-2. **`DEVDRAW` environment variable.** Each bundle's launcher script
-   (`Contents/MacOS/acme`, `9term`, `sam`) sets:
-   ```sh
-   export DEVDRAW="$(dirname "$0")/devdraw"
-   ```
-   `libdraw` reads `$DEVDRAW` when forking the display server, so it execs the
-   bundle-internal copy rather than the bare `devdraw` on `$PATH`.
-
-3. **Bundle-aware icon and name in `devdraw`.** `mac-screen.m` reads
-   `CFBundleName` and `CFBundleIconFile` from the main bundle at startup. If a
-   bundle icon is found it is used instead of the hardcoded Glenda PNG, and the
-   menu bar title is set to the bundle's app name rather than "devdraw".
-
-The net result: launching `Acme.app` shows the Acme icon in the Dock, names the
-menu bar "acme", and keeps the app active under that identity for its lifetime.
-
-### Bundle structure
+This fork runs a single long-lived `devdraw` process per application. All
+windows for that application live as `NSWindow` instances inside that one
+process:
 
 ```
-Acme.app/
+9term.app launch
+  └─ devdraw -s p9p-9term   (NSApplication — one Dock icon, one menu bar)
+       ├─ NSWindow #1  ←  9term client process (pid A)
+       ├─ NSWindow #2  ←  9term client process (pid B)
+       └─ NSWindow #3  ←  9term client process (pid C)
+```
+
+Each client process (`9term`, `acme`, `sam`) connects to the running `devdraw`
+server via a Unix socket in `$NAMESPACE` rather than forking its own `devdraw`.
+The connection is established through the `$wsysid` environment variable, which
+`libdraw` reads in `_displayconnect()` to dial the server instead of spawning a
+new display process.
+
+This model gives native macOS behaviour for free: `Cmd+\`` window cycling, a
+single Dock icon, a single menu bar, and native tab support in `9term` — all
+without any cross-process IPC hacks.
+
+### Startup sequence
+
+1. macOS launches `devdraw` directly (it is the `CFBundleExecutable`). `devdraw`
+   detects it is running from an app bundle, sets `srvname = "p9p-9term"` (or
+   the appropriate name for the bundle), and starts listening on
+   `$NAMESPACE/p9p-9term`.
+
+2. `devdraw` queues a `newWindow:` call via `dispatch_async` and enters
+   `[NSApp run]`.
+
+3. `newWindow:` spawns the client binary (e.g. `$PLAN9/bin/9term`) with
+   `$wsysid = p9p-9term/<id>` in its environment. The client dials the server,
+   and `devdraw` creates an `NSWindow` for it via `rpc_attach`.
+
+4. Subsequent "New Window" (Cmd+N) or "New Tab" (Cmd+T, 9term only) calls
+   repeat step 3 with a fresh id.
+
+### Window lifecycle
+
+- **Client exits normally** (e.g. shell exits): `serveproc` sees EOF on the
+  socket and calls `rpc_clientgone`, which dispatches to the main thread,
+  closes the `NSWindow`, and frees the client state.
+
+- **User closes the window** (click ✕ or Cmd+W): `windowWillClose:` fires,
+  sets `clientGone = YES` to stop pending draw operations, and sends `SIGTERM`
+  to the client process. When the client dies, `rpc_clientgone` runs as above.
+
+- **Last window closed**: `applicationShouldTerminateAfterLastWindowClosed:`
+  returns `YES`; the app exits.
+
+- **App quit** (Cmd+Q or Dock menu): `applicationShouldTerminate:` sends
+  `SIGTERM` to all tracked child PIDs, then returns `NSTerminateNow`.
+
+### Memory management
+
+`DrawView` (the `NSView` subclass that owns each window's drawing surface) is
+kept alive by an explicit `CFRetain` in a registry table rather than by ARC
+alone. This avoids a double-free caused by `NSWindow` autoreleasing its content
+view into the run-loop pool during close: the registry's `CFRetain` keeps the
+object alive until `rpc_clientgone` drops it on a future run-loop turn, after
+all pool entries from the close event have drained.
+
+## App bundle structure
+
+```
+9term.app/
   Contents/
-    Info.plist          — CFBundleName=acme, CFBundleIconFile=spaceglenda.icns
+    Info.plist          — CFBundleExecutable=devdraw, CFBundleName=9term
     MacOS/
-      acme              — launcher script (CFBundleExecutable); sets DEVDRAW and execs $PLAN9/bin/acme
-      devdraw           — copy of $PLAN9/bin/devdraw placed here by mk apps
+      devdraw           — copy of $PLAN9/bin/devdraw (placed here by mk apps)
+      9term             — helper script used by acme/sam/plumb (not the executable)
     Resources/
       spaceglenda.icns  — application icon
 ```
 
-`9term.app` and `Sam.app` follow the same pattern with their own icons and
-launcher scripts.
+`Acme.app` and `Sam.app` follow the same pattern. `CFBundleExecutable` is
+`devdraw` in all three; the bundle name (`CFBundleName`) determines which client
+binary is spawned and which features are enabled (e.g. tabs are only available
+in `9term`).
 
-### Launcher scripts
+### Why `devdraw` is the bundle executable
 
-Each launcher script (`Contents/MacOS/acme`, `9term`, `sam`) does the following:
+macOS associates a process with a bundle by matching the process's executable
+path to `Contents/MacOS/<CFBundleExecutable>`. By making `devdraw` the bundle
+executable, `[NSBundle mainBundle]` returns the correct bundle at runtime,
+giving `devdraw` access to the right icon, display name, and bundle identifier —
+without any wrapper script.
 
-1. Sets `INSIDE_P9P=true` and an app-specific flag (`INSIDE_ACME`, `INSIDE_9TERM`).
-2. Sets `PLAN9` (defaulting to `/usr/local/plan9`) and prepends `$PLAN9/bin` to
-   `PATH`. This is required because Dock-launched apps inherit a minimal `PATH`
-   that does not include the plan9port binaries (e.g. `9pserve`).
-3. Sets `DEVDRAW` to the bundle-internal copy.
-4. Execs the plan9port binary (e.g. `$PLAN9/bin/acme`).
+### Bundle-internal `devdraw` copy
 
-### Plumb.app and file routing
-
-`Plumb.app` is a minimal app bundle whose sole purpose is to act as the macOS
-default handler for files double-clicked in Finder. Its launcher
-(`Contents/MacOS/plumb`) calls `macargv` to receive the file paths from Finder,
-then passes each path to `plumb` (the plan9port plumb client):
-
-```sh
-for file in $($bin/macargv); do
-    "$bin/plumb" "$file"
-done
-```
-
-The plumber daemon then applies the rules in `~/lib/plumbing` (which includes
-`plumb/basic` and `plumb/macos`) to decide what to do with each file — opening
-source files in acme, PDFs in Preview, audio in QuickTime Player, etc.
-
-#### Why `macedit` was removed
-
-Upstream plan9port ships a helper script `bin/macedit` that `Plumb.app` used to
-call instead of `plumb` directly. It existed to work around two limitations:
-
-1. **Forced editor destination** — it called `plumb -d edit "$file"`, which
-   bypasses the plumber's routing rules and sends the file directly to the `edit`
-   port (acme). This meant every file opened via Finder went to acme, regardless
-   of type.
-
-2. **Spaces in filenames** — the plumbing rules used restrictive character-class
-   regexes (e.g. `[a-zA-Z0-9_\-./@ ]+`) that couldn't match filenames with
-   braces, parentheses, or other special characters. For filenames containing
-   spaces, `macedit` worked around this by reading the file's *content* and
-   sending it as inline plumb data with a mangled filename
-   (`/BadName/name_with_underscores`).
-
-Both workarounds are no longer needed in this fork:
-
-- `plumb/basic` and `plumb/macos` use `.+` guard patterns that accept any
-  filename, and `p9p-open` reassembles space-split paths from `buildargv`.
-- The routing rules now correctly dispatch PDFs, images, audio, etc. to their
-  native macOS apps, so forcing `-d edit` would be wrong.
-
-`macedit` was therefore reduced to a single `plumb "$1"` call and then removed.
-If you need to re-sync with upstream, be aware that upstream's `macedit` forces
-all Finder-opened files to the editor — you would lose the macOS app routing.
+`mk apps` copies `$PLAN9/bin/devdraw` into each bundle's `Contents/MacOS/`
+directory. Each bundle gets its own copy so that macOS correctly associates the
+running process with that bundle (icon, app name, Dock entry).
 
 ### Code signing
 
@@ -119,97 +120,98 @@ Copying `devdraw` into the bundle invalidates the bundle's code signature.
 `mk apps` re-signs the entire bundle with:
 
 ```sh
-codesign --force --deep --sign - /Applications/Acme.app
+codesign --force --deep --sign - /Applications/9term.app
 ```
 
-The `--deep` flag is required — signing only the top-level bundle or only the
-binary is not sufficient. Without it, macOS will `SIGKILL` the process at launch
-with "Code Signature Invalid".
+The `--deep` flag is required. Without it, macOS will `SIGKILL` the process at
+launch with "Code Signature Invalid".
 
-### Multi-window support and Dock menu
+## Building and installing
 
-plan9port apps are single-process-per-window: each "New Window" spawns a
-completely separate process. To present a single Dock icon for all windows of
-the same app, `devdraw` uses a primary/secondary model with Unix domain socket
-IPC.
-
-#### Primary vs. secondary instances
-
-- The **primary** instance is the first one launched (no `P9P_SECONDARY` env
-  var). It sets `NSApplicationActivationPolicyRegular` (owns the Dock icon and
-  menu bar) and starts a Unix domain socket server at
-  `/tmp/p9p-winreg-<bundleID>`.
-- **Secondary** instances are spawned by "New Window" via
-  `open -n --env P9P_SECONDARY=1 <bundle>`. They set
-  `NSApplicationActivationPolicyAccessory` (no Dock icon) and connect to the
-  primary's socket.
-
-#### IPC protocol
-
-Secondaries send newline-terminated messages to the primary:
-
-| Message | Meaning |
-|---------|---------|
-| `title <pid> <label>\n` | Register or update this window's title |
-| `close <pid>\n` | This window is closing |
-
-The primary stores these in a `WinEntry winreg[]` array (max 64 entries) and
-uses it to populate the Dock right-click menu.
-
-#### Dock right-click menu (`applicationDockMenu:`)
-
-The primary builds the menu from two sources:
-
-1. **Local windows** (`[NSApp windows]`): uses `winreg_pending_title` (the full
-   path label) for the menu item text, falling back to `[win title]`. Action:
-   `bringWindowToFront:` (brings the `NSWindow` to front).
-2. **Remote windows** (secondary instances in `winreg[]`): uses the registered
-   title. Action: `activateSecondaryWindow:` (calls
-   `[NSRunningApplication activateWithOptions:]` for the secondary's PID).
-
-#### Window title bar vs. Dock menu label
-
-The macOS title bar always shows the `CFBundleName` (e.g. "acme") for
-stability. The full path label (set by `drawsetlabel`) is stored separately in
-`winreg_pending_title` and used only for the Dock menu. This decoupling is done
-in `setlabel:` in `mac-screen.m`:
-
-```objc
-NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-[self.win setTitle:bundleName ?: s];          // title bar: always "acme"
-strlcpy(winreg_pending_title, label, ...);    // dock menu: full path
+```sh
+mk           # build devdraw and install all apps + daemons
+mk apps      # build devdraw and install only the .app bundles
+mk daemons   # install LaunchAgent plists
+mk load      # start all LaunchAgents
+mk unload    # stop all LaunchAgents
+mk reload    # restart all LaunchAgents
+mk status    # show running/stopped state
+mk logs      # tail all daemon log files
 ```
 
-#### Primary promotion
+## macOS-specific features
 
-When the primary exits, secondaries detect the socket closure (the blocking
-`read` loop in `winreg_connect` returns 0). The first secondary to detect this
-calls `winreg_promote()` on the main thread, which:
+### 9term tabs
 
-1. Starts a new socket server (becoming the new primary).
-2. Sets `NSApplicationActivationPolicyRegular`.
-3. After a 200 ms delay (required for the Dock to pick up the policy change),
-   calls `[NSApp activateIgnoringOtherApps:YES]`.
+`9term.app` supports native macOS tabs:
 
-#### libc.h macro conflicts
+- **New Tab** (Cmd+T): opens a new `9term` in a tab within the current window.
+- **New Window** (Cmd+N): opens a new `9term` in a separate window.
+- Tabs can be dragged out to become separate windows and vice versa using
+  standard macOS tab bar controls.
 
-plan9port's `libc.h` redefines `accept`, `listen`, `close`, and `write` to
-`p9accept`, `p9listen`, `p9close`, and `p9write`. The IPC code in
-`mac-screen.m` needs the real POSIX functions. The file `#undef`s these macros
-before the IPC section, declares the POSIX prototypes explicitly, then
-`#define`s them back to the plan9port names afterwards.
+`Acme.app` and `Sam.app` do not support tabs; each window is always separate.
 
-### Acme window labels
+### Window titles
 
-Acme calls `drawsetlabel()` in two places to keep the Dock menu titles
-meaningful:
+The title bar always shows the application name (`9term`, `acme`, or `sam`)
+regardless of the label set by the client via `drawsetlabel`. This keeps the
+title bar stable while the client updates its label (e.g. acme updates the
+label to the focused file path).
 
-1. **At startup** (`acme.c: threadmain`): sets the label to the current working
-   directory (`wdir`).
-2. **On focus change** (`acme.c: mousethread`): when a window gains focus, sets
-   the label to `w->body.file->name` (the file path of the focused buffer).
+### Mouse buttons
 
-## Background Daemons
+On macOS, because a laptop trackpad has only one physical button:
+
+- Option-click → button 2
+- Command-click → button 3
+
+While the main button is held down, Control, Option, and Command simulate
+buttons 1, 2, and 3 for chording in acme. For example, the 1-3 paste chord can
+be executed by sweeping with the trackpad button held, then pressing Command.
+
+Buttons 4 and 5 represent scroll wheel up/down. Two-finger trackpad scrolling
+sends those events.
+
+Holding Shift while clicking adds 5 to the button number (e.g.
+Command-Shift-Click = button 8). Acme interprets button 8 as reverse search.
+
+### Keyboard shortcuts
+
+- **Cmd+F**: toggle full screen
+- **Cmd+R**: toggle retina mode (for debugging)
+- **Cmd+N**: new window
+- **Cmd+T**: new tab (9term only)
+- **Cmd+W**: close window
+
+All other Command key combinations send `Kcmd` (0xF100) plus the character to
+the client. Acme recognises Cmd+Z (undo), Cmd+Shift+Z (redo), Cmd+X (cut), and
+Cmd+V (paste).
+
+## Plumb.app and file routing
+
+`Plumb.app` is a minimal bundle whose sole purpose is to act as the macOS
+default handler for files double-clicked in Finder. Its launcher
+(`Contents/MacOS/plumb`) calls `macargv` to receive the file paths from Finder,
+then passes each to the `plumb` client:
+
+```sh
+for file in $($bin/macargv); do
+    "$bin/plumb" "$file"
+done
+```
+
+The plumber daemon applies the rules in `~/lib/plumbing` (which includes
+`plumb/basic` and `plumb/macos`) to route each file — opening source files in
+acme, PDFs in Preview, audio in QuickTime Player, etc.
+
+Register `Plumb.app` as the default handler for text and source files:
+
+```sh
+mk register-defaults   # requires: brew install duti
+```
+
+## Background daemons
 
 The `daemons/` subdirectory contains `LaunchAgent` plist templates and helper
 scripts for the three plan9port background services:
@@ -219,17 +221,6 @@ scripts for the three plan9port background services:
 | `com.plan9port.fontsrv` | Serves system fonts over 9P at `/mnt/font` |
 | `com.plan9port.plumber` | Routes plumb messages between applications |
 | `com.plan9port.ruler` | Configuration rule server (font, tabstop, etc.) |
-
-### Installation and management
-
-```sh
-mk daemons   # expand plist templates and install LaunchAgents
-mk load      # launchctl load (start) all agents
-mk unload    # launchctl unload (stop) all agents
-mk reload    # stop then start (pick up plist changes)
-mk status    # show running/stopped state of each agent
-mk logs      # tail all daemon log files
-```
 
 Plist templates live in `daemons/*.plist.template`. `mk daemons` substitutes
 `@HOME@`, `@PLAN9@`, and `@DAEMONDIR@` and writes the expanded plists to
@@ -242,7 +233,7 @@ LaunchAgents start in a minimal environment without the user's login profile.
 shell profile before exec'ing the daemon binary so that `$PLAN9`, `$NAMESPACE`,
 and other required variables are set correctly.
 
-### Namespace
+### Shared namespace
 
 All daemons and interactive terminals must share the same 9P socket directory
 (`$NAMESPACE`, typically `/tmp/ns.$USER.:0`). `run-with-env.sh` sets
