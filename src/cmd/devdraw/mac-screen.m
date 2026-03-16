@@ -68,6 +68,7 @@ typedef struct WinEntry {
 static WinEntry winreg[WINREG_MAXCLIENTS];
 static int      nwinreg = 0;
 static int      winreg_server_fd = -1;
+static int      winreg_focused_pid = -1; /* pid of most-recently-focused secondary */
 
 static NSString*
 winreg_sockpath(void)
@@ -105,6 +106,7 @@ winreg_remove(int pid)
 }
 
 static void winreg_quit_all(void);
+static void winreg_send_to_pid(int pid, const char *msg);
 
 // Read one newline-terminated message from fd into buf. Returns length or -1.
 static int
@@ -161,6 +163,41 @@ winreg_server_thread(void *arg)
 						}
 					}
 					[NSApp activateIgnoringOtherApps:YES];
+				});
+			} else if(sscanf(line, "focus %d", &pid) == 1){
+				int cpid = pid;
+				dispatch_async(dispatch_get_main_queue(), ^{
+					winreg_focused_pid = cpid;
+				});
+			} else if(strcmp(line, "cycle") == 0){
+				dispatch_async(dispatch_get_main_queue(), ^{
+					/* Build ordered list: primary first, then secondaries in order */
+					/* Find index of currently focused entry (-1 = primary) */
+					int total = 1 + nwinreg; /* primary + secondaries */
+					int cur = 0; /* default: primary is current */
+					if(winreg_focused_pid > 0){
+						for(int i = 0; i < nwinreg; i++){
+							if(winreg[i].pid == winreg_focused_pid){
+								cur = 1 + i;
+								break;
+							}
+						}
+					}
+					/* Raise the next entry */
+					int next = (cur + 1) % total;
+					if(next == 0){
+						/* Raise primary's own window */
+						for(NSWindow *win in [NSApp windows]){
+							if([win isVisible]){
+								[win makeKeyAndOrderFront:nil];
+								[NSApp activateIgnoringOtherApps:YES];
+								break;
+							}
+						}
+						winreg_focused_pid = -1;
+					} else {
+						winreg_send_to_pid(winreg[next-1].pid, "raise\n");
+					}
 				});
 			} else if(strcmp(line, "quit") == 0){
 				dispatch_async(dispatch_get_main_queue(), ^{
@@ -265,6 +302,20 @@ winreg_send(const char *msg)
 	write(winreg_client_fd, msg, strlen(msg));
 }
 
+// Send a message directly to a specific secondary by pid via a fresh connection.
+static void
+winreg_send_to_pid(int pid, const char *msg)
+{
+	/* Find the secondary's own socket — we reuse the winreg socket path
+	 * but each process only has one window, so we send "raise" via a
+	 * temporary connection to the primary which forwards via kill/signal.
+	 * Simpler: send SIGUSR1 and handle it, or just connect to the secondary
+	 * directly. Since secondaries don't run servers, use NSDistributedNotification
+	 * or just send the pid a signal. Easiest: use kill(pid, SIGUSR1) and
+	 * have secondaries raise on SIGUSR1. */
+	kill(pid, SIGUSR1);
+}
+
 // Terminate all secondary instances then quit the primary.
 // Must be called on the main thread (reads nwinreg/winreg[]).
 static void
@@ -311,6 +362,7 @@ static ClientImpl macimpl = {
 
 @interface AppDelegate : NSObject<NSApplicationDelegate, NSMenuDelegate>
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
+- (void)cycleWindows:(id)sender;
 @end
 
 static AppDelegate *myApp = NULL;
@@ -349,6 +401,21 @@ void
 rpc_shutdown(void)
 {
 	[NSApp terminate:myApp];
+}
+
+/* Signal handler: raise this process's window when SIGUSR1 is received (sent by primary for Cmd+` cycling) */
+static void
+sigusr1_raise(int sig)
+{
+	dispatch_async(dispatch_get_main_queue(), ^{
+		for(NSWindow *win in [NSApp windows]){
+			if([win isVisible]){
+				[win makeKeyAndOrderFront:nil];
+				[NSApp activateIgnoringOtherApps:YES];
+				break;
+			}
+		}
+	});
 }
 
 @implementation AppDelegate
@@ -401,6 +468,13 @@ rpc_shutdown(void)
 	// Window menu — populated dynamically via menuNeedsUpdate:.
 	NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
 	[windowMenu setDelegate:self];
+	NSMenuItem *cycleItem = [[NSMenuItem alloc]
+	                         initWithTitle:@"Cycle Windows"
+	                                action:@selector(cycleWindows:)
+	                         keyEquivalent:@"`"];
+	[cycleItem setTarget:self];
+	[windowMenu addItem:cycleItem];
+	[windowMenu addItem:[NSMenuItem separatorItem]];
 	NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
 	[windowMenuItem setSubmenu:windowMenu];
 	[m addItem:windowMenuItem];
@@ -418,6 +492,11 @@ rpc_shutdown(void)
 		[[NSApp dockTile] display];
 	}
 
+	/* Secondaries handle SIGUSR1 to raise their window (sent by primary for cycling) */
+	if(getenv("P9P_SECONDARY") != nil){
+		signal(SIGUSR1, sigusr1_raise);
+	}
+
 	gfx_started();
 }
 
@@ -432,6 +511,54 @@ rpc_shutdown(void)
 - (void)closeWindow:(id)sender
 {
 	[[NSApp keyWindow] performClose:sender];
+}
+
+- (void)cycleWindows:(id)sender
+{
+	if(winreg_client_fd >= 0){
+		/* Secondary: ask the primary to cycle on our behalf */
+		winreg_send("cycle\n");
+	} else {
+		/* Primary: if there are registered secondaries, cycle across all */
+		if(nwinreg > 0){
+			/* Build a cycle: primary=0, secondaries=1..nwinreg */
+			int cur = 0;
+			if(winreg_focused_pid > 0){
+				for(int i = 0; i < nwinreg; i++){
+					if(winreg[i].pid == winreg_focused_pid){
+						cur = 1 + i;
+						break;
+					}
+				}
+			}
+			int total = 1 + nwinreg;
+			int next = (cur + 1) % total;
+			if(next == 0){
+				for(NSWindow *win in [NSApp windows]){
+					if([win isVisible]){
+						[win makeKeyAndOrderFront:nil];
+						[NSApp activateIgnoringOtherApps:YES];
+						break;
+					}
+				}
+				winreg_focused_pid = -1;
+			} else {
+				winreg_send_to_pid(winreg[next-1].pid, "raise\n");
+			}
+		} else {
+			/* No secondaries: cycle local windows (e.g. 9term with multiple windows) */
+			NSArray *windows = [NSApp orderedWindows];
+			NSWindow *key = [NSApp keyWindow];
+			NSUInteger idx = [windows indexOfObject:key];
+			for(NSUInteger i = 1; i <= [windows count]; i++){
+				NSWindow *candidate = windows[(idx + i) % [windows count]];
+				if([candidate isVisible]){
+					[candidate makeKeyAndOrderFront:nil];
+					break;
+				}
+			}
+		}
+	}
 }
 
 // When the primary quits (for any reason), kill all secondary instances first.
@@ -1063,7 +1190,20 @@ rpc_resizewindow(Client *c, Rectangle r)
 
 
 - (void)windowDidBecomeKey:(id)arg {
-        [self sendmouse:0];
+	[self sendmouse:0];
+	/* Notify primary of focus so Cmd+` cycling tracks the active window */
+	if(winreg_client_fd >= 0){
+		char *focusmsg = malloc(64);
+		if(focusmsg){
+			snprintf(focusmsg, 64, "focus %d\n", (int)getpid());
+			dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+				winreg_send(focusmsg);
+				free(focusmsg);
+			});
+		}
+	} else {
+		winreg_focused_pid = -1;
+	}
 }
 
 - (void)windowDidResignKey:(id)arg {
@@ -1110,6 +1250,10 @@ rpc_resizewindow(Client *c, Rectangle r)
 				winreg_send("quit\n");
 			else
 				[NSApp terminate:nil];
+			return YES;
+		}
+		if([chars isEqualToString:@"`"]){
+			[(AppDelegate*)[NSApp delegate] cycleWindows:self];
 			return YES;
 		}
 	}
