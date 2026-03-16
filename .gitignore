@@ -305,3 +305,6 @@ bin/acmeaddr
 bin/rule
 bin/ruler
 bin/sam.bin
+bin/field
+bin/walk
+bin/sor

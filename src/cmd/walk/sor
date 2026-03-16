@@ -1,0 +1,30 @@
+#!/usr/local/plan9/bin/rc
+rfork e
+
+# Compile each snippet argument into a numbered function _t1, _t2, ...
+# so they can be called in-process with $1 set to the filename.
+# This avoids spawning a subprocess per file.
+i=()
+compiled=()
+for (s in $*) {
+	i=($i x)
+	fname='_t'^$#i
+	eval 'fn '^$fname^' {' $s '}'
+	compiled=($compiled $fname)
+}
+
+fn runtests {
+	file=$1; shift
+	# TODO: restore this logic when eval works as expected
+	# while (! ~ $#* 0 && ! eval $1 ''''$file'''')
+	while (! ~ $#* 0 && ! { f=$file; $1 $file })
+		shift
+	if (! ~ $#* 0)
+		echo $file
+}
+
+while (file = `{9 read}) {
+	runtests $file $compiled
+	# TODO: restore this when eval works as expected
+	# runtests $file $*
+}
