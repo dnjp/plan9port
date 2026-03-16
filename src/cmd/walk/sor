@@ -2,6 +2,7 @@
 rfork e
 fn runtests {
 	file=$1; shift
+	f=$file
 	while (! ~ $#* 0 && ! eval $1 $file)
 		shift
 	if (! ~ $#* 0)
