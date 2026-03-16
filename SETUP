@@ -25,9 +25,9 @@ cd /usr/local/plan9
 
 # Generate shell environment files with the actual install path baked in.
 # Delegated to shell/mkfile so you can re-run this step independently:
-#   cd /usr/local/plan9/shell && mk install-sudo
+#   cd /usr/local/plan9/shell && mk install
 PLAN9=`pwd`
-(cd shell && PLAN9=$PLAN9 $PLAN9/bin/mk install-sudo)
+(cd shell && PLAN9=$PLAN9 $PLAN9/bin/mk install)
 
 # On macOS, install and start the background daemons (plumber, fontsrv, ruler).
 if [ "$(uname)" = "Darwin" ]; then
