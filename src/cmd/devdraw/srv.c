@@ -23,9 +23,10 @@ static void listenproc(void*);
 Client *client0;
 
 int trace = 0;
-static char *srvname;
+char *srvname = nil;
 static int afd;
 static char adir[40];
+int nclients = 0; // count of live server-mode clients
 
 static void
 usage(void)
@@ -50,9 +51,21 @@ threadmain(int argc, char **argv)
 		// TODO: Update usage, man page.
 		srvname = EARGF(usage());
 		break;
+	case 'p':
+		/* macOS passes -psn_X_XXXXXX to app bundles; ignore it */
+		ARGF();
+		break;
 	default:
 		usage();
 	}ARGEND
+
+	/*
+	 * When launched as a macOS app bundle (e.g. from the Dock),
+	 * no -s flag is passed. Auto-detect by checking if argv[0]
+	 * is inside a .app bundle and default to server mode.
+	 */
+	if(srvname == nil && argv0 != nil && strstr(argv0, ".app/Contents/MacOS") != nil)
+		srvname = "p9p-9term";
 
 	memimageinit();
 	fmtinstall('H', encodefmt);
@@ -132,6 +145,7 @@ listenproc(void *v)
 		c->displaydpi = 100;
 		c->rfd = fd;
 		c->wfd = fd;
+		nclients++;
 		proccreate(serveproc, c, 0);
 	}
 }
@@ -172,9 +186,15 @@ serveproc(void *v)
 		runmsg(c, &m);
 	}
 
+	free(mbuf);
 	if(c == client0) {
+		// Legacy single-client mode: client gone means we're done.
 		rpc_shutdown();
 		threadexitsall(nil);
+	} else {
+		// Server mode: one client disconnected; close its window and free it.
+		nclients--;
+		rpc_clientgone(c);
 	}
 }
 

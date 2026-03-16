@@ -5,6 +5,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <pthread.h>
 #include <spawn.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -35,300 +36,136 @@ AUTOFRAMEWORK(CoreFoundation)
 
 #define LOG	if(1)NSLog
 
-// ── Window registry IPC ───────────────────────────────────────────────────────
-//
-// The primary instance (no P9P_SECONDARY) runs a Unix domain socket server.
-// Each secondary instance connects and sends newline-terminated messages:
-//   "title <pid> <title>\n"  — register or update window title
-//   "close <pid>\n"          — window closed
-//
-// The primary uses the registry to populate the Dock right-click menu.
-// Socket path: /tmp/p9p-winreg-<bundleID>
-//
-// plan9port's libc.h redefines accept/listen/close/write; undef them here
-// so we can use the POSIX BSD socket API, then restore them afterwards.
-#undef accept
-#undef listen
-#undef close
-#undef write
+// ─────────────────────────────────────────────────────────────────────────────
+// Child PID tracking — so applicationShouldTerminate can clean up 9term clients.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Declare POSIX prototypes explicitly to avoid conflicts.
-extern int    accept(int, struct sockaddr * __restrict, socklen_t * __restrict);
-extern int    listen(int, int);
-extern int    close(int);
-extern ssize_t write(int, const void *, size_t);
+#define MAXCHILDREN 64
+static pid_t childpids[MAXCHILDREN];
+static int   nchildpids = 0;
 
-#define WINREG_MAXCLIENTS 64
-
-typedef struct WinEntry {
-	int  pid;
-	char title[512];
-} WinEntry;
-
-static WinEntry winreg[WINREG_MAXCLIENTS];
-static int      nwinreg = 0;
-static int      winreg_server_fd = -1;
-static int      winreg_focused_pid = -1; /* pid of most-recently-focused secondary */
-static BOOL     winreg_redirect_done = NO; /* YES after applicationDidBecomeActive handled redirect */
-
-static NSString*
-winreg_sockpath(void)
+static void
+addchildpid(pid_t pid)
 {
-	NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
-	if(bid == nil) bid = @"devdraw";
-	return [NSString stringWithFormat:@"/tmp/p9p-winreg-%@", bid];
+	if(nchildpids < MAXCHILDREN)
+		childpids[nchildpids++] = pid;
 }
 
 static void
-winreg_set(int pid, const char *title)
+removechildpid(pid_t pid)
 {
-	for(int i = 0; i < nwinreg; i++){
-		if(winreg[i].pid == pid){
-			strlcpy(winreg[i].title, title, sizeof(winreg[i].title));
-			return;
-		}
-	}
-	if(nwinreg < WINREG_MAXCLIENTS){
-		winreg[nwinreg].pid = pid;
-		strlcpy(winreg[nwinreg].title, title, sizeof(winreg[nwinreg].title));
-		nwinreg++;
-	}
-}
-
-static void
-winreg_remove(int pid)
-{
-	for(int i = 0; i < nwinreg; i++){
-		if(winreg[i].pid == pid){
-			winreg[i] = winreg[--nwinreg];
+	for(int i = 0; i < nchildpids; i++){
+		if(childpids[i] == pid){
+			childpids[i] = childpids[--nchildpids];
 			return;
 		}
 	}
 }
 
-static void winreg_quit_all(void);
-static void winreg_send_to_pid(int pid, const char *msg);
+// ─────────────────────────────────────────────────────────────────────────────
+// Unique client-id counter for wsysid= assignments.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Read one newline-terminated message from fd into buf. Returns length or -1.
-static int
-winreg_readline(int fd, char *buf, int max)
+static int nextclientid = 0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// viewRegistry: maps raw pointer (uintptr_t) → CFRetain'd DrawView reference.
+//
+// We use CFTypeRef + explicit CFRetain/CFRelease instead of ARC strong
+// references to avoid the autorelease-pool race that occurs when ARC returns
+// ObjC objects from plain C functions across thread boundaries.
+//
+// Ownership rules:
+//   viewRegistry_add   – CFRetain's the view (registry owns +1)
+//   viewRegistry_get   – returns a +1 CFRetain'd reference; caller must
+//                        CFRelease (or let ARC do it via __bridge_transfer)
+//   viewRegistry_remove – CFRelease's the registry's +1 reference
+//
+// viewRegistry_remove must only be called from the main thread, after
+// clientGone has been set, so that any queued flush: blocks bail out before
+// the view's last reference is dropped.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// viewRegistry: a small fixed array mapping DrawView pointer → CFRetain'd ref.
+// We use CFTypeRef + explicit CFRetain/CFRelease instead of ARC/NSMutableDictionary
+// to avoid autorelease-pool races when returning ObjC objects from C functions
+// across thread boundaries.
+//
+// At most ~32 concurrent windows is realistic; 64 slots is plenty.
+#define VREG_SIZE 64
+typedef struct { uintptr_t key; CFTypeRef val; } VRegEntry;
+static VRegEntry vregTable[VREG_SIZE];
+static pthread_mutex_t viewRegistryLock = PTHREAD_MUTEX_INITIALIZER;
+
+static void
+viewRegistry_add(void *vp, id view)
 {
-	int n = 0;
-	while(n < max-1){
-		char c;
-		if(read(fd, &c, 1) <= 0)
-			return -1;
-		if(c == '\n')
+	uintptr_t k = (uintptr_t)vp;
+	if(k == 0 || view == nil)
+		return;
+	CFTypeRef ref = CFRetain((__bridge CFTypeRef)view);  // registry owns +1
+	NSLog(@"viewRegistry_add: CFRetain'd %p retainCount=%lu", vp, (unsigned long)CFGetRetainCount(ref));
+	pthread_mutex_lock(&viewRegistryLock);
+	for(int i = 0; i < VREG_SIZE; i++){
+		if(vregTable[i].key == 0){
+			vregTable[i].key = k;
+			vregTable[i].val = ref;
+			pthread_mutex_unlock(&viewRegistryLock);
+			return;
+		}
+	}
+	pthread_mutex_unlock(&viewRegistryLock);
+	CFRelease(ref);
+	NSLog(@"viewRegistry_add: table full!");
+}
+
+// Returns a +1 CFRetain'd reference, or NULL.
+// Use __bridge_transfer to hand the +1 to ARC, or CFRelease manually.
+// Never dereferences vp.
+static CFTypeRef
+viewRegistry_getref(void *vp)
+{
+	uintptr_t k = (uintptr_t)vp;
+	if(k == 0)
+		return NULL;
+	pthread_mutex_lock(&viewRegistryLock);
+	for(int i = 0; i < VREG_SIZE; i++){
+		if(vregTable[i].key == k){
+			CFTypeRef ref = vregTable[i].val;
+			if(ref)
+				CFRetain(ref);  // +1 for caller
+			pthread_mutex_unlock(&viewRegistryLock);
+			return ref;
+		}
+	}
+	pthread_mutex_unlock(&viewRegistryLock);
+	return NULL;
+}
+
+// Must only be called from the main thread.
+static void
+viewRegistry_remove(void *vp)
+{
+	uintptr_t k = (uintptr_t)vp;
+	if(k == 0)
+		return;
+	NSLog(@"viewRegistry_remove: removing %p", vp);
+	CFTypeRef ref = NULL;
+	pthread_mutex_lock(&viewRegistryLock);
+	for(int i = 0; i < VREG_SIZE; i++){
+		if(vregTable[i].key == k){
+			ref = vregTable[i].val;
+			vregTable[i].key = 0;
+			vregTable[i].val = NULL;
 			break;
-		buf[n++] = c;
+		}
 	}
-	buf[n] = '\0';
-	return n;
+	pthread_mutex_unlock(&viewRegistryLock);
+	NSLog(@"viewRegistry_remove: CFRelease for %p (found=%d)", vp, ref != NULL);
+	if(ref)
+		CFRelease(ref);  // drop registry's +1
+	NSLog(@"viewRegistry_remove: done %p", vp);
 }
-
-// Server: accept connections and process messages on a background thread.
-static void
-winreg_server_thread(void *arg)
-{
-	int sfd = (int)(intptr_t)arg;
-	for(;;){
-		int cfd = accept(sfd, nil, nil);
-		if(cfd < 0) break;
-		// Handle each client on its own thread.
-		int clientfd = cfd;
-		dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-			char line[600];
-			while(winreg_readline(clientfd, line, sizeof(line)) >= 0){
-				int pid = 0;
-				char titlebuf[512];
-				titlebuf[0] = '\0';
-				if(sscanf(line, "title %d %511[^\n]", &pid, titlebuf) == 2){
-					char *titlecopy = strdup(titlebuf);
-					int cpid = pid;
-					dispatch_async(dispatch_get_main_queue(), ^{
-						winreg_set(cpid, titlecopy);
-						free(titlecopy);
-					});
-				} else if(sscanf(line, "close %d", &pid) == 1){
-					int cpid = pid;
-					dispatch_async(dispatch_get_main_queue(), ^{
-						winreg_remove(cpid);
-					});
-				} else if(strcmp(line, "raise") == 0){
-					dispatch_async(dispatch_get_main_queue(), ^{
-						for(NSWindow *win in [NSApp windows]){
-							if([win isVisible]){
-								[win makeKeyAndOrderFront:nil];
-								break;
-							}
-						}
-						[NSApp activateIgnoringOtherApps:YES];
-					});
-				} else if(sscanf(line, "focus %d", &pid) == 1){
-					int cpid = pid;
-					dispatch_async(dispatch_get_main_queue(), ^{
-						winreg_focused_pid = cpid;
-						NSLog(@"[primary server] winreg_focused_pid set to %d", cpid);
-					});
-				} else if(strcmp(line, "cycle") == 0){
-					dispatch_async(dispatch_get_main_queue(), ^{
-						int total = 1 + nwinreg;
-						int cur = 0;
-						if(winreg_focused_pid > 0){
-							for(int i = 0; i < nwinreg; i++){
-								if(winreg[i].pid == winreg_focused_pid){
-									cur = 1 + i;
-									break;
-								}
-							}
-						}
-						int next = (cur + 1) % total;
-						if(next == 0){
-							for(NSWindow *win in [NSApp windows]){
-								if([win isVisible]){
-									[win makeKeyAndOrderFront:nil];
-									[NSApp activateIgnoringOtherApps:YES];
-									break;
-								}
-							}
-							winreg_focused_pid = -1;
-						} else {
-							winreg_send_to_pid(winreg[next-1].pid, "raise\n");
-						}
-					});
-				} else if(strcmp(line, "quit") == 0){
-					dispatch_async(dispatch_get_main_queue(), ^{
-						winreg_quit_all();
-						[NSApp terminate:nil];
-					});
-				}
-			}
-			// Client disconnected.
-			close(clientfd);
-		});
-	}
-}
-
-static void
-winreg_start_server(void)
-{
-	NSString *path = winreg_sockpath();
-	unlink([path UTF8String]);
-
-	struct sockaddr_un addr;
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	strlcpy(addr.sun_path, [path UTF8String], sizeof(addr.sun_path));
-
-	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-	if(fd < 0) return;
-	if(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0){ close(fd); return; }
-	if(listen(fd, 16) < 0){ close(fd); return; }
-	winreg_server_fd = fd;
-
-	dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-		winreg_server_thread((void*)(intptr_t)fd);
-	});
-}
-
-// Client: connect to primary and return socket fd, or -1.
-static int  winreg_client_fd = -1;
-static char winreg_pending_title[512] = {0};
-
-// Promote this secondary to primary: start the server, show Dock icon.
-// Called on the main thread.
-static void
-winreg_promote(void)
-{
-	winreg_client_fd = -1;
-	winreg_start_server();
-	// Changing activation policy at runtime requires a brief delay on macOS
-	// for the Dock to pick up the change.
-	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC),
-	               dispatch_get_main_queue(), ^{
-		[NSApp activateIgnoringOtherApps:YES];
-	});
-}
-
-static void
-winreg_connect(void)
-{
-	NSString *path = winreg_sockpath();
-	struct sockaddr_un addr;
-	memset(&addr, 0, sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	strlcpy(addr.sun_path, [path UTF8String], sizeof(addr.sun_path));
-
-	// Retry indefinitely until we connect. The primary may be slow to start
-	// its server (especially under load), but it will always exist — it was
-	// the process that spawned us via "open -n". We must never time out and
-	// promote ourselves, because that creates a second Dock icon.
-	// The only legitimate reason to promote is when the server *disconnects*
-	// (primary exited), handled below.
-	int fd = -1;
-	for(;;){
-		fd = socket(AF_UNIX, SOCK_STREAM, 0);
-		if(fd < 0){ usleep(50000); continue; }
-		if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0)
-			break;
-		close(fd);
-		fd = -1;
-		usleep(50000); // 50ms between retries
-	}
-
-	winreg_client_fd = fd;
-	// Flush any title that was set before we connected.
-	if(winreg_pending_title[0] != '\0'){
-		char msg[600];
-		snprintf(msg, sizeof(msg), "title %d %s\n", (int)getpid(), winreg_pending_title);
-		write(fd, msg, strlen(msg));
-	}
-	// Keep reading from the server — if it closes, the primary has exited.
-	// Promote ourselves to primary on the main thread.
-	char buf[4];
-	while(read(fd, buf, sizeof(buf)) > 0)
-		;
-	dispatch_async(dispatch_get_main_queue(), ^{
-		winreg_promote();
-	});
-}
-
-static void
-winreg_send(const char *msg)
-{
-	if(winreg_client_fd < 0) return;
-	write(winreg_client_fd, msg, strlen(msg));
-}
-
-// Send a message directly to a specific secondary by pid via a fresh connection.
-static void
-winreg_send_to_pid(int pid, const char *msg)
-{
-	/* Find the secondary's own socket — we reuse the winreg socket path
-	 * but each process only has one window, so we send "raise" via a
-	 * temporary connection to the primary which forwards via kill/signal.
-	 * Simpler: send SIGUSR1 and handle it, or just connect to the secondary
-	 * directly. Since secondaries don't run servers, use NSDistributedNotification
-	 * or just send the pid a signal. Easiest: use kill(pid, SIGUSR1) and
-	 * have secondaries raise on SIGUSR1. */
-	kill(pid, SIGUSR1);
-}
-
-// Terminate all secondary instances then quit the primary.
-// Must be called on the main thread (reads nwinreg/winreg[]).
-static void
-winreg_quit_all(void)
-{
-	for(int i = 0; i < nwinreg; i++)
-		kill(winreg[i].pid, SIGTERM);
-}
-
-// Restore plan9port macro overrides.
-#define accept  p9accept
-#define listen  p9listen
-#define close   p9close
-#define write   p9write
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -359,31 +196,12 @@ static ClientImpl macimpl = {
 @class DrawView;
 @class DrawLayer;
 
-@interface AppDelegate : NSObject<NSApplicationDelegate, NSMenuDelegate>
-- (NSMenu*)applicationDockMenu:(NSApplication*)sender;
-- (void)cycleWindows:(id)sender;
-@end
+// Pid of the most recently spawned child, transferred to DrawView in initimg.
+static pid_t pendingChildPid = 0;
+// App name from CFBundleName (e.g. "9term", "acme", "sam"); set at launch.
+static NSString *appName = @"devdraw";
 
-/* NSApplication subclass that activates on any mouse-down when running as
- * an Accessory-policy secondary. Without this, clicking a secondary window
- * focuses it but never activates the app, so the menu bar stays foreign. */
-@interface P9PApplication : NSApplication
-@end
-@implementation P9PApplication
-- (void)sendEvent:(NSEvent*)e
-{
-	if(getenv("P9P_SECONDARY") != nil
-	&& ([e type] == NSEventTypeLeftMouseDown
-	||  [e type] == NSEventTypeRightMouseDown
-	||  [e type] == NSEventTypeOtherMouseDown)
-	&& ![self isActive]){
-		/* Accessory-policy apps cannot own the menu bar. Temporarily promote
-		 * to Regular so the menu bar switches, then activate. */
-		[self setActivationPolicy:NSApplicationActivationPolicyRegular];
-		[self activateIgnoringOtherApps:YES];
-	}
-	[super sendEvent:e];
-}
+@interface AppDelegate : NSObject<NSApplicationDelegate>
 @end
 
 static AppDelegate *myApp = NULL;
@@ -395,21 +213,8 @@ gfx_main(void)
 		setprocname(argv0);
 
 	@autoreleasepool{
-		[P9PApplication sharedApplication];
-
-		// Secondary instances are spawned via "New Window" with P9P_SECONDARY=1.
-		// They use Accessory policy (no Dock icon) and connect to the primary's
-		// registry so their titles appear in the primary's Dock menu.
-		BOOL isSecondary = getenv("P9P_SECONDARY") != nil;
-		if(isSecondary){
-			[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-			dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-				winreg_connect();
-			});
-		} else {
-			[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-			winreg_start_server();
-		}
+		[NSApplication sharedApplication];
+		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
 		myApp = [AppDelegate new];
 		[NSApp setDelegate:myApp];
@@ -417,45 +222,31 @@ gfx_main(void)
 	}
 }
 
-
 void
 rpc_shutdown(void)
 {
 	[NSApp terminate:myApp];
 }
 
-/* Signal handler: raise this process's window when SIGUSR1 is received (sent by primary for Cmd+` cycling) */
-static void
-sigusr1_raise(int sig)
-{
-	dispatch_async(dispatch_get_main_queue(), ^{
-		for(NSWindow *win in [NSApp windows]){
-			if([win isVisible]){
-				[win makeKeyAndOrderFront:nil];
-				[NSApp activateIgnoringOtherApps:YES];
-				break;
-			}
-		}
-	});
-}
+// rpc_clientgone is defined after DrawView is fully declared (see below).
 
 @implementation AppDelegate
 - (void)applicationDidFinishLaunching:(id)arg
 {
 	NSMenu *m, *sm;
 	NSBundle *bundle;
-	NSString *appName;
 
-	LOG(@"applicationDidFinishLaunching");
+	// Redirect stderr to a log file so we can see sysfatal/fprint output
+	// when launched from the Dock (where stderr goes nowhere).
+	freopen("/tmp/devdraw-bundle.log", "a", stderr);
+	NSLog(@"[applicationDidFinishLaunching] srvname=%s argv0=%s",
+	      srvname ? srvname : "(nil)", argv0 ? argv0 : "(nil)");
 
-	// Use the enclosing app bundle's name if available so the menu bar reads
-	// "acme", "9term", etc. rather than "devdraw".
 	bundle = [NSBundle mainBundle];
-	appName = [bundle objectForInfoDictionaryKey:@"CFBundleName"];
-	if(appName == nil || [appName isEqualToString:@"devdraw"])
-		appName = @"devdraw";
+	NSString *bundleName = [bundle objectForInfoDictionaryKey:@"CFBundleName"];
+	if(bundleName != nil && ![bundleName isEqualToString:@"devdraw"])
+		appName = bundleName;
 
-	// App menu (leftmost, named after the app).
 	sm = [NSMenu new];
 	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
@@ -465,7 +256,6 @@ sigusr1_raise(int sig)
 	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
 	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
 
-	// File menu — only shown for app bundles that support New Window.
 	if(![appName isEqualToString:@"devdraw"]){
 		NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
 		NSMenuItem *newWin = [[NSMenuItem alloc]
@@ -474,6 +264,12 @@ sigusr1_raise(int sig)
 		                      keyEquivalent:@"n"];
 		[newWin setTarget:self];
 		[fileMenu addItem:newWin];
+		NSMenuItem *newTab = [[NSMenuItem alloc]
+		                      initWithTitle:@"New Tab"
+		                             action:@selector(newTab:)
+		                      keyEquivalent:@"t"];
+		[newTab setTarget:self];
+		[fileMenu addItem:newTab];
 		[fileMenu addItem:[NSMenuItem separatorItem]];
 		NSMenuItem *closeWin = [[NSMenuItem alloc]
 		                        initWithTitle:@"Close Window"
@@ -486,26 +282,15 @@ sigusr1_raise(int sig)
 		[m addItem:fileMenuItem];
 	}
 
-	// Window menu — populated dynamically via menuNeedsUpdate:.
+	// Window menu — macOS populates it automatically when named "Window".
 	NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
-	[windowMenu setDelegate:self];
-	NSMenuItem *cycleItem = [[NSMenuItem alloc]
-	                         initWithTitle:@"Cycle Windows"
-	                                action:@selector(cycleWindows:)
-	                         keyEquivalent:@"`"];
-	[cycleItem setTarget:self];
-	[windowMenu addItem:cycleItem];
-	[windowMenu addItem:[NSMenuItem separatorItem]];
 	NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
 	[windowMenuItem setSubmenu:windowMenu];
 	[m addItem:windowMenuItem];
+	[NSApp setWindowsMenu:windowMenu];
 
 	[NSApp setMainMenu:m];
 
-	// Only set the icon programmatically when running outside a bundle
-	// (i.e. bare devdraw with no CFBundleIconFile). When running from within
-	// Acme.app, 9term.app, etc., macOS already applies the correct icon from
-	// CFBundleIconFile — calling setApplicationIconImage: here would override it.
 	if([bundle objectForInfoDictionaryKey:@"CFBundleIconFile"] == nil){
 		NSData *d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
 		NSImage *i = [[NSImage alloc] initWithData:d];
@@ -513,19 +298,26 @@ sigusr1_raise(int sig)
 		[[NSApp dockTile] display];
 	}
 
-	/* Secondaries handle SIGUSR1 to raise their window (sent by primary for cycling).
-	 * Also demote to Accessory here (after the run loop has started) so Launch
-	 * Services can't override the policy we set before [NSApp run]. */
-	if(getenv("P9P_SECONDARY") != nil){
-		signal(SIGUSR1, sigusr1_raise);
-		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-	}
-
+	NSLog(@"[applicationDidFinishLaunching] calling gfx_started");
 	gfx_started();
+	NSLog(@"[applicationDidFinishLaunching] gfx_started returned");
+
+	// In server mode, spawn the first client after the run loop has started
+	// so that listenproc is actually running and ready to accept connections.
+	if(srvname != nil){
+		NSLog(@"[applicationDidFinishLaunching] queuing newWindow");
+		AppDelegate *delegate = self;
+		dispatch_async(dispatch_get_main_queue(), ^{
+			NSLog(@"[applicationDidFinishLaunching] dispatched newWindow firing");
+			[delegate newWindow:nil];
+		});
+	}
 }
 
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication {
-	return client0 != nil;
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
+	// Only quit when all clients are gone, not just when a window closes
+	// (closing a tab closes its window but other clients may still be running).
+	return nclients == 0;
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
@@ -537,84 +329,65 @@ sigusr1_raise(int sig)
 	[[NSApp keyWindow] performClose:sender];
 }
 
-- (void)cycleWindows:(id)sender
+// Dock icon clicked while running with no visible windows — open a new one.
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)hasVisibleWindows
 {
-	if(winreg_client_fd >= 0){
-		/* Secondary: ask the primary to cycle on our behalf */
-		winreg_send("cycle\n");
-	} else {
-		/* Primary: if there are registered secondaries, cycle across all */
-		if(nwinreg > 0){
-			/* Build a cycle: primary=0, secondaries=1..nwinreg */
-			int cur = 0;
-			if(winreg_focused_pid > 0){
-				for(int i = 0; i < nwinreg; i++){
-					if(winreg[i].pid == winreg_focused_pid){
-						cur = 1 + i;
-						break;
-					}
-				}
-			}
-			int total = 1 + nwinreg;
-			int next = (cur + 1) % total;
-			if(next == 0){
-				for(NSWindow *win in [NSApp windows]){
-					if([win isVisible]){
-						[win makeKeyAndOrderFront:nil];
-						[NSApp activateIgnoringOtherApps:YES];
-						break;
-					}
-				}
-				winreg_focused_pid = -1;
-			} else {
-				winreg_send_to_pid(winreg[next-1].pid, "raise\n");
-			}
-		} else {
-			/* No secondaries: cycle local windows (e.g. 9term with multiple windows) */
-			NSArray *windows = [NSApp orderedWindows];
-			NSWindow *key = [NSApp keyWindow];
-			NSUInteger idx = [windows indexOfObject:key];
-			for(NSUInteger i = 1; i <= [windows count]; i++){
-				NSWindow *candidate = windows[(idx + i) % [windows count]];
-				if([candidate isVisible]){
-					[candidate makeKeyAndOrderFront:nil];
-					break;
-				}
-			}
-		}
-	}
+	if(!hasVisibleWindows && srvname != nil)
+		[self newWindow:nil];
+	return NO;
 }
 
-// When the primary quits (for any reason), kill all secondary instances first.
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender
 {
-	if(winreg_server_fd >= 0)
-		winreg_quit_all();
+	// Kill all tracked child 9term processes.
+	for(int i = 0; i < nchildpids; i++)
+		kill(childpids[i], SIGTERM);
 	return NSTerminateNow;
 }
 
-// New Window: spawn a new terminal session by re-running the bundle's
-// launcher script (e.g. 9term.app/Contents/MacOS/9term).  The launcher
-// sets DEVDRAW to the bundle devdraw, then execs the real 9term binary,
-// which starts its own devdraw child.  That devdraw will see P9P_SECONDARY
-// in the environment (set below) and connect to our winreg server so it
-// shares our Dock icon.
+// New Window: spawn a 9term client that connects to our devdraw server via wsysid.
 - (void)newWindow:(id)sender
 {
-	// The launcher script sits next to the devdraw binary inside the bundle.
-	NSString *exe = [[[NSBundle mainBundle] executablePath]
-	                  stringByDeletingLastPathComponent];
-	// CFBundleExecutable names the launcher (e.g. "9term", "acme", "sam").
-	NSString *launcher = [[NSBundle mainBundle]
-	                       objectForInfoDictionaryKey:@"CFBundleExecutable"];
-	if(launcher == nil) launcher = @"9term";
-	NSString *script = [exe stringByAppendingPathComponent:launcher];
+	if(srvname == nil){
+		// Legacy mode: no server, nothing to connect to.
+		fprint(2, "devdraw: newWindow: not running in server mode\n");
+		return;
+	}
 
-	// Build child environment: inherit everything, add P9P_SECONDARY=1 so
-	// the devdraw that the new 9term spawns connects to our winreg server.
+	// Find the 9term binary: it lives next to devdraw in the bundle.
+	NSString *bindir = [[[NSBundle mainBundle] executablePath]
+	                     stringByDeletingLastPathComponent];
+	// The client binary name matches the bundle name (e.g. "9term", "acme").
+	NSString *clientname = [[NSBundle mainBundle]
+	                         objectForInfoDictionaryKey:@"CFBundleName"];
+	if(clientname == nil) clientname = @"9term";
+	// The actual 9term binary lives alongside devdraw; strip the launcher name.
+	// Prefer $PLAN9 if set (terminal launch), otherwise use the default install path.
+	const char *plan9env = getenv("PLAN9");
+	NSString *plan9 = plan9env
+		? [NSString stringWithUTF8String:plan9env]
+		: @"/usr/local/plan9";
+	NSString *clientbin = [[plan9 stringByAppendingPathComponent:@"bin"]
+	                            stringByAppendingPathComponent:clientname];
+
+	// Assign a unique wsysid for this client.
+	int cid = nextclientid++;
+	NSString *wsysid = [NSString stringWithFormat:@"%s/%d",
+	                    srvname, cid];
+
 	NSDictionary *curEnv = [[NSProcessInfo processInfo] environment];
 	NSMutableDictionary *childEnv = [curEnv mutableCopy];
-	childEnv[@"P9P_SECONDARY"] = @"1";
+	childEnv[@"wsysid"] = wsysid;
+	childEnv[@"INSIDE_P9P"] = @"true";
+	childEnv[@"INSIDE_9TERM"] = @"true";
+	// Ensure DEVDRAW points to our bundle's devdraw so the client finds us.
+	childEnv[@"DEVDRAW"] = [bindir stringByAppendingPathComponent:@"devdraw"];
+	// Ensure PLAN9 and PATH are set for clients launched from the Dock.
+	childEnv[@"PLAN9"] = plan9;
+	NSString *plan9bin = [plan9 stringByAppendingPathComponent:@"bin"];
+	NSString *curPath = childEnv[@"PATH"] ?: @"/usr/bin:/bin";
+	if([curPath rangeOfString:plan9bin].location == NSNotFound)
+		childEnv[@"PATH"] = [NSString stringWithFormat:@"%@:%@", plan9bin, curPath];
 
 	NSArray *keys = [childEnv allKeys];
 	char **envp = malloc(([keys count] + 1) * sizeof(char*));
@@ -625,63 +398,30 @@ sigusr1_raise(int sig)
 	}
 	envp[[keys count]] = nil;
 
-	const char *path = [script UTF8String];
+	const char *path = [clientbin UTF8String];
 	char *argv[] = { (char*)path, nil };
-	NSLog(@"[newWindow] script=%s", path);
 	pid_t pid;
 	int err = posix_spawn(&pid, path, nil, nil, argv, envp);
+	NSLog(@"[newWindow] spawn %s wsysid=%@ err=%d", path, wsysid, err);
 	if(err != 0)
-		NSLog(@"[newWindow] posix_spawn FAILED: %s: %s", path, strerror(err));
-	else
-		NSLog(@"[newWindow] spawned pid=%d", (int)pid);
+		NSLog(@"[newWindow] posix_spawn failed: %s", strerror(err));
+	else {
+		addchildpid(pid);
+		pendingChildPid = pid;
+	}
 
 	for(NSUInteger i = 0; i < [keys count]; i++) free(envp[i]);
 	free(envp);
 }
 
-// Provide a dock right-click menu listing all open windows by title.
-// Local windows (this process) are actionable; remote windows (secondary
-// instances tracked via IPC) are shown as informational items.
-- (NSMenu*)applicationDockMenu:(NSApplication*)sender
+- (void)newTab:(id)sender
 {
-	NSMenu *menu = [NSMenu new];
-
-	// Local windows in this process.
-	// Use winreg_pending_title (the full path label) rather than the window
-	// title (which is fixed to the app name) for meaningful menu entries.
-	for(NSWindow *win in [NSApp windows]){
-		if(![win isVisible])
-			continue;
-		NSString *title = nil;
-		if(winreg_pending_title[0] != '\0')
-			title = [NSString stringWithUTF8String:winreg_pending_title];
-		if(title == nil || [title length] == 0)
-			title = [win title];
-		NSMenuItem *item = [[NSMenuItem alloc]
-		                    initWithTitle:title
-		                           action:@selector(bringWindowToFront:)
-		                    keyEquivalent:@""];
-		[item setTarget:self];
-		[item setRepresentedObject:win];
-		[menu addItem:item];
-	}
-
-	// Windows from secondary instances registered via IPC.
-	for(int i = 0; i < nwinreg; i++){
-		NSString *title = [NSString stringWithUTF8String:winreg[i].title];
-		if(title == nil || [title length] == 0)
-			continue;
-		NSMenuItem *item = [[NSMenuItem alloc]
-		                    initWithTitle:title
-		                           action:@selector(activateSecondaryWindow:)
-		                    keyEquivalent:@""];
-		[item setTarget:self];
-		// Store the PID so the action can activate the right process.
-		[item setRepresentedObject:@(winreg[i].pid)];
-		[menu addItem:item];
-	}
-
-	return menu;
+	// Signal topwin to merge the next new window as a tab by setting
+	// Preferred tabbing mode on the current key window.
+	NSWindow *keyWin = [NSApp keyWindow];
+	if(keyWin)
+		keyWin.tabbingMode = NSWindowTabbingModePreferred;
+	[self newWindow:sender];
 }
 
 - (void)bringWindowToFront:(NSMenuItem*)item
@@ -689,168 +429,6 @@ sigusr1_raise(int sig)
 	NSWindow *win = [item representedObject];
 	[win makeKeyAndOrderFront:nil];
 	[NSApp activateIgnoringOtherApps:YES];
-}
-
-- (void)activateSecondaryWindow:(NSMenuItem*)item
-{
-	pid_t pid = [(NSNumber*)[item representedObject] intValue];
-	NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
-	[app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-}
-
-// NSMenuDelegate — rebuild the Window menu each time it opens so it always
-// reflects the current set of open windows (local + secondary instances).
-- (void)menuNeedsUpdate:(NSMenu*)menu
-{
-	if(![[menu title] isEqualToString:@"Window"])
-		return;
-
-	[menu removeAllItems];
-
-	// Local windows in this process.
-	for(NSWindow *win in [NSApp windows]){
-		if(![win isVisible])
-			continue;
-		NSString *title = nil;
-		if(winreg_pending_title[0] != '\0')
-			title = [NSString stringWithUTF8String:winreg_pending_title];
-		if(title == nil || [title length] == 0)
-			title = [win title];
-		NSMenuItem *item = [[NSMenuItem alloc]
-		                    initWithTitle:title
-		                           action:@selector(bringWindowToFront:)
-		                    keyEquivalent:@""];
-		[item setTarget:self];
-		[item setRepresentedObject:win];
-		[menu addItem:item];
-	}
-
-	// Windows from secondary instances registered via IPC.
-	if(nwinreg > 0){
-		[menu addItem:[NSMenuItem separatorItem]];
-		for(int i = 0; i < nwinreg; i++){
-			NSString *title = [NSString stringWithUTF8String:winreg[i].title];
-			if(title == nil || [title length] == 0)
-				continue;
-			NSMenuItem *item = [[NSMenuItem alloc]
-			                    initWithTitle:title
-			                           action:@selector(activateSecondaryWindow:)
-			                    keyEquivalent:@""];
-			[item setTarget:self];
-			[item setRepresentedObject:@(winreg[i].pid)];
-			[menu addItem:item];
-		}
-	}
-}
-
-// Raise the most-recently-focused window across all instances.
-// If a secondary was last focused, activate that process directly via
-// NSRunningApplication (synchronous from the primary's perspective) so it
-// takes focus before macOS settles on the primary's window.
-// Called from applicationShouldHandleReopen and applicationDidBecomeActive.
-- (void)raiseLastFocusedWindow
-{
-	if(winreg_focused_pid > 0){
-		// Promote the secondary to Regular policy so it can own the menu bar,
-		// then activate it. We do this by sending it SIGUSR1 which calls
-		// activateIgnoringOtherApps — but that races with our own activation.
-		// Instead, use NSRunningApplication directly from the primary: this is
-		// synchronous and happens before macOS commits to the primary's window.
-		NSRunningApplication *secondary =
-			[NSRunningApplication runningApplicationWithProcessIdentifier:winreg_focused_pid];
-		if(secondary != nil){
-			[secondary activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-			return; // do NOT activate the primary — secondary takes it
-		}
-		// Secondary no longer exists; clear the stale pid and fall through.
-		winreg_focused_pid = -1;
-	}
-	// Primary was last focused (or secondary is gone).
-	for(NSWindow *win in [NSApp orderedWindows]){
-		if([win isVisible]){
-			[win makeKeyAndOrderFront:nil];
-			break;
-		}
-	}
-	[NSApp activateIgnoringOtherApps:YES];
-}
-
-// Dock icon clicked while app is already running.
-- (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)hasVisibleWindows
-{
-	[self raiseLastFocusedWindow];
-	return NO;
-}
-
-// App re-activated via Cmd+Tab or any other means.
-- (void)applicationDidBecomeActive:(NSNotification*)notification
-{
-	if(getenv("P9P_SECONDARY") != nil)
-		return;
-
-	NSLog(@"[primary] applicationDidBecomeActive winreg_focused_pid=%d", winreg_focused_pid);
-
-	winreg_redirect_done = YES; // mark that we've handled this activation
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(50 * NSEC_PER_MSEC)),
-	               dispatch_get_main_queue(), ^{
-		NSLog(@"[primary] after delay winreg_focused_pid=%d", winreg_focused_pid);
-		if(winreg_focused_pid <= 0)
-			return;
-		NSRunningApplication *secondary =
-			[NSRunningApplication runningApplicationWithProcessIdentifier:winreg_focused_pid];
-		NSLog(@"[primary] redirecting to secondary pid=%d app=%@", winreg_focused_pid, secondary);
-		if(secondary != nil){
-			[secondary activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-		} else {
-			winreg_focused_pid = -1;
-		}
-	});
-}
-
-// Secondary: promote to Regular policy and notify primary of focus.
-- (void)applicationWillBecomeActive:(NSNotification*)notification
-{
-	if(getenv("P9P_SECONDARY") == nil)
-		return;
-	NSLog(@"[secondary pid=%d] applicationWillBecomeActive policy=%ld", (int)getpid(), (long)[NSApp activationPolicy]);
-	if([NSApp activationPolicy] != NSApplicationActivationPolicyRegular)
-		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-	// Tell primary we are the last-focused secondary. Do this here (not just
-	// in applicationDidResignActive) so the primary knows before we switch away.
-	if(winreg_client_fd >= 0){
-		char focusmsg[64];
-		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
-		winreg_send(focusmsg);
-		NSLog(@"[secondary pid=%d] sent focus to primary", (int)getpid());
-	}
-}
-
-// Secondary: send focus message to primary synchronously when we lose focus.
-- (void)applicationDidResignActive:(NSNotification*)notification
-{
-	if(getenv("P9P_SECONDARY") == nil)
-		return;
-
-	NSLog(@"[secondary pid=%d] applicationDidResignActive — sending focus", (int)getpid());
-	if(winreg_client_fd >= 0){
-		char focusmsg[64];
-		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
-		winreg_send(focusmsg);
-	}
-
-	if([NSApp activationPolicy] != NSApplicationActivationPolicyAccessory)
-		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-}
-
-- (void)applicationWillTerminate:(NSNotification*)notification
-{
-	if(winreg_client_fd >= 0){
-		char msg[64];
-		snprintf(msg, sizeof(msg), "close %d\n", (int)getpid());
-		winreg_send(msg);
-		close(winreg_client_fd);
-		winreg_client_fd = -1;
-	}
 }
 @end
 
@@ -909,6 +487,8 @@ sigusr1_raise(int sig)
 @property (nonatomic, retain) NSWindow *win;
 @property (nonatomic, retain) NSCursor *currentCursor;
 @property (nonatomic, assign) Memimage *img;
+@property (nonatomic, assign) BOOL clientGone;
+@property (nonatomic, assign) pid_t childPid;
 
 - (id)attach:(Client*)client winsize:(char*)winsize label:(char*)label;
 - (void)topwin;
@@ -1002,22 +582,37 @@ rpc_attach(Client *c, char *label, char *winsize)
 		initWithContentRect:r
 		styleMask:Winstyle
 		backing:NSBackingStoreBuffered defer:NO];
-	[win setTitle:@"devdraw"];
+	[win setTitle:appName];
 
 	if(!set)
 		[win center];
-	[win setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+	[win setCollectionBehavior:
+		NSWindowCollectionBehaviorFullScreenPrimary |
+		NSWindowCollectionBehaviorManaged];
 	[win setContentMinSize:NSMakeSize(64,64)];
 	[win setOpaque:YES];
 	[win setRestorable:NO];
 	[win setAcceptsMouseMovedEvents:YES];
 
-	client->view = CFBridgingRetain(self);
+	client->view = (__bridge void*)self;
+	NSLog(@"initimg: registering view %p pid=%d", client->view, pendingChildPid);
+	self.childPid = pendingChildPid;
+	pendingChildPid = 0;
+	viewRegistry_add(client->view, self);
 	self.client = client;
 	self.win = win;
 	self.currentCursor = nil;
 	[win setContentView:self];
 	[win setDelegate:self];
+	// Use a notification observer in addition to the delegate method because
+	// addTabbedWindow: can replace the window's delegate, causing
+	// windowWillClose: to never fire.
+	NSLog(@"attach: registering NSWindowWillCloseNotification observer for view=%p win=%p", (__bridge void*)self, (__bridge void*)win);
+	[[NSNotificationCenter defaultCenter]
+		addObserver:self
+		selector:@selector(windowWillClose:)
+		name:NSWindowWillCloseNotification
+		object:win];
 	[self setWantsLayer:YES];
 	[self setLayerContentsRedrawPolicy:NSViewLayerContentsRedrawOnSetNeedsDisplay];
 
@@ -1072,6 +667,15 @@ rpc_topwin(Client *c)
 }
 
 - (void)topwin {
+	// If the user asked for a new tab (tabbingMode == Preferred on the key
+	// window), merge this window into that tab group instead of opening a
+	// separate window.
+	NSWindow *keyWin = [NSApp keyWindow];
+	if(keyWin && keyWin != self.win
+	   && keyWin.tabbingMode == NSWindowTabbingModePreferred) {
+		[keyWin addTabbedWindow:self.win ordered:NSWindowAbove];
+		keyWin.tabbingMode = NSWindowTabbingModeAutomatic;
+	}
 	[self.win makeKeyAndOrderFront:nil];
 	[NSApp activateIgnoringOtherApps:YES];
 }
@@ -1094,24 +698,10 @@ rpc_setlabel(Client *client, char *label)
 		return;
 
 	@autoreleasepool{
-		NSString *s = [[NSString alloc] initWithUTF8String:label];
-		// Use the bundle name in the title bar (e.g. "acme") so it stays
-		// stable while the full path label is used for dock menu tracking.
-		NSString *bundleName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-		[self.win setTitle:bundleName ?: s];
-		// Always keep the full label for dock menu use.
-		strlcpy(winreg_pending_title, label, sizeof(winreg_pending_title));
-		// Register/update this window's title with the primary instance.
-		if(getenv("P9P_SECONDARY") != nil){
-			char *msgcopy = malloc(600);
-			if(msgcopy){
-				snprintf(msgcopy, 600, "title %d %s\n", (int)getpid(), label);
-				dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-					winreg_send(msgcopy);
-					free(msgcopy);
-				});
-			}
-		}
+		// Always show the app name (9term, acme, sam) in the title bar.
+		// appName is set from CFBundleName at launch; fall back to the
+		// client-supplied label only when running outside a bundle.
+		[self.win setTitle:appName];
 	}
 }
 
@@ -1237,14 +827,30 @@ rpc_setcursor(Client *client, Cursor *c, Cursor2 *c2)
 static void
 rpc_flush(Client *client, Rectangle r)
 {
-	DrawView *view = (__bridge DrawView*)client->view;
+	// viewRegistry_getref returns a +1 CFRetain'd reference.
+	// Transfer it into a strong ARC variable so the block captures it
+	// with a proper retain, and ARC releases it when the block completes.
+	CFTypeRef ref = viewRegistry_getref(client->view);
+	if(ref == nil)
+		return;
+	DrawView *view = (__bridge_transfer DrawView*)ref;  // ARC now owns the +1
+	NSLog(@"rpc_flush: dispatching flush for view %p (clientGone=%d)", client->view, (int)view.clientGone);
 	dispatch_async(dispatch_get_main_queue(), ^(void){
+		NSLog(@"rpc_flush block: running flush for view %p (clientGone=%d)", (__bridge void*)view, (int)view.clientGone);
 		[view flush:r];
 	});
 }
 
+- (void)dealloc {
+	NSLog(@"DrawView dealloc: %p", (__bridge void*)self);
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)flush:(Rectangle)r {
 	@autoreleasepool{
+		NSLog(@"flush: enter self=%p clientGone=%d", (__bridge void*)self, (int)self.clientGone);
+		if(self.clientGone || self.img == nil || self.win == nil)
+			return;
 		if(!rectclip(&r, Rect(0, 0, self.dlayer.texture.width, self.dlayer.texture.height)) || !rectclip(&r, self.img->r))
 			return;
 
@@ -1268,9 +874,13 @@ rpc_flush(Client *client, Rectangle r)
 		LOG(@"setNeedsDisplayInRect(%g, %g, %g, %g)", nr.origin.x, nr.origin.y, nr.size.width, nr.size.height);
 		[self.dlayer setNeedsDisplayInRect:nr];
 
+		// Schedule a second display pass 16ms later to catch any missed frames.
+		DrawView *__weak weakSelf = self;
 		time = dispatch_time(DISPATCH_TIME_NOW, 16 * NSEC_PER_MSEC);
 		dispatch_after(time, dispatch_get_main_queue(), ^(void){
-			[self.dlayer setNeedsDisplayInRect:nr];
+			DrawView *s = weakSelf;
+			if(s && !s.clientGone)
+				[s.dlayer setNeedsDisplayInRect:nr];
 		});
 
 		[self enlargeLastInputRect:nr];
@@ -1294,6 +904,75 @@ rpc_resizeimg(Client *c)
 	gfx_replacescreenimage(self.client, self.img);
 }
 
+// rpc_clientgone is called by serveproc when a server-mode client disconnects.
+// Closes the client's NSWindow and frees the Client struct on the main thread.
+void
+rpc_clientgone(Client *c)
+{
+	// Capture the view pointer now (background thread) so we can pass it to
+	// the main-thread block without touching c after free(c).
+	void *vp = c->view;
+
+	dispatch_async(dispatch_get_main_queue(), ^{
+		if(vp){
+			// Obtain a +1 retained reference while the registry still holds one.
+			CFTypeRef ref = viewRegistry_getref(vp);
+			DrawView *view = (__bridge_transfer DrawView*)ref;  // ARC owns +1
+			NSLog(@"rpc_clientgone: main block running, vp=%p view=%p", vp, (__bridge void*)view);
+			if(view && !view.clientGone){
+				// Client disconnected without the window being closed (e.g. crash).
+				// Mark gone, hide the window, and remove the notification observer.
+				view.clientGone = YES;
+				view.img = nil;
+				[[NSNotificationCenter defaultCenter] removeObserver:view
+					name:NSWindowWillCloseNotification
+					object:view.win];
+				[view.win orderOut:nil];
+				[view.win setDelegate:nil];
+			}
+			// Remove from registry — drops the registry's CFRetain.
+			// By the time this dispatch_async runs, all autorelease pools from
+			// the window-close event have drained, so this is safe.
+			NSLog(@"rpc_clientgone: removing from registry vp=%p", vp);
+			viewRegistry_remove(vp);
+			NSLog(@"rpc_clientgone: removed from registry vp=%p", vp);
+		}
+		free(c);
+	});
+}
+
+- (void)windowWillClose:(NSNotification *)notification {
+	NSLog(@"windowWillClose: view=%p pid=%d clientGone=%d", (__bridge void*)self, (int)self.childPid, (int)self.clientGone);
+	// Remove the notification observer so we don't get called twice
+	// (once as delegate, once as notification observer).
+	[[NSNotificationCenter defaultCenter] removeObserver:self
+		name:NSWindowWillCloseNotification
+		object:self.win];
+	if(self.clientGone)
+		return;
+
+	// Mark gone immediately so any queued flush: blocks bail out.
+	self.clientGone = YES;
+	self.img = nil;
+
+	// DO NOT call viewRegistry_remove here.  NSWindow autoreleases its
+	// content view during close, leaving a dangling pool entry.  If we
+	// drop the registry's CFRetain now, the refcount can hit 0 and dealloc
+	// fires immediately; then when the pool drains it crashes on the freed
+	// object.  Instead, keep the registry's CFRetain alive and let
+	// rpc_clientgone (triggered by the child dying) call viewRegistry_remove
+	// on a future run-loop turn, after all pools have drained.
+	//
+	// Kill the child so serveproc exits and rpc_clientgone fires.
+	pid_t pid = self.childPid;
+	if(pid > 0){
+		NSLog(@"windowWillClose: killing pid %d", (int)pid);
+		kill(pid, SIGTERM);
+		removechildpid(pid);
+		self.childPid = 0;
+	}
+}
+
 - (void)windowDidResize:(NSNotification *)notification {
 	if(![self inLiveResize] && self.img) {
 		[self resizeimg];
@@ -1309,6 +988,13 @@ rpc_resizeimg(Client *c)
 - (void)viewDidChangeBackingProperties
 {
 	[super viewDidChangeBackingProperties];
+	if(self.img)
+		[self resizeimg];
+}
+
+- (void)setFrameSize:(NSSize)newSize
+{
+	[super setFrameSize:newSize];
 	if(self.img)
 		[self resizeimg];
 }
@@ -1332,22 +1018,6 @@ rpc_resizewindow(Client *c, Rectangle r)
 
 - (void)windowDidBecomeKey:(id)arg {
 	[self sendmouse:0];
-	/* Notify primary of focus so Cmd+` cycling and re-activation tracks the active window.
-	 * Send synchronously on a background thread so it arrives at the primary
-	 * well before the user switches away. */
-	if(winreg_client_fd >= 0){
-		/* Secondary: tell primary we are focused */
-		char focusmsg[64];
-		snprintf(focusmsg, sizeof(focusmsg), "focus %d\n", (int)getpid());
-		winreg_send(focusmsg);
-	} else if(winreg_redirect_done){
-		/* Primary window became key after the redirect was already handled —
-		 * the user explicitly focused the primary, so clear the secondary redirect. */
-		winreg_focused_pid = -1;
-		winreg_redirect_done = NO;
-	}
-	/* If redirect hasn't been attempted yet (mid-Cmd+Tab activation), do NOT
-	 * clear winreg_focused_pid — applicationDidBecomeActive needs it. */
 }
 
 - (void)windowDidResignKey:(id)arg {
@@ -1387,17 +1057,7 @@ rpc_resizewindow(Client *c, Rectangle r)
 			return YES;
 		}
 		if([chars isEqualToString:@"q"]){
-			// If we are a secondary, ask the primary to quit everything.
-			// If we are the primary (or unconnected), terminate directly —
-			// applicationShouldTerminate: will kill secondaries first.
-			if(winreg_client_fd >= 0)
-				winreg_send("quit\n");
-			else
-				[NSApp terminate:nil];
-			return YES;
-		}
-		if([chars isEqualToString:@"`"]){
-			[(AppDelegate*)[NSApp delegate] cycleWindows:self];
+			[NSApp terminate:nil];
 			return YES;
 		}
 	}

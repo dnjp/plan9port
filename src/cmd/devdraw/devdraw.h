@@ -212,6 +212,7 @@ Memimage *rpc_attach(Client*, char*, char*);
 char*	rpc_getsnarf(void);
 void	rpc_putsnarf(char*);
 void	rpc_shutdown(void);
+void	rpc_clientgone(Client*);
 void	rpc_main(void);
 
 // rpc_gfxdrawlock and rpc_gfxdrawunlock
@@ -233,4 +234,6 @@ int latin1(Rune*, int);
 int mouseswap(int);
 int parsewinsize(char*, Rectangle*, int*);
 
-extern Client *client0; // set in single-client mode
+extern Client *client0;   // set in single-client mode; nil in server mode
+extern char   *srvname;   // non-nil when running as -s server
+extern int     nclients;  // live client count in server mode
