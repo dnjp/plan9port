@@ -444,7 +444,7 @@ search(Text *ct, Rune *r, uint n, int reverse)
 int
 isfilec(Rune r)
 {
-	static Rune Lx[] = { '.', '-', '+', '/', ':', '@', 0 };
+	static Rune Lx[] = { '.', '-', '+', '/', ':', '@', '~', 0 };
 	if(isalnum(r))
 		return TRUE;
 	if(runestrchr(Lx, r))
@@ -554,6 +554,10 @@ dirname(Text *t, Rune *r, int n)
 	nt = t->w->tag.file->b.nc;
 	if(nt == 0)
 		goto Rescue;
+	if(n>=1 && r[0]=='/')
+		goto Rescue;
+	/* expand ~ in r so ~/foo is treated as an absolute path */
+	r = expandhome(r, &n);
 	if(n>=1 && r[0]=='/')
 		goto Rescue;
 	b = parsetag(t->w, n, &i);
