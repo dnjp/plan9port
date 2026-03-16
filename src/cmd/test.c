@@ -11,6 +11,7 @@
 
 #include <u.h>
 #include <libc.h>
+#include <sys/stat.h>
 
 #define isatty plan9_isatty
 
@@ -254,21 +255,25 @@ hasmode(char *f, ulong m)
 int
 isdir(char *f)
 {
-	return hasmode(f, DMDIR);
+	/*
+	 * dirstat uses lstat then follows symlinks for the metadata, but
+	 * _p9dir sets DMSYMLINK (not DMDIR) when lstat sees a symlink — even
+	 * if the target is a directory.  Use stat(2) directly so that symlinks
+	 * to directories are treated as directories, matching POSIX test -d.
+	 */
+	struct stat st;
+	if(stat(f, &st) < 0)
+		return 0;
+	return S_ISDIR(st.st_mode);
 }
 
 int
 isreg(char *f)
 {
-	int r;
-	Dir *dir;
-
-	dir = dirstat(f);
-	if (dir == nil)
+	struct stat st;
+	if(stat(f, &st) < 0)
 		return 0;
-	r = (dir->mode & DMDIR) == 0;
-	free(dir);
-	return r;
+	return S_ISREG(st.st_mode);
 }
 
 int
