@@ -97,7 +97,7 @@ errorwin1(Rune *dir, int ndir, Rune **incl, int nincl)
 				error("can't create column to make error window");
 		w = coladd(row.col[row.ncol-1], nil, nil, -1);
 		w->filemenu = FALSE;
-		winsetname(w, r, n);
+		winsetname_contract(w, r, n);
 		xfidlog(w, "new");
 	}
 	free(r);
@@ -574,4 +574,45 @@ expandhome(Rune *arg, int *np)
 	free(arg);
 	*np = homelen + (n - skip);
 	return expanded;
+}
+
+/*
+ * expandhome_c: expand leading ~ or $HOME/$home in a C string path.
+ * Returns a new allocation the caller must free.
+ * Used when emitting window names to external consumers (log, index)
+ * so they always see absolute paths regardless of internal ~ storage.
+ */
+char*
+expandhome_c(char *name)
+{
+	char *home;
+	int skip, namelen, homelen;
+	char *out;
+
+	if(name == nil)
+		return estrdup("");
+
+	namelen = strlen(name);
+	home = getenv("HOME");
+	if(home == nil)
+		return estrdup(name);
+	homelen = strlen(home);
+
+	skip = 0;
+	if(name[0] == '~' && (namelen == 1 || name[1] == '/'))
+		skip = 1;
+	else if(namelen >= 5
+		&& name[0]=='$' && name[1]=='h' && name[3]=='m' && name[4]=='e'
+		&& (name[2]=='o' || name[2]=='O')
+		&& (namelen == 5 || name[5] == '/'))
+		skip = 5;
+
+	if(skip == 0)
+		return estrdup(name);
+
+	out = emalloc(homelen + (namelen - skip) + 1);
+	memmove(out, home, homelen);
+	memmove(out + homelen, name + skip, namelen - skip);
+	out[homelen + (namelen - skip)] = '\0';
+	return out;
 }

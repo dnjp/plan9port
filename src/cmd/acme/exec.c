@@ -704,7 +704,16 @@ get(Text *et, Text *t, Text *argt, int flag1, int _0, Rune *arg, int narg)
 		textreset(u);
 		windirfree(u->w);
 	}
-	samename = runeeq(r, n, t->file->name, t->file->nname);
+	/* compare contracted forms so ~/foo and /Users/daniel/foo are treated
+	 * as the same file, avoiding spurious dirty marking */
+	{
+		int cn, csn;
+		Rune *cr = contracthome(r, n, &cn);
+		Rune *cstored = contracthome(t->file->name, t->file->nname, &csn);
+		samename = runeeq(cr, cn, cstored, csn);
+		free(cr);
+		free(cstored);
+	}
 	textload(t, 0, name, samename);
 	if(samename){
 		t->file->mod = FALSE;
@@ -715,6 +724,8 @@ get(Text *et, Text *t, Text *argt, int flag1, int _0, Rune *arg, int narg)
 	}
 	for(i=0; i<t->file->ntext; i++)
 		t->file->text[i]->w->dirty = dirty;
+	/* store contracted name so tag shows ~/... form */
+	winsetname_contract(w, r, n);
 	free(name);
 	free(r);
 	winsettag(w);

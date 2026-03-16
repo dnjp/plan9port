@@ -377,8 +377,51 @@ xfidread(Xfid *x)
 		break;
 
 	case QWtag:
-		xfidutfread(x, &w->tag, w->tag.file->b.nc, QWtag);
-		break;
+		/*
+		 * Serve the tag with the window name expanded to an absolute path
+		 * so external tools (acme-lsp, etc.) always see real file paths.
+		 * The tag starts with the window name followed by a space; we
+		 * expand only that leading name portion.
+		 */
+		{
+			int tagnc, nb2;
+			Rune *tagr;
+			char *ename2, *rest;
+			int namelen2;
+
+			tagnc = w->tag.file->b.nc;
+			tagr = emalloc(tagnc * sizeof(Rune));
+			bufread(&w->tag.file->b, 0, tagr, tagnc);
+
+			/* find end of name (first space, bar, or newline) */
+			namelen2 = 0;
+			while(namelen2 < tagnc
+				&& tagr[namelen2] != ' '
+				&& tagr[namelen2] != '|'
+				&& tagr[namelen2] != '\n')
+				namelen2++;
+
+			/* convert name runes to C string and expand ~ */
+			{
+				Rune *namer = tagr;
+				int nn = namelen2;
+				char *namec = runetobyte(namer, nn);
+				ename2 = expandhome_c(namec);
+				free(namec);
+			}
+
+			/* convert rest of tag to C string */
+			nb2 = (tagnc - namelen2) * UTFmax + 1;
+			rest = emalloc(nb2);
+			snprint(rest, nb2, "%.*S", tagnc - namelen2, tagr + namelen2);
+			free(tagr);
+
+			/* assemble: expanded name + rest */
+			b = smprint("%s%s", ename2, rest);
+			free(ename2);
+			free(rest);
+			goto Readb;
+		}
 
 	case QWrdsel:
 		seek(w->rdselfd, off, 0);
@@ -518,6 +561,11 @@ xfidwrite(Xfid *x)
 		break;
 
 	case QWerrors:
+		if(x->fcall.count == 0){
+			fc.count = 0;
+			respond(x, &fc, nil);
+			break;
+		}
 		w = errorwinforwin(w);
 		t = &w->body;
 		goto BodyTag;
@@ -1123,11 +1171,28 @@ xfidindexread(Xfid *x)
 				continue;
 			winctlprint(w, b+n, 0);
 			n += Ctlsize;
+			/* emit expanded window name so external tools see absolute paths */
+			{
+				File *wf = w->body.file;
+				char *wname = runetobyte(wf->name, wf->nname);
+				char *ename = expandhome_c(wname);
+				free(wname);
+				n += snprint(b+n, nmax-n-1, "%s", ename);
+				free(ename);
+			}
+			/* append the rest of the tag (commands after the name) */
 			m = min(RBUFSIZE, w->tag.file->b.nc);
 			bufread(&w->tag.file->b, 0, r, m);
-			m = n + snprint(b+n, nmax-n-1, "%.*S", m, r);
-			while(n<m && b[n]!='\n')
-				n++;
+			{
+				/* find where the name ends in the tag (first space or bar) */
+				int skip = 0;
+				while(skip < m && r[skip] != ' ' && r[skip] != '|' && r[skip] != '\n')
+					skip++;
+				if(skip < m)
+					n += snprint(b+n, nmax-n-1, "%.*S", m-skip, r+skip);
+			}
+			while(n>0 && b[n-1]=='\n')
+				n--;
 			b[n++] = '\n';
 		}
 	}
