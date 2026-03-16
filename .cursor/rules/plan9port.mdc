@@ -124,9 +124,15 @@ The ruler daemon applies per-window directives (font, tabstop, etc.) in acme.
 ## Shell environment templates
 
 Files ending in `.sh.in`, `.fish.in`, `.rc.in` in `shell/` are templates.
-`SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g" | sudo tee` to
-produce the final files in the installed location. **Edit the `.in` files, never
-the generated ones.**
+`SETUP` processes them with `sed "s|/usr/local/plan9|$PLAN9|g"` and installs via
+`mk install` (no sudo — `/usr/local/plan9` is user-owned). **Edit the `.in`
+files, never the generated ones.**
+
+**PATH ordering**: `plan9.sh` must be sourced **last** in `~/.profile`, after
+homebrew, asdf, go, tfenv, etc. have run. Those tools prepend to `PATH`; if
+`plan9.sh` runs first they will bury `$PLAN9/bin`. The `case ":${PATH}:"` guard
+in `plan9.sh` only skips the prepend if `$PLAN9/bin` is already present — it
+does not re-prepend if it was subsequently buried.
 
 ## 9term and win
 
@@ -175,6 +181,34 @@ After completing any non-trivial task in this repo, update `plan9/modules/plan9p
 
 Also update this rule file if a new convention is broadly applicable across sessions.
 
+## `src/cmd/walk/` — walk, field, sor
+
+`walk` is a Plan 9-style `find`. `field` extracts tabular fields. `sor` filters
+filenames from stdin using rc snippet expressions.
+
+**Local build outputs** are named `o.<name>` (e.g. `o.walk`, `o.field`) so the
+standard `o.*` gitignore rule excludes them. Object intermediates use `o.<name>.o`.
+
+### plan9port rc gotchas (critical for sor and any rc scripting)
+
+**`eval` does not set `$*` from extra arguments.** Original Plan 9 rc's `eval cmd arg`
+set `$1=arg` for the eval'd code. Plan9port's `eval` just concatenates all args with
+spaces and re-parses in the current scope — `$1` inside the eval'd string is the
+*outer* `$1`, not the new arg. This breaks the original `sor` idiom
+`eval $1 ''''$file''''`. The fix belongs in `src/cmd/rc/exec.c`.
+
+**`read` is not a builtin.** In plan9port rc, `read` is an external binary. At EOF
+it exits non-zero and `` `{read} `` returns the empty list `()`. Using
+`while(var = `{read})` causes "null list in concatenation". Use:
+- `while (var = `{9 read})` — forces `$PLAN9/bin/read`; loop terminates cleanly
+- `for (var in `{cat})` — buffers all input first (not streaming, but simpler)
+
+**`break` is not a builtin** in plan9port rc. Use a recursive function or a flag
+variable to exit loops early.
+
+**Always use `9 read`** (not bare `read`) in rc scripts — without `$PLAN9/bin`
+first in `PATH`, `read` may resolve to macOS's `/bin/read`.
+
 ## Important conventions
 
 - The `plan9port kill` command **prints** shell commands but does not execute them. Pipe its output to `rc` or `sh`: `kill $pid | rc`.
@@ -182,3 +216,4 @@ Also update this rule file if a new convention is broadly applicable across sess
 - `plumb/edit` existing in `9p ls plumb` does NOT mean acme is running — it's a static port declaration.
 - Namespace: all daemons and terminals must share `/tmp/ns.$USER.:0`. Set `NAMESPACE` explicitly in daemon launchers.
 - When acme is already running, the `acme` wrapper script creates a fresh namespace (`/tmp/ns.$USER.$RANDOM`) to avoid socket conflicts.
+- `shell/mkfile install` uses `cmp -s src dst || cp src dst` — macOS `cp` errors if source and destination are the same file.
