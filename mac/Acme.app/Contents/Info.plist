@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>acme</string>
+	<string>devdraw</string>
 	<key>CFBundleGetInfoString</key>
 	<string>0.1-1</string>
 	<key>CFBundleIconFile</key>
@@ -24,5 +24,12 @@
 	<string>acme1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSEnvironment</key>
+	<dict>
+		<key>NSZombieEnabled</key>
+		<string>YES</string>
+		<key>NSDeallocateZombies</key>
+		<string>NO</string>
+	</dict>
 </dict>
 </plist>

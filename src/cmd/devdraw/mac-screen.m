@@ -10,6 +10,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <execinfo.h>
+#include <signal.h>
 
 #undef Cursor
 #undef Point
@@ -34,7 +36,23 @@ AUTOFRAMEWORK(Metal)
 AUTOFRAMEWORK(QuartzCore)
 AUTOFRAMEWORK(CoreFoundation)
 
-#define LOG	if(1)NSLog
+// Mirror NSLog output to /tmp/devdraw-crash.log for easy post-crash inspection.
+static FILE *devlogf = NULL;
+static void
+devlog_init(void)
+{
+	if(!devlogf)
+		devlogf = fopen("/tmp/devdraw-crash.log", "a");
+}
+// LOG writes directly to the log file using only C stdio — no ObjC objects,
+// no autorelease pool involvement.  Safe to call from any thread at any time.
+// Use a plain C string literal for fmt (no @"..." prefix).
+#define LOG(fmt, ...)	do { \
+	if(devlogf){ \
+		fprintf(devlogf, fmt "\n", ##__VA_ARGS__); \
+		fflush(devlogf); \
+	} \
+} while(0)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Child PID tracking — so applicationShouldTerminate can clean up 9term clients.
@@ -71,26 +89,24 @@ static int nextclientid = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 // viewRegistry: maps raw pointer (uintptr_t) → CFRetain'd DrawView reference.
 //
-// We use CFTypeRef + explicit CFRetain/CFRelease instead of ARC strong
-// references to avoid the autorelease-pool race that occurs when ARC returns
-// ObjC objects from plain C functions across thread boundaries.
-//
 // Ownership rules:
-//   viewRegistry_add   – CFRetain's the view (registry owns +1)
-//   viewRegistry_get   – returns a +1 CFRetain'd reference; caller must
-//                        CFRelease (or let ARC do it via __bridge_transfer)
+//   viewRegistry_add    – CFRetain's the view (registry owns +1)
+//   viewRegistry_getref – returns a +1 CFRetain'd reference; caller must
+//                         transfer ownership to ARC via __bridge_transfer
+//                         (which releases it when the strong ref goes out of
+//                         scope).  Never CFRelease manually after getref.
 //   viewRegistry_remove – CFRelease's the registry's +1 reference
 //
+// All rpc_* callers use __bridge_transfer + @autoreleasepool so that ARC
+// holds the view alive for exactly the duration of the dispatched block and
+// releases it cleanly when the block exits — no manual CFRelease, no deferred
+// double-dispatch, and no objects escaping into the outer NSApplication pool.
+//
 // viewRegistry_remove must only be called from the main thread, after
-// clientGone has been set, so that any queued flush: blocks bail out before
-// the view's last reference is dropped.
+// clientGone has been set, so that any queued blocks bail out before the
+// registry's +1 is dropped.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// viewRegistry: a small fixed array mapping DrawView pointer → CFRetain'd ref.
-// We use CFTypeRef + explicit CFRetain/CFRelease instead of ARC/NSMutableDictionary
-// to avoid autorelease-pool races when returning ObjC objects from C functions
-// across thread boundaries.
-//
 // At most ~32 concurrent windows is realistic; 64 slots is plenty.
 #define VREG_SIZE 64
 typedef struct { uintptr_t key; CFTypeRef val; } VRegEntry;
@@ -98,7 +114,7 @@ static VRegEntry vregTable[VREG_SIZE];
 static pthread_mutex_t viewRegistryLock = PTHREAD_MUTEX_INITIALIZER;
 
 static void
-viewRegistry_add(void *vp, id view)
+viewRegistry_add(const void *vp, id view)
 {
 	uintptr_t k = (uintptr_t)vp;
 	if(k == 0 || view == nil)
@@ -120,10 +136,10 @@ viewRegistry_add(void *vp, id view)
 }
 
 // Returns a +1 CFRetain'd reference, or NULL.
-// Use __bridge_transfer to hand the +1 to ARC, or CFRelease manually.
+// Caller must CFRelease the returned ref when done.
 // Never dereferences vp.
 static CFTypeRef
-viewRegistry_getref(void *vp)
+viewRegistry_getref(const void *vp)
 {
 	uintptr_t k = (uintptr_t)vp;
 	if(k == 0)
@@ -144,7 +160,7 @@ viewRegistry_getref(void *vp)
 
 // Must only be called from the main thread.
 static void
-viewRegistry_remove(void *vp)
+viewRegistry_remove(const void *vp)
 {
 	uintptr_t k = (uintptr_t)vp;
 	if(k == 0)
@@ -161,7 +177,8 @@ viewRegistry_remove(void *vp)
 		}
 	}
 	pthread_mutex_unlock(&viewRegistryLock);
-	NSLog(@"viewRegistry_remove: CFRelease for %p (found=%d)", vp, ref != NULL);
+	NSLog(@"viewRegistry_remove: CFRelease for %p (found=%d) retainCount=%lu",
+	      vp, ref != NULL, ref ? (unsigned long)CFGetRetainCount(ref) : 0);
 	if(ref)
 		CFRelease(ref);  // drop registry's +1
 	NSLog(@"viewRegistry_remove: done %p", vp);
@@ -206,26 +223,103 @@ static NSString *appName = @"devdraw";
 
 static AppDelegate *myApp = NULL;
 
+static void
+crashhandler(int sig)
+{
+	if(devlogf) fflush(devlogf);
+	FILE *f = devlogf ? devlogf : fopen("/tmp/devdraw-crash.log", "a");
+	if(f){
+		fprintf(f, "\n=== SIGNAL sig=%d ===\n", sig);
+		fflush(f);
+		void *frames[64];
+		int nf = backtrace(frames, 64);
+		backtrace_symbols_fd(frames, nf, fileno(f));
+		fflush(f);
+	}
+	// Re-install default and re-raise so OS crash reporter fires,
+	// but only for fatal signals. For others just log and return.
+	if(sig == SIGSEGV || sig == SIGBUS || sig == SIGILL){
+		signal(sig, SIG_DFL);
+		raise(sig);
+	}
+}
+
+// Intercept exit() to log a backtrace before the process dies.
+static void
+exithandler(void)
+{
+	if(devlogf){
+		fprintf(devlogf, "\n=== exit() called ===\n");
+		fflush(devlogf);
+		void *frames[64];
+		int nf = backtrace(frames, 64);
+		backtrace_symbols_fd(frames, nf, fileno(devlogf));
+		fflush(devlogf);
+	}
+}
+
 void
 gfx_main(void)
 {
 	if(client0)
 		setprocname(argv0);
 
+	devlog_init();
+	// Register with both Plan 9's atexit (fires on exits()) and
+	// C standard atexit (fires on exit()) to catch all clean-exit paths.
+	p9atexit(exithandler);
+
+	// Redirect stderr to our log file so NSZombie messages appear there.
+	// NSZombieEnabled is set via LSEnvironment in Info.plist so the ObjC
+	// runtime sees it at startup before any objects are allocated.
+	if(devlogf){
+		int logfd = fileno(devlogf);
+		dup2(logfd, STDERR_FILENO);
+	}
+
+	// Install crash signal handlers so we always get a backtrace in
+	// /tmp/devdraw-crash.log even when the OS crash reporter doesn't fire.
+	// Catch every terminatable signal so we can log what's killing us.
+	int catchsigs[] = {
+		SIGSEGV, SIGBUS, SIGABRT, SIGILL,
+		SIGHUP, SIGTERM, SIGINT, SIGQUIT,
+		SIGPIPE, SIGALRM, SIGUSR1, SIGUSR2,
+		SIGXCPU, SIGXFSZ,
+		0
+	};
+	for(int i = 0; catchsigs[i]; i++)
+		signal(catchsigs[i], crashhandler);
+
+	// Set up the application inside a pool, but don't wrap [NSApp run]
+	// itself — AppKit manages per-event pools internally.  Wrapping run
+	// in a long-lived pool causes autoreleased objects from dispatch_async
+	// blocks and RPC callbacks to accumulate until quit, eventually
+	// corrupting the pool when freed objects are released a second time.
 	@autoreleasepool{
 		[NSApplication sharedApplication];
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-
 		myApp = [AppDelegate new];
 		[NSApp setDelegate:myApp];
-		[NSApp run];
 	}
+	[NSApp run];
 }
 
 void
 rpc_shutdown(void)
 {
 	[NSApp terminate:myApp];
+}
+
+pid_t
+gfx_peerpid(int fd)
+{
+	pid_t pid = 0;
+	socklen_t len = sizeof(pid);
+	int r = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len);
+	NSLog(@"gfx_peerpid: fd=%d getsockopt=%d pid=%d", fd, r, (int)pid);
+	if(r != 0)
+		return 0;
+	return pid;
 }
 
 // rpc_clientgone is defined after DrawView is fully declared (see below).
@@ -235,6 +329,10 @@ rpc_shutdown(void)
 {
 	NSMenu *m, *sm;
 	NSBundle *bundle;
+
+	// Prevent macOS from automatically merging windows into tabs.
+	// We manage tab creation explicitly via newTab: (Cmd+T).
+	[NSWindow setAllowsAutomaticWindowTabbing:NO];
 
 	// Redirect stderr to a log file so we can see sysfatal/fprint output
 	// when launched from the Dock (where stderr goes nowhere).
@@ -319,6 +417,7 @@ rpc_shutdown(void)
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)app {
 	// Only quit when all clients are gone, not just when a window closes
 	// (closing a tab closes its window but other clients may still be running).
+	NSLog(@"applicationShouldTerminateAfterLastWindowClosed: nclients=%d", nclients);
 	return nclients == 0;
 }
 
@@ -347,7 +446,7 @@ rpc_shutdown(void)
 	return NSTerminateNow;
 }
 
-// New Window: spawn a 9term client that connects to our devdraw server via wsysid.
+// New Window: spawn a client that connects to our devdraw server via wsysid.
 - (void)newWindow:(id)sender
 {
 	if(srvname == nil){
@@ -356,15 +455,12 @@ rpc_shutdown(void)
 		return;
 	}
 
-	// Find the 9term binary: it lives next to devdraw in the bundle.
+	// Find the client binary: it lives in $PLAN9/bin and matches the bundle name.
 	NSString *bindir = [[[NSBundle mainBundle] executablePath]
 	                     stringByDeletingLastPathComponent];
-	// The client binary name matches the bundle name (e.g. "9term", "acme").
 	NSString *clientname = [[NSBundle mainBundle]
 	                         objectForInfoDictionaryKey:@"CFBundleName"];
 	if(clientname == nil) clientname = @"9term";
-	// The actual 9term binary lives alongside devdraw; strip the launcher name.
-	// Prefer $PLAN9 if set (terminal launch), otherwise use the default install path.
 	const char *plan9env = getenv("PLAN9");
 	NSString *plan9 = plan9env
 		? [NSString stringWithUTF8String:plan9env]
@@ -374,29 +470,51 @@ rpc_shutdown(void)
 
 	// Assign a unique wsysid for this client.
 	int cid = nextclientid++;
-	NSString *wsysid = [NSString stringWithFormat:@"%s/%d",
-	                    srvname, cid];
+	NSString *wsysid = [NSString stringWithFormat:@"%s/%d", srvname, cid];
+
+	// Compute the server's namespace dir and log it.
+	char *ns = getns();
+	NSString *nsdir = ns ? [NSString stringWithUTF8String:ns] : @"(nil)";
+	if(ns) free(ns);
+
+	// Check that the socket actually exists before spawning.
+	NSString *sockpath = [nsdir stringByAppendingPathComponent:
+	                      [NSString stringWithUTF8String:srvname]];
+	BOOL sockExists = [[NSFileManager defaultManager] fileExistsAtPath:sockpath];
+
+	NSLog(@"[newWindow] srvname=%s clientbin=%@ wsysid=%@ nsdir=%@ sockpath=%@ sockExists=%d",
+	      srvname, clientbin, wsysid, nsdir, sockpath, sockExists);
 
 	NSDictionary *curEnv = [[NSProcessInfo processInfo] environment];
 	NSMutableDictionary *childEnv = [curEnv mutableCopy];
 	childEnv[@"wsysid"] = wsysid;
 	childEnv[@"INSIDE_P9P"] = @"true";
-	childEnv[@"INSIDE_9TERM"] = @"true";
-	// Ensure DEVDRAW points to our bundle's devdraw so the client finds us.
+	NSString *insideKey = [NSString stringWithFormat:@"INSIDE_%@",
+	                       [clientname uppercaseString]];
+	childEnv[insideKey] = @"true";
 	childEnv[@"DEVDRAW"] = [bindir stringByAppendingPathComponent:@"devdraw"];
-	// Ensure PLAN9 and PATH are set for clients launched from the Dock.
+	// Pin DEVDRAW_NAMESPACE so drawclient.c dials the correct devdraw socket.
+	// We do NOT set NAMESPACE so that the client (e.g. acme) can create its
+	// own fresh namespace dir for its 9P services without colliding with the
+	// already-running instance.
+	if(![nsdir isEqualToString:@"(nil)"])
+		childEnv[@"DEVDRAW_NAMESPACE"] = nsdir;
+	[childEnv removeObjectForKey:@"NAMESPACE"];
 	childEnv[@"PLAN9"] = plan9;
 	NSString *plan9bin = [plan9 stringByAppendingPathComponent:@"bin"];
 	NSString *curPath = childEnv[@"PATH"] ?: @"/usr/bin:/bin";
 	if([curPath rangeOfString:plan9bin].location == NSNotFound)
 		childEnv[@"PATH"] = [NSString stringWithFormat:@"%@:%@", plan9bin, curPath];
 
+	NSLog(@"[newWindow] child env: NAMESPACE=%@ DISPLAY=%@ wsysid=%@ DISPLAY_in_curEnv=%@",
+	      childEnv[@"NAMESPACE"], childEnv[@"DISPLAY"], childEnv[@"wsysid"], curEnv[@"DISPLAY"]);
+
 	NSArray *keys = [childEnv allKeys];
 	char **envp = malloc(([keys count] + 1) * sizeof(char*));
 	if(envp == nil){ fprint(2, "devdraw: newWindow: malloc\n"); return; }
 	for(NSUInteger i = 0; i < [keys count]; i++){
 		NSString *k = keys[i];
-		envp[i] = strdup([[NSString stringWithFormat:@"%@=%@", k, childEnv[k]] UTF8String]);
+		envp[i] = strdup((char*)[[NSString stringWithFormat:@"%@=%@", k, childEnv[k]] UTF8String]);
 	}
 	envp[[keys count]] = nil;
 
@@ -404,12 +522,16 @@ rpc_shutdown(void)
 	char *argv[] = { (char*)path, nil };
 	pid_t pid;
 	int err = posix_spawn(&pid, path, nil, nil, argv, envp);
-	NSLog(@"[newWindow] spawn %s wsysid=%@ err=%d", path, wsysid, err);
+	NSLog(@"[newWindow] posix_spawn path=%s err=%d pid=%d", path, err, (int)pid);
 	if(err != 0)
 		NSLog(@"[newWindow] posix_spawn failed: %s", strerror(err));
 	else {
 		addchildpid(pid);
-		pendingChildPid = pid;
+		// Only track childPid for 9term: when a 9term window closes we send
+		// SIGTERM to the shell child.  For acme/sam the client exits on its
+		// own once its draw connection is closed, so we use the fd-close path.
+		if([clientname isEqualToString:@"9term"])
+			pendingChildPid = pid;
 	}
 
 	for(NSUInteger i = 0; i < [keys count]; i++) free(envp[i]);
@@ -442,18 +564,18 @@ rpc_shutdown(void)
 @implementation DrawLayer
 - (void)display
 {
-	LOG(@"display");
-	LOG(@"display query drawable");
+	LOG("display");
+	LOG("display query drawable");
 
 	@autoreleasepool{
 		id<CAMetalDrawable> drawable = [self nextDrawable];
 		if(!drawable){
-			LOG(@"display couldn't get drawable");
+			LOG("display couldn't get drawable");
 			[self setNeedsDisplay];
 			return;
 		}
 
-		LOG(@"display got drawable");
+		LOG("display got drawable");
 
 		id<MTLCommandBuffer> cbuf = [self.cmd commandBuffer];
 		id<MTLBlitCommandEncoder> blit = [cbuf blitCommandEncoder];
@@ -471,15 +593,21 @@ rpc_shutdown(void)
 		[cbuf presentDrawable:drawable];
 		drawable = nil;
 		[cbuf addCompletedHandler:^(id<MTLCommandBuffer> cmdBuff){
-			if(cmdBuff.error){
-				NSLog(@"command buffer finished with error: %@",
-					cmdBuff.error.localizedDescription);
-			}else
-				LOG(@"command buffer finishes present drawable");
+			// This block runs on a Metal background thread.
+			// Wrap in @autoreleasepool so any autoreleased objects
+			// (including NSString from NSLog) are freed promptly
+			// rather than leaking into the outer pool on the main thread.
+			@autoreleasepool{
+				if(cmdBuff.error){
+					NSLog(@"command buffer finished with error: %@",
+						cmdBuff.error.localizedDescription);
+				}else
+					NSLog(@"command buffer finishes present drawable");
+			}
 		}];
 		[cbuf commit];
 	}
-	LOG(@"display commit");
+	LOG("display commit");
 }
 @end
 
@@ -517,7 +645,7 @@ rpc_shutdown(void)
 
 - (id)init
 {
-	LOG(@"View init");
+	LOG("View init");
 	self = [super init];
 	[self setAllowedTouchTypes:NSTouchTypeMaskDirect|NSTouchTypeMaskIndirect];
 	_tmpText = [[NSMutableString alloc] initWithCapacity:2];
@@ -537,8 +665,9 @@ rpc_shutdown(void)
 Memimage*
 rpc_attach(Client *c, char *label, char *winsize)
 {
-	LOG(@"attachscreen(%s, %s)", label, winsize);
-
+	@autoreleasepool{
+		LOG("attachscreen(%s, %s)", label, winsize);
+	}
 	c->impl = &macimpl;
 	dispatch_sync(dispatch_get_main_queue(), ^(void) {
 		@autoreleasepool {
@@ -568,7 +697,7 @@ rpc_attach(Client *c, char *label, char *winsize)
 	sr = [[NSScreen mainScreen] frame];
 	r = [[NSScreen mainScreen] visibleFrame];
 
-	LOG(@"makewin(%s)", s);
+	LOG("makewin(%s)", s);
 	if(s == nil || *s == '\0' || parsewinsize(s, &wr, &set) < 0) {
 		wr = Rect(0, 0, sr.size.width*2/3, sr.size.height*2/3);
 		set = 0;
@@ -590,14 +719,22 @@ rpc_attach(Client *c, char *label, char *winsize)
 		[win center];
 	// NSWindowCollectionBehaviorManaged opts the window into the tab bar.
 	// Only 9term supports tabs; acme and sam use separate windows only.
+	// NSWindowCollectionBehaviorManaged would let macOS auto-merge windows
+	// into tabs, causing multiple DrawViews to share one NSWindow and leading
+	// to use-after-free crashes when one tab closes and releases the shared
+	// window while the other tab still holds a retain on it.
+	// We support tabs explicitly via newTab: (Cmd+T) using tabbingModePreferred,
+	// so automatic merging is not needed.
 	NSWindowCollectionBehavior behavior = NSWindowCollectionBehaviorFullScreenPrimary;
-	if([appName isEqualToString:@"9term"])
-		behavior |= NSWindowCollectionBehaviorManaged;
 	[win setCollectionBehavior:behavior];
 	[win setContentMinSize:NSMakeSize(64,64)];
 	[win setOpaque:YES];
 	[win setRestorable:NO];
 	[win setAcceptsMouseMovedEvents:YES];
+	// Prevent AppKit from calling an extra -release when the window closes.
+	// We manage the window's lifetime via ARC (DrawView.win retain property),
+	// so we must be the sole owner of the final release.
+	[win setReleasedWhenClosed:NO];
 
 	client->view = (__bridge void*)self;
 	NSLog(@"initimg: registering view %p pid=%d", client->view, pendingChildPid);
@@ -665,9 +802,14 @@ rpc_attach(Client *c, char *label, char *winsize)
 static void
 rpc_topwin(Client *c)
 {
-	DrawView *view = (__bridge DrawView*)c->view;
+	CFTypeRef ref = viewRegistry_getref(c->view);
+	if(!ref) return;
 	dispatch_sync(dispatch_get_main_queue(), ^(void) {
-		[view topwin];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone)
+				[view topwin];
+		}
 	});
 }
 
@@ -691,21 +833,25 @@ rpc_topwin(Client *c)
 static void
 rpc_setlabel(Client *client, char *label)
 {
-	DrawView *view = (__bridge DrawView*)client->view;
+	CFTypeRef ref = viewRegistry_getref(client->view);
+	if(!ref) return;
 	dispatch_sync(dispatch_get_main_queue(), ^(void){
-		[view setlabel:label];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone)
+				[view setlabel:label];
+		}
 	});
 }
 
 - (void)setlabel:(char*)label {
-	LOG(@"setlabel(%s)", label);
+	LOG("setlabel(%s)", label);
 	if(label == nil)
 		return;
 
+	if(self.win == nil)
+		return;
 	@autoreleasepool{
-		// Always show the app name (9term, acme, sam) in the title bar.
-		// appName is set from CFBundleName at launch; fall back to the
-		// client-supplied label only when running outside a bundle.
 		[self.win setTitle:appName];
 	}
 }
@@ -716,9 +862,14 @@ rpc_setlabel(Client *client, char *label)
 static void
 rpc_setcursor(Client *client, Cursor *c, Cursor2 *c2)
 {
-	DrawView *view = (__bridge DrawView*)client->view;
+	CFTypeRef ref = viewRegistry_getref(client->view);
+	if(!ref) return;
 	dispatch_sync(dispatch_get_main_queue(), ^(void){
-		[view setcursor:c cursor2:c2];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone)
+				[view setcursor:c cursor2:c2];
+		}
 	});
 }
 
@@ -795,7 +946,7 @@ rpc_setcursor(Client *client, Cursor *c, Cursor2 *c2)
 		size = [self convertSizeToBacking:[self bounds].size];
 		self.client->mouserect = Rect(0, 0, size.width, size.height);
 
-		LOG(@"initimg %.0f %.0f", size.width, size.height);
+		LOG("initimg %.0f %.0f", size.width, size.height);
 
 		self.img = allocmemimage(self.client->mouserect, XRGB32);
 		if(self.img == nil)
@@ -832,22 +983,26 @@ rpc_setcursor(Client *client, Cursor *c, Cursor2 *c2)
 static void
 rpc_flush(Client *client, Rectangle r)
 {
-	// viewRegistry_getref returns a +1 CFRetain'd reference.
-	// Transfer it into a strong ARC variable so the block captures it
-	// with a proper retain, and ARC releases it when the block completes.
 	CFTypeRef ref = viewRegistry_getref(client->view);
 	if(ref == nil)
 		return;
-	DrawView *view = (__bridge_transfer DrawView*)ref;  // ARC now owns the +1
-	NSLog(@"rpc_flush: dispatching flush for view %p (clientGone=%d)", client->view, (int)view.clientGone);
+	// Pass the raw +1 CFTypeRef into the block; do the __bridge_transfer
+	// inside the block on the main thread where a proper autorelease pool
+	// exists.  Doing __bridge_transfer on the RPC thread risks an implicit
+	// ARC autorelease landing in a pool-less thread context.
 	dispatch_async(dispatch_get_main_queue(), ^(void){
-		NSLog(@"rpc_flush block: running flush for view %p (clientGone=%d)", (__bridge void*)view, (int)view.clientGone);
-		[view flush:r];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			NSLog(@"rpc_flush block: running flush for view %p (clientGone=%d)", (__bridge void*)view, (int)view.clientGone);
+			[view flush:r];
+		}
 	});
 }
 
 - (void)dealloc {
-	NSLog(@"DrawView dealloc: %p", (__bridge void*)self);
+	NSLog(@"DrawView dealloc: %p clientGone=%d childPid=%d retainCount=%lu",
+	      (__bridge void*)self, (int)self.clientGone, (int)self.childPid,
+	      (unsigned long)CFGetRetainCount((__bridge CFTypeRef)self));
 	[[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -874,9 +1029,9 @@ rpc_flush(Client *client, Rectangle r)
 		NSRect nr = NSMakeRect(r.min.x, r.min.y, Dx(r), Dy(r));
 		dispatch_time_t time;
 
-		LOG(@"callsetNeedsDisplayInRect(%g, %g, %g, %g)", nr.origin.x, nr.origin.y, nr.size.width, nr.size.height);
+		LOG("callsetNeedsDisplayInRect(%g, %g, %g, %g)", nr.origin.x, nr.origin.y, nr.size.width, nr.size.height);
 		nr = [self.win convertRectFromBacking:nr];
-		LOG(@"setNeedsDisplayInRect(%g, %g, %g, %g)", nr.origin.x, nr.origin.y, nr.size.width, nr.size.height);
+		LOG("setNeedsDisplayInRect(%g, %g, %g, %g)", nr.origin.x, nr.origin.y, nr.size.width, nr.size.height);
 		[self.dlayer setNeedsDisplayInRect:nr];
 
 		// Schedule a second display pass 16ms later to catch any missed frames.
@@ -898,9 +1053,14 @@ rpc_flush(Client *client, Rectangle r)
 static void
 rpc_resizeimg(Client *c)
 {
-	DrawView *view = (__bridge DrawView*)c->view;
+	CFTypeRef ref = viewRegistry_getref(c->view);
+	if(!ref) return;
 	dispatch_async(dispatch_get_main_queue(), ^(void){
-		[view resizeimg];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone)
+				[view resizeimg];
+		}
 	});
 }
 
@@ -911,71 +1071,82 @@ rpc_resizeimg(Client *c)
 
 // rpc_clientgone is called by serveproc when a server-mode client disconnects.
 // Closes the client's NSWindow and frees the Client struct on the main thread.
+// This is the single owner of DrawView/NSWindow teardown.
 void
 rpc_clientgone(Client *c)
 {
-	// Capture the view pointer now (background thread) so we can pass it to
-	// the main-thread block without touching c after free(c).
-	void *vp = c->view;
+	const void *vp = c->view;
 
 	dispatch_async(dispatch_get_main_queue(), ^{
-		if(vp){
-			// Obtain a +1 retained reference while the registry still holds one.
-			CFTypeRef ref = viewRegistry_getref(vp);
-			DrawView *view = (__bridge_transfer DrawView*)ref;  // ARC owns +1
-			NSLog(@"rpc_clientgone: main block running, vp=%p view=%p", vp, (__bridge void*)view);
-			if(view && !view.clientGone){
-				// Client disconnected without the window being closed (e.g. crash).
-				// Mark gone, hide the window, and remove the notification observer.
-				view.clientGone = YES;
-				view.img = nil;
-				[[NSNotificationCenter defaultCenter] removeObserver:view
-					name:NSWindowWillCloseNotification
-					object:view.win];
-				[view.win orderOut:nil];
-				[view.win setDelegate:nil];
+		@autoreleasepool{
+			NSLog(@"rpc_clientgone: vp=%p", vp);
+			if(vp){
+				CFTypeRef ref = viewRegistry_getref(vp);
+				if(ref != nil){
+					viewRegistry_remove(vp);
+					DrawView *view = (__bridge_transfer DrawView*)ref;
+					view.img = nil;
+					view.dlayer = nil;
+					view.currentCursor = nil;
+					if(!view.clientGone){
+						// Client exited on its own (not via red-X).
+						// We own the window close.
+						view.clientGone = YES;
+						[[NSNotificationCenter defaultCenter] removeObserver:view
+							name:NSWindowWillCloseNotification
+							object:view.win];
+						[view.win setDelegate:nil];
+						[view.win orderOut:nil];
+					}
+					// nil win last — releases our retain; AppKit's own retain
+					// keeps the window alive through its close sequence.
+					view.win = nil;
+				}
 			}
-			// Remove from registry — drops the registry's CFRetain.
-			// By the time this dispatch_async runs, all autorelease pools from
-			// the window-close event have drained, so this is safe.
-			NSLog(@"rpc_clientgone: removing from registry vp=%p", vp);
-			viewRegistry_remove(vp);
-			NSLog(@"rpc_clientgone: removed from registry vp=%p", vp);
+			free(c);
 		}
-		free(c);
 	});
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
-	NSLog(@"windowWillClose: view=%p pid=%d clientGone=%d", (__bridge void*)self, (int)self.childPid, (int)self.clientGone);
-	// Remove the notification observer so we don't get called twice
-	// (once as delegate, once as notification observer).
+	NSLog(@"windowWillClose: view=%p childPid=%d clientGone=%d",
+	      (__bridge void*)self, (int)self.childPid, (int)self.clientGone);
+
+	// Remove observer so we are not called again if the window closes twice.
 	[[NSNotificationCenter defaultCenter] removeObserver:self
 		name:NSWindowWillCloseNotification
 		object:self.win];
+
 	if(self.clientGone)
 		return;
 
-	// Mark gone immediately so any queued flush: blocks bail out.
 	self.clientGone = YES;
-	self.img = nil;
+	// AppKit is closing this window and will release it when done.
+	// Nil our retain now so DrawView.dealloc doesn't release it a second time.
+	self.win = nil;
 
-	// DO NOT call viewRegistry_remove here.  NSWindow autoreleases its
-	// content view during close, leaving a dangling pool entry.  If we
-	// drop the registry's CFRetain now, the refcount can hit 0 and dealloc
-	// fires immediately; then when the pool drains it crashes on the freed
-	// object.  Instead, keep the registry's CFRetain alive and let
-	// rpc_clientgone (triggered by the child dying) call viewRegistry_remove
-	// on a future run-loop turn, after all pools have drained.
+	// Close the client's socket fd.  serveproc will see EOF, exit its read
+	// loop, decrement nclients, and call rpc_clientgone — which handles all
+	// NSWindow/DrawView teardown on the main thread.
 	//
-	// Kill the child so serveproc exits and rpc_clientgone fires.
-	pid_t pid = self.childPid;
-	if(pid > 0){
-		NSLog(@"windowWillClose: killing pid %d", (int)pid);
-		kill(pid, SIGTERM);
-		removechildpid(pid);
+	// For spawned 9term children: kill the child so it exits and closes its
+	// end of the connection, which also triggers serveproc EOF.
+	// For connected clients (acme/sam): closing the fd is sufficient.
+	if(self.childPid > 0){
+		NSLog(@"windowWillClose: killing child pid=%d", (int)self.childPid);
+		kill(self.childPid, SIGTERM);
+		removechildpid(self.childPid);
 		self.childPid = 0;
+	} else if(self.client != nil && self.client->rfd >= 0){
+		NSLog(@"windowWillClose: closing rfd=%d wfd=%d",
+		      self.client->rfd, self.client->wfd);
+		close(self.client->rfd);
+		if(self.client->wfd != self.client->rfd)
+			close(self.client->wfd);
+		self.client->rfd = -1;
+		self.client->wfd = -1;
 	}
+	// rpc_clientgone (called by serveproc on EOF) owns all further cleanup.
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
@@ -1009,14 +1180,17 @@ rpc_clientgone(Client *c)
 static void
 rpc_resizewindow(Client *c, Rectangle r)
 {
-	DrawView *view = (__bridge DrawView*)c->view;
-
-	LOG(@"resizewindow %d %d %d %d", r.min.x, r.min.y, Dx(r), Dy(r));
+	CFTypeRef ref = viewRegistry_getref(c->view);
+	if(!ref) return;
+	LOG("resizewindow %d %d %d %d", r.min.x, r.min.y, Dx(r), Dy(r));
 	dispatch_async(dispatch_get_main_queue(), ^(void){
-		NSSize s;
-
-		s = [view convertSizeFromBacking:NSMakeSize(Dx(r), Dy(r))];
-		[view.win setContentSize:s];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone){
+				NSSize s = [view convertSizeFromBacking:NSMakeSize(Dx(r), Dy(r))];
+				[view.win setContentSize:s];
+			}
+		}
 	});
 }
 
@@ -1071,7 +1245,7 @@ rpc_resizewindow(Client *c, Rectangle r)
 
 - (void)keyDown:(NSEvent*)e
 {
-	LOG(@"keyDown to interpret");
+	LOG("keyDown to interpret");
 
 	[self interpretKeyEvents:[NSArray arrayWithObject:e]];
 
@@ -1084,7 +1258,7 @@ rpc_resizewindow(Client *c, Rectangle r)
 	NSEventModifierFlags m;
 	uint b;
 
-	LOG(@"flagsChanged");
+	LOG("flagsChanged");
 	m = [e modifierFlags];
 
 	b = [NSEvent pressedMouseButtons];
@@ -1175,10 +1349,12 @@ rpc_resizewindow(Client *c, Rectangle r)
 {
 	NSPoint p;
 
+	if(self.client == nil || self.clientGone)
+		return;
 	p = [self.window convertPointToBacking:
 		[self.window mouseLocationOutsideOfEventStream]];
 	p.y = Dy(self.client->mouserect) - p.y;
-	// LOG(@"(%g, %g) <- sendmouse(%d)", p.x, p.y, (uint)b);
+	// LOG("(%g, %g) <- sendmouse(%d)", p.x, p.y, (uint)b);
 	gfx_mousetrack(self.client, p.x, p.y, b, msec());
 	if(b && _lastInputRect.size.width && _lastInputRect.size.height)
 		[self resetLastInputRect];
@@ -1189,9 +1365,14 @@ rpc_resizewindow(Client *c, Rectangle r)
 static void
 rpc_setmouse(Client *c, Point p)
 {
-	DrawView *view = (__bridge DrawView*)c->view;
+	CFTypeRef ref = viewRegistry_getref(c->view);
+	if(!ref) return;
 	dispatch_async(dispatch_get_main_queue(), ^(void){
-		[view setmouse:p];
+		@autoreleasepool{
+			DrawView *view = (__bridge_transfer DrawView*)ref;
+			if(!view.clientGone)
+				[view setmouse:p];
+		}
 	});
 }
 
@@ -1199,13 +1380,13 @@ rpc_setmouse(Client *c, Point p)
 	@autoreleasepool{
 		NSPoint q;
 
-		LOG(@"setmouse(%d,%d)", p.x, p.y);
+		LOG("setmouse(%d,%d)", p.x, p.y);
 		q = [self.win convertPointFromBacking:NSMakePoint(p.x, p.y)];
-		LOG(@"(%g, %g) <- fromBacking", q.x, q.y);
+		LOG("(%g, %g) <- fromBacking", q.x, q.y);
 		q = [self convertPoint:q toView:nil];
-		LOG(@"(%g, %g) <- toWindow", q.x, q.y);
+		LOG("(%g, %g) <- toWindow", q.x, q.y);
 		q = [self.win convertPointToScreen:q];
-		LOG(@"(%g, %g) <- toScreen", q.x, q.y);
+		LOG("(%g, %g) <- toScreen", q.x, q.y);
 		// Quartz has the origin of the "global display
 		// coordinate space" at the top left of the primary
 		// screen with y increasing downward, while Cocoa has
@@ -1214,7 +1395,7 @@ rpc_setmouse(Client *c, Point p)
 		// with a negative sign and shift upward by the height
 		// of the primary screen.
 		q.y = NSScreen.screens[0].frame.size.height - q.y;
-		LOG(@"(%g, %g) <- setmouse", q.x, q.y);
+		LOG("(%g, %g) <- setmouse", q.x, q.y);
 		CGWarpMouseCursorPosition(NSPointToCGPoint(q));
 		CGAssociateMouseAndMouseCursorPosition(true);
 	}
@@ -1237,7 +1418,7 @@ rpc_setmouse(Client *c, Point p)
 {
 	NSString *str;
 
-	LOG(@"setMarkedText: %@ (%ld, %ld) (%ld, %ld)", string,
+	NSLog(@"setMarkedText: %@ (%ld, %ld) (%ld, %ld)", string,
 		sRange.location, sRange.length,
 		rRange.location, rRange.length);
 
@@ -1268,7 +1449,7 @@ rpc_setmouse(Client *c, Point p)
 
 	if(_tmpText.length){
 		uint i;
-		LOG(@"text length %ld", _tmpText.length);
+		LOG("text length %ld", _tmpText.length);
 		for(i = 0; i <= _tmpText.length; ++i){
 			if(i == _markedRange.location)
 				gfx_keystroke(self.client, '[');
@@ -1286,12 +1467,12 @@ rpc_setmouse(Client *c, Point p)
 		int l;
 		l = 1 + _tmpText.length - NSMaxRange(_selectedRange)
 			+ (_selectedRange.length > 0);
-		LOG(@"move left %d", l);
+		LOG("move left %d", l);
 		for(i = 0; i < l; ++i)
 			gfx_keystroke(self.client, Kleft);
 	}
 
-	LOG(@"text: \"%@\"  (%ld,%ld)  (%ld,%ld)", _tmpText,
+	NSLog(@"text: \"%@\"  (%ld,%ld)  (%ld,%ld)", _tmpText,
 		_markedRange.location, _markedRange.length,
 		_selectedRange.location, _selectedRange.length);
 }
@@ -1300,7 +1481,7 @@ rpc_setmouse(Client *c, Point p)
 	//NSUInteger i;
 	NSUInteger len;
 
-	LOG(@"unmarkText");
+	LOG("unmarkText");
 	len = [_tmpText length];
 	//for(i = 0; i < len; ++i)
 	//	gfx_keystroke(self.client, [_tmpText characterAtIndex:i]);
@@ -1310,7 +1491,7 @@ rpc_setmouse(Client *c, Point p)
 }
 
 - (NSArray<NSAttributedStringKey>*)validAttributesForMarkedText {
-	LOG(@"validAttributesForMarkedText");
+	LOG("validAttributesForMarkedText");
 	return @[];
 }
 
@@ -1320,18 +1501,18 @@ rpc_setmouse(Client *c, Point p)
 	NSRange sr;
 	NSAttributedString *s;
 
-	LOG(@"attributedSubstringForProposedRange: (%ld, %ld) (%ld, %ld)",
+	LOG("attributedSubstringForProposedRange: (%ld, %ld) (%ld, %ld)",
 		r.location, r.length, actualRange->location, actualRange->length);
 	sr = NSMakeRange(0, [_tmpText length]);
 	sr = NSIntersectionRange(sr, r);
 	if(actualRange)
 		*actualRange = sr;
-	LOG(@"use range: %ld, %ld", sr.location, sr.length);
+	LOG("use range: %ld, %ld", sr.location, sr.length);
 	s = nil;
 	if(sr.length)
 		s = [[NSAttributedString alloc]
 			initWithString:[_tmpText substringWithRange:sr]];
-	LOG(@"	return %@", s);
+	NSLog(@"	return %@", s);
 	return s;
 }
 
@@ -1339,7 +1520,7 @@ rpc_setmouse(Client *c, Point p)
 	NSUInteger i;
 	NSUInteger len;
 
-	LOG(@"insertText: %@ replacementRange: %ld, %ld", s, r.location, r.length);
+	NSLog(@"insertText: %@ replacementRange: %ld, %ld", s, r.location, r.length);
 
 	[self clearInput];
 
@@ -1353,12 +1534,12 @@ rpc_setmouse(Client *c, Point p)
 
 - (NSUInteger)characterIndexForPoint:(NSPoint)point
 {
-	LOG(@"characterIndexForPoint: %g, %g", point.x, point.y);
+	LOG("characterIndexForPoint: %g, %g", point.x, point.y);
 	return 0;
 }
 
 - (NSRect)firstRectForCharacterRange:(NSRange)r actualRange:(NSRangePointer)actualRange {
-	LOG(@"firstRectForCharacterRange: (%ld, %ld) (%ld, %ld)",
+	LOG("firstRectForCharacterRange: (%ld, %ld) (%ld, %ld)",
 		r.location, r.length, actualRange->location, actualRange->length);
 	if(actualRange)
 		*actualRange = r;
@@ -1368,9 +1549,9 @@ rpc_setmouse(Client *c, Point p)
 - (void)doCommandBySelector:(SEL)s {
 	NSEvent *e;
 	NSEventModifierFlags m;
-	uint c, k;
+	uint c = 0, k;
 
-	LOG(@"doCommandBySelector (%@)", NSStringFromSelector(s));
+	NSLog(@"doCommandBySelector (%@)", NSStringFromSelector(s));
 
 	/* Cocoa delivers Cmd+arrow and Option+arrow as selectors, not as key events.
 	 * Map the selector directly to our rune so we don't depend on the event's keyCode/character. */
@@ -1423,7 +1604,7 @@ rpc_setmouse(Client *c, Point p)
 		k = keycvt(c);
 		break;
 	}
-	LOG(@"keyDown: keyCode %ld character0: 0x%x -> 0x%x", (long)[e keyCode], c, k);
+	LOG("keyDown: keyCode %ld character0: 0x%x -> 0x%x", (long)[e keyCode], c, k);
 
 	if(m & NSEventModifierFlagShift){
 		if(k == Kleft) k = Kshiftleft;
@@ -1443,7 +1624,7 @@ rpc_setmouse(Client *c, Point p)
 
 // Helper for managing input rect approximately
 - (void)resetLastInputRect {
-	LOG(@"resetLastInputRect");
+	LOG("resetLastInputRect");
 	_lastInputRect.origin.x = 0.0;
 	_lastInputRect.origin.y = 0.0;
 	_lastInputRect.size.width = 0.0;
@@ -1453,7 +1634,7 @@ rpc_setmouse(Client *c, Point p)
 - (void)enlargeLastInputRect:(NSRect)r {
 	r.origin.y = [self bounds].size.height - r.origin.y - r.size.height;
 	_lastInputRect = NSUnionRect(_lastInputRect, r);
-	LOG(@"update last input rect (%g, %g, %g, %g)",
+	LOG("update last input rect (%g, %g, %g, %g)",
 		_lastInputRect.origin.x, _lastInputRect.origin.y,
 		_lastInputRect.size.width, _lastInputRect.size.height);
 }
@@ -1464,11 +1645,11 @@ rpc_setmouse(Client *c, Point p)
 		int l;
 		l = 1 + _tmpText.length - NSMaxRange(_selectedRange)
 			+ (_selectedRange.length > 0);
-		LOG(@"move right %d", l);
+		LOG("move right %d", l);
 		for(i = 0; i < l; ++i)
 			gfx_keystroke(self.client, Kright);
 		l = _tmpText.length+2+2*(_selectedRange.length > 0);
-		LOG(@"backspace %d", l);
+		LOG("backspace %d", l);
 		for(uint i = 0; i < l; ++i)
 			gfx_keystroke(self.client, Kbs);
 	}
