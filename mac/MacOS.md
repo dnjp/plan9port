@@ -59,28 +59,66 @@ without any cross-process IPC hacks.
 
 ### Window lifecycle
 
-- **Client exits normally** (e.g. shell exits): `serveproc` sees EOF on the
-  socket and calls `rpc_clientgone`, which dispatches to the main thread,
-  closes the `NSWindow`, and frees the client state.
+There are two teardown paths depending on who initiates the close.
 
-- **User closes the window** (click ✕ or Cmd+W): `windowWillClose:` fires,
-  sets `clientGone = YES` to stop pending draw operations, and sends `SIGTERM`
-  to the client process. When the client dies, `rpc_clientgone` runs as above.
+**Path A — User closes the window** (click ✕ or Cmd+W):
 
-- **Last window closed**: `applicationShouldTerminateAfterLastWindowClosed:`
-  returns `YES`; the app exits.
+1. AppKit calls `windowWillClose:` on the main thread.
+2. `windowWillClose:` sets `clientGone = YES` and immediately sets
+   `self.win = nil`, releasing `DrawView`'s ARC retain on the `NSWindow`.
+   AppKit still holds its own internal retain at this point, so the window
+   is not yet deallocated.
+3. `windowWillClose:` closes the client's socket fd (or sends `SIGTERM` to
+   the 9term child process). `serveproc` sees EOF, decrements `nclients`,
+   and calls `rpc_clientgone`.
+4. `rpc_clientgone` dispatches to the main thread, finds `clientGone = YES`,
+   skips the `orderOut:` path, nils the remaining `DrawView` properties
+   (`img`, `dlayer`, `currentCursor`), and frees the `Client` struct.
+   `view.win` is already `nil`, so no double-release occurs.
 
-- **App quit** (Cmd+Q or Dock menu): `applicationShouldTerminate:` sends
-  `SIGTERM` to all tracked child PIDs, then returns `NSTerminateNow`.
+**Path B — Client exits on its own** (e.g. shell exits, acme "Exit"):
 
-### Memory management
+1. `serveproc` sees EOF on the socket, decrements `nclients`, calls
+   `rpc_clientgone`.
+2. `rpc_clientgone` dispatches to the main thread, finds `clientGone = NO`,
+   removes the `NSWindowWillCloseNotification` observer, calls
+   `[view.win orderOut:nil]` to hide the window, then sets `view.win = nil`
+   to release `DrawView`'s retain. The window deallocates when its last
+   retain drops.
+3. `windowWillClose:` is never called because the observer was removed and
+   the window was hidden rather than closed.
+
+**Last window closed**: `applicationShouldTerminateAfterLastWindowClosed:`
+returns `YES` when `nclients == 0`; the app exits.
+
+**App quit** (Cmd+Q or Dock menu): `applicationShouldTerminate:` sends
+`SIGTERM` to all tracked child PIDs, then returns `NSTerminateNow`.
+
+### Memory management and the `isReleasedWhenClosed` gotcha
 
 `DrawView` (the `NSView` subclass that owns each window's drawing surface) is
-kept alive by an explicit `CFRetain` in a registry table rather than by ARC
-alone. This avoids a double-free caused by `NSWindow` autoreleasing its content
-view into the run-loop pool during close: the registry's `CFRetain` keeps the
-object alive until `rpc_clientgone` drops it on a future run-loop turn, after
-all pool entries from the close event have drained.
+kept alive by an explicit `CFRetain` in a registry table (`viewRegistry`). This
+allows `rpc_clientgone` — which runs on a background libthread thread — to
+safely look up the view by raw pointer and dispatch cleanup to the main thread.
+
+**Critical**: every `NSWindow` created in `attach:` has `isReleasedWhenClosed`
+set to `NO`:
+
+```objc
+[win setReleasedWhenClosed:NO];
+```
+
+`NSWindow` defaults to `isReleasedWhenClosed = YES`, a legacy behaviour from
+before ARC. With this default, AppKit fires an extra `-release` on the window
+object when it closes. Combined with `DrawView`'s ARC `retain` property on
+`win`, this causes a double-free:
+
+1. `windowWillClose:` sets `self.win = nil` → ARC releases the window.
+2. AppKit fires its extra `-release` → retain count goes to zero.
+3. `DrawView.dealloc` (or any subsequent access) hits a deallocated object.
+
+With `isReleasedWhenClosed = NO`, AppKit does not fire the extra release, and
+`DrawView`'s ARC retain is the sole owner of the window's lifetime.
 
 ## App bundle structure
 

@@ -54,21 +54,40 @@ Copying `devdraw` into the bundle invalidates the signature. `--deep` is require
 to re-seal the entire bundle; signing only the top-level or only the binary causes
 macOS to `SIGKILL` the process at launch.
 
-### Multi-window / Dock menu
+### Single-process multi-window model
 
-Each "New Window" spawns a separate process. A primary/secondary model keeps all
-windows under one Dock icon:
-- **Primary** (no `P9P_SECONDARY`): `NSApplicationActivationPolicyRegular`, runs
-  a Unix domain socket server at `/tmp/p9p-winreg-<bundleID>`.
-- **Secondary** (`P9P_SECONDARY=1`, set via `open -n --env`):
-  `NSApplicationActivationPolicyAccessory`, connects to primary and sends
-  `title <pid> <label>\n` / `close <pid>\n` messages.
-- **Promotion**: when primary exits, first secondary to detect socket closure calls
-  `winreg_promote()` — switches to `Regular` policy, waits 200 ms, then activates.
-- **Title bar vs. Dock label**: `setlabel:` sets `[win setTitle:CFBundleName]`
-  (stable) and stores the full path in `winreg_pending_title` for the Dock menu.
-- **libc.h conflicts**: `#undef accept/listen/close/write` before IPC code in
-  `mac-screen.m`, then `#define` them back to `p9*` afterwards.
+Each app bundle runs a single long-lived `devdraw` process. All windows live as
+`NSWindow` instances inside that one process. `devdraw` acts as a 9P server;
+clients connect via Unix socket using `$wsysid`. This gives a single Dock icon,
+single menu bar, and native Cmd+` window cycling.
+
+### Window / DrawView lifecycle — CRITICAL
+
+`DrawView` owns each window's drawing surface. Two teardown paths:
+
+**Path A — User closes window**: `windowWillClose:` sets `clientGone=YES`,
+sets `self.win=nil` (releases ARC retain while AppKit still holds its own),
+then closes the client socket fd. `serveproc` sees EOF → `rpc_clientgone` →
+main thread cleanup.
+
+**Path B — Client exits**: `serveproc` EOF → `rpc_clientgone` → main thread →
+`[view.win orderOut:nil]` → `view.win=nil`.
+
+**`isReleasedWhenClosed=NO` is mandatory.** `NSWindow` defaults to
+`isReleasedWhenClosed=YES` — AppKit fires an extra `-release` on close. Combined
+with `DrawView.win` being a `retain` property, this causes a double-free crash
+(`*** -[NSWindow release]: message sent to deallocated instance`). Always set
+`[win setReleasedWhenClosed:NO]` when creating windows in `mac-screen.m`.
+
+### viewRegistry
+
+Maps raw `void*` client view pointers to `CFRetain`'d `DrawView` references so
+background libthread threads can safely look up views. Rules:
+- `viewRegistry_add`: `CFRetain`s the view (registry owns +1).
+- `viewRegistry_getref`: returns +1 ref; caller must `__bridge_transfer` inside
+  a `dispatch_async` block on the main thread inside `@autoreleasepool`.
+- `viewRegistry_remove`: `CFRelease`s registry's +1. Main thread only, after
+  `clientGone` is set.
 
 ### Launcher scripts
 

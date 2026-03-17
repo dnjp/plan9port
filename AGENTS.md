@@ -191,32 +191,65 @@ Dock icon and menu bar name:
 3. `devdraw`'s `applicationDidFinishLaunching` reads `CFBundleName` and
    `CFBundleIconFile` from `[NSBundle mainBundle]`.
 
-### Multi-window / Dock menu IPC
+### Single-process multi-window model
 
-Each "New Window" spawns a separate process. A primary/secondary model in
-`mac-screen.m` keeps all windows under one Dock icon:
+Each app bundle runs a single long-lived `devdraw` process. All windows for that
+app live as `NSWindow` instances inside that one process. `devdraw` acts as a 9P
+server; each client (`acme`, `9term`, `sam`) connects via a Unix socket using the
+`$wsysid` environment variable. This gives a single Dock icon, single menu bar,
+and native Cmd+` window cycling.
 
-- **Primary** (no `P9P_SECONDARY`): `NSApplicationActivationPolicyRegular`,
-  runs a Unix domain socket server at `/tmp/p9p-winreg-<bundleID>`.
-- **Secondary** (`P9P_SECONDARY=1`, set by `open -n --env`):
-  `NSApplicationActivationPolicyAccessory`, connects to primary's socket and
-  sends `title <pid> <label>\n` and `close <pid>\n` messages.
-- **Promotion**: when the primary exits, the first secondary to detect the
-  socket closure calls `winreg_promote()`, which starts a new server, switches
-  to `Regular` policy, and activates the app after a 200 ms delay.
-- **Dock menu**: primary builds it from local `[NSApp windows]` (using
-  `winreg_pending_title` for the label) plus the `winreg[]` array of remote
-  windows.
-- **Title bar vs. Dock label**: `setlabel:` sets the `NSWindow` title to
-  `CFBundleName` (stable, e.g. "acme") and stores the full path in
-  `winreg_pending_title` for the Dock menu only.
-- **libc.h conflicts**: `libc.h` redefines `accept`/`listen`/`close`/`write`.
-  The IPC section `#undef`s them before use and `#define`s them back afterwards.
+### Window / DrawView lifecycle
 
-### Acme window labels
+`DrawView` is the `NSView` subclass that owns each window's drawing surface.
+There are two teardown paths:
 
-`acme.c` calls `drawsetlabel()` at startup (with `wdir`) and on focus change
-(with `w->body.file->name`) so the Dock menu shows meaningful per-window paths.
+**Path A — User closes window (✕ / Cmd+W)**:
+1. `windowWillClose:` sets `clientGone=YES` and `self.win=nil` (releases ARC
+   retain while AppKit still holds its own internal retain).
+2. `windowWillClose:` closes the client socket fd (or sends SIGTERM to 9term
+   child). `serveproc` sees EOF and calls `rpc_clientgone`.
+3. `rpc_clientgone` (dispatched to main thread) finds `clientGone=YES`, nils
+   remaining properties, frees `Client`. `view.win` is already nil — no
+   double-release.
+
+**Path B — Client exits on its own**:
+1. `serveproc` sees EOF, calls `rpc_clientgone`.
+2. `rpc_clientgone` (main thread) finds `clientGone=NO`, removes observer,
+   calls `[view.win orderOut:nil]`, then sets `view.win=nil`.
+
+**`isReleasedWhenClosed=NO` is mandatory.** `NSWindow` defaults to
+`isReleasedWhenClosed=YES` — a legacy pre-ARC behaviour where AppKit fires an
+extra `-release` on close. Combined with `DrawView`'s ARC `retain` property on
+`win`, this causes a double-free crash (`*** -[NSWindow release]: message sent to
+deallocated instance`). Always set `[win setReleasedWhenClosed:NO]` when creating
+windows in `mac-screen.m`.
+
+### viewRegistry
+
+`viewRegistry` maps raw `void*` client view pointers to `CFRetain`'d `DrawView`
+references. This allows background libthread threads to safely look up a view by
+pointer and dispatch work to the main thread without holding an ARC reference
+across thread boundaries.
+
+Ownership rules:
+- `viewRegistry_add`: `CFRetain`s the view (registry owns +1).
+- `viewRegistry_getref`: returns a +1 `CFRetain`'d reference; caller must
+  transfer to ARC via `__bridge_transfer` inside a `dispatch_async` block on the
+  main thread (never on the RPC thread — no autorelease pool there).
+- `viewRegistry_remove`: `CFRelease`s the registry's +1. Must only be called
+  from the main thread, after `clientGone` is set.
+
+### Tracing / debugging
+
+Verbose trace logging is compiled out by default. To re-enable, define
+`DEVDRAW_TRACE` at compile time:
+
+```sh
+CC9FLAGS="-DDEVDRAW_TRACE" mk install
+```
+
+Traces go to `/tmp/devdraw-trace.log`.
 
 ## Shell environment
 
@@ -329,3 +362,5 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | `mk install` in `shell/` fails with "are identical (not copied)" | macOS `cp` errors when source and destination are the same file | Use `cmp -s src dst \|\| cp src dst` pattern in the install loop |
 | `field.c` fails to compile: `match[0].sp` / `match[0].ep` not found | plan9port's `regexp9.h` uses nested unions: `Resub.s.sp` / `Resub.e.ep`, not flat `.sp` / `.ep` | Change to `match[0].s.sp` and `match[0].e.ep` |
 | `field.c` warning: passing `const char*` to `utflen(char*)` | `insep` is `const char*` but `utflen` takes `char*` | Cast: `utflen((char*)sep)` |
+| `*** -[NSWindow release]: message sent to deallocated instance` on window close | `NSWindow.isReleasedWhenClosed` defaults to `YES`; AppKit fires an extra `-release` on close which double-frees the window when `DrawView.win` (a `retain` property) is also released | Set `[win setReleasedWhenClosed:NO]` immediately after creating every `NSWindow` in `mac-screen.m` |
+| Window close crashes even after `self.win = nil` in `windowWillClose:` | `rpc_clientgone`'s `__bridge_transfer` ran while AppKit's autorelease pool still held a pending release on the window | Ensure `viewRegistry_remove` + `__bridge_transfer` happen inside a `dispatch_async` block on the main thread wrapped in `@autoreleasepool`, never on the RPC thread |
