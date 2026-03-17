@@ -63,7 +63,7 @@ threadmain(int argc, char **argv)
 	 * When launched as a macOS app bundle (e.g. from the Dock),
 	 * no -s flag is passed. Auto-detect by checking if argv[0]
 	 * is inside a .app bundle and derive the service name from
-	 * the bundle name (e.g. "9term.app" → "p9p-9term").
+	 * the bundle name (e.g. "9term.app" → "devdraw.9term").
 	 */
 	if(srvname == nil && argv0 != nil){
 		char *app = strstr(argv0, ".app/Contents/MacOS");
@@ -74,9 +74,9 @@ threadmain(int argc, char **argv)
 				p2--;
 			/* p2..app is the bundle name without ".app" */
 			int len = app - p2;
-			char *name = malloc(len + 6); /* "p9p-" + name + NUL */
+			char *name = malloc(len + 9); /* "devdraw." + name + NUL */
 			if(name != nil){
-				snprint(name, len + 6, "p9p-%.*s", len, p2);
+				snprint(name, len + 9, "devdraw.%.*s", len, p2);
 				/* lowercase the bundle name portion */
 				for(char *c = name + 4; *c; c++)
 					if(*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';

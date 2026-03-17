@@ -24,12 +24,5 @@
 	<string>acme1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>LSEnvironment</key>
-	<dict>
-		<key>NSZombieEnabled</key>
-		<string>YES</string>
-		<key>NSDeallocateZombies</key>
-		<string>NO</string>
-	</dict>
 </dict>
 </plist>

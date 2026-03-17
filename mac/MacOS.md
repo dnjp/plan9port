@@ -24,7 +24,7 @@ process:
 
 ```
 9term.app launch
-  └─ devdraw -s p9p-9term   (NSApplication — one Dock icon, one menu bar)
+  └─ devdraw -s devdraw.9term   (NSApplication — one Dock icon, one menu bar)
        ├─ NSWindow #1  ←  9term client process (pid A)
        ├─ NSWindow #2  ←  9term client process (pid B)
        └─ NSWindow #3  ←  9term client process (pid C)
@@ -43,15 +43,15 @@ without any cross-process IPC hacks.
 ### Startup sequence
 
 1. macOS launches `devdraw` directly (it is the `CFBundleExecutable`). `devdraw`
-   detects it is running from an app bundle, sets `srvname = "p9p-9term"` (or
+   detects it is running from an app bundle, sets `srvname = "devdraw.9term"` (or
    the appropriate name for the bundle), and starts listening on
-   `$NAMESPACE/p9p-9term`.
+   `$NAMESPACE/devdraw.9term`.
 
 2. `devdraw` queues a `newWindow:` call via `dispatch_async` and enters
    `[NSApp run]`.
 
 3. `newWindow:` spawns the client binary (e.g. `$PLAN9/bin/9term`) with
-   `$wsysid = p9p-9term/<id>` in its environment. The client dials the server,
+   `$wsysid = devdraw.9term/<id>` in its environment. The client dials the server,
    and `devdraw` creates an `NSWindow` for it via `rpc_attach`.
 
 4. Subsequent "New Window" (Cmd+N) or "New Tab" (Cmd+T, 9term only) calls
@@ -189,6 +189,31 @@ mk logs      # tail all daemon log files
   standard macOS tab bar controls.
 
 `Acme.app` and `Sam.app` do not support tabs; each window is always separate.
+
+### Namespace assignment
+
+The devdraw socket (`devdraw.acme`, `devdraw.9term`, etc.) always lives in the
+shared namespace (`$NAMESPACE`, typically `/tmp/ns.$USER.:0`) so that all tools
+(plumber, `editinacme`, `9p stat acme`, etc.) can find it at the standard path.
+
+Each client window needs its own `$NAMESPACE` so its 9P service does not
+collide with other running instances of the same app:
+
+| Window | `$NAMESPACE` | acme posts at |
+|--------|-------------|---------------|
+| First (cid=0) | `/tmp/ns.daniel.:0` | `/tmp/ns.daniel.:0/acme` |
+| Second (cid=1) | `/tmp/ns.daniel.:1` | `/tmp/ns.daniel.:1/acme` |
+| Third (cid=2) | `/tmp/ns.daniel.:2` | `/tmp/ns.daniel.:2/acme` |
+
+The first window always gets the real shared namespace, so the plumber and
+other tools find acme at the standard path. Additional windows get a
+predictable derived namespace formed by incrementing the display number
+(`:0` → `:1` → `:2` …). `devdraw` creates the derived namespace directory
+before spawning the client.
+
+`DEVDRAW_NAMESPACE` is always set to the shared namespace so `drawclient.c`
+dials the correct devdraw socket regardless of which `$NAMESPACE` the client
+uses for its own 9P services.
 
 ### Window titles
 

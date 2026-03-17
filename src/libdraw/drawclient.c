@@ -40,8 +40,8 @@ _displayconnect(Display *d)
 			return -1;
 		}
 		*id++ = '\0';
-		// DEVDRAW_NAMESPACE lets the devdraw socket live in a different
-		// namespace dir than the client's own 9P services ($NAMESPACE).
+		// DEVDRAW_NAMESPACE lets the devdraw socket (devdraw.<app>) live in a
+		// different namespace dir than the client's own 9P services ($NAMESPACE).
 		// Fall back to getns() if not set.
 		char *ddns = getenv("DEVDRAW_NAMESPACE");
 		if(ddns != nil)

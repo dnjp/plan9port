@@ -374,6 +374,7 @@ gfx_peerpid(int fd)
 	                     stringByDeletingLastPathComponent];
 	NSString *clientname = [[NSBundle mainBundle]
 	                         objectForInfoDictionaryKey:@"CFBundleName"];
+	// TODO: improve this, as assuming 9term is not exactly a safe assumption
 	if(clientname == nil) clientname = @"9term";
 	const char *plan9env = getenv("PLAN9");
 	NSString *plan9 = plan9env
@@ -386,14 +387,58 @@ gfx_peerpid(int fd)
 	int cid = nextclientid++;
 	NSString *wsysid = [NSString stringWithFormat:@"%s/%d", srvname, cid];
 
-	// Compute the namespace dir for DEVDRAW_NAMESPACE.
-	NSString *nsdir = nil;
+	// Compute the shared namespace dir (where devdraw's socket lives).
+	// This is /tmp/ns.$USER.:0 (or whatever $NAMESPACE / $DISPLAY resolves to).
+	NSString *sharedNS = nil;
 	{
 		char *ns = getns();
 		if(ns){
-			nsdir = [NSString stringWithUTF8String:ns];
+			sharedNS = [NSString stringWithUTF8String:ns];
 			free(ns);
 		}
+	}
+
+	// Compute the per-window NAMESPACE for the client's own 9P services.
+	//
+	// The devdraw socket always lives in the shared namespace (sharedNS) so
+	// that all tools (plumber, editinacme, etc.) can find it at the standard
+	// path.  DEVDRAW_NAMESPACE pins that location for drawclient.c.
+	//
+	// Each client window needs its own NAMESPACE so its 9P service (e.g.
+	// /acme, /plumb) does not collide with other running instances:
+	//
+	//   cid=0 (first window): use the shared namespace directly.
+	//         → acme posts at /tmp/ns.daniel.:0/acme
+	//         → plumber, editinacme, etc. find it at the standard path.
+	//
+	//   cid>0 (additional windows): derive a predictable namespace by
+	//         incrementing the display number in the shared namespace path.
+	//         /tmp/ns.daniel.:0 → /tmp/ns.daniel.:1, :2, …
+	//         The directory is created here if it does not yet exist.
+	//
+	// This mirrors how plan 9 proper handles multiple instances: each
+	// process has its own namespace but they share the same root services.
+	NSString *clientNS = sharedNS;
+	// Only compute a new namespace for clients *other* than 9term as it is
+	// the only client that does not mount a 9p service, requiring a dedicated
+	// namespace per window.
+	if(cid > 0 && sharedNS != nil && ![clientname isEqualToString:@"9term"]){
+		// Find the last ':' in the path and replace the number after it.
+		NSRange colonRange = [sharedNS rangeOfString:@":"
+		                                     options:NSBackwardsSearch];
+		if(colonRange.location != NSNotFound){
+			NSString *prefix = [sharedNS substringToIndex:colonRange.location + 1];
+			clientNS = [NSString stringWithFormat:@"%@%d", prefix, cid];
+		} else {
+			// Fallback: append the cid if no colon found.
+			clientNS = [NSString stringWithFormat:@"%@.%d", sharedNS, cid];
+		}
+		// Create the namespace dir if it doesn't exist.
+		[[NSFileManager defaultManager]
+			createDirectoryAtPath:clientNS
+			withIntermediateDirectories:YES
+			attributes:@{NSFilePosixPermissions: @(0700)}
+			error:nil];
 	}
 
 	NSDictionary *curEnv = [[NSProcessInfo processInfo] environment];
@@ -404,13 +449,17 @@ gfx_peerpid(int fd)
 	                       [clientname uppercaseString]];
 	childEnv[insideKey] = @"true";
 	childEnv[@"DEVDRAW"] = [bindir stringByAppendingPathComponent:@"devdraw"];
-	// Pin DEVDRAW_NAMESPACE so drawclient.c dials the correct devdraw socket.
-	// We do NOT set NAMESPACE so that the client (e.g. acme) can create its
-	// own fresh namespace dir for its 9P services without colliding with the
-	// already-running instance.
-	if(nsdir != nil)
-		childEnv[@"DEVDRAW_NAMESPACE"] = nsdir;
-	[childEnv removeObjectForKey:@"NAMESPACE"];
+	// DEVDRAW_NAMESPACE tells drawclient.c where to find the devdraw socket.
+	// It always points to the shared namespace, regardless of which window
+	// this client is for.
+	if(sharedNS != nil)
+		childEnv[@"DEVDRAW_NAMESPACE"] = sharedNS;
+	// NAMESPACE is the client's own 9P namespace dir.  cid=0 gets the shared
+	// namespace; cid>0 gets a derived predictable namespace (see above).
+	if(clientNS != nil)
+		childEnv[@"NAMESPACE"] = clientNS;
+	else
+		[childEnv removeObjectForKey:@"NAMESPACE"];
 	childEnv[@"PLAN9"] = plan9;
 	NSString *plan9bin = [plan9 stringByAppendingPathComponent:@"bin"];
 	NSString *curPath = childEnv[@"PATH"] ?: @"/usr/bin:/bin";

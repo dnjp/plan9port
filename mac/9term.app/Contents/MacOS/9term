@@ -6,29 +6,8 @@ PLAN9="${PLAN9:-/usr/local/plan9}"
 export PLAN9
 export PATH="$PLAN9/bin:$PATH"
 
-BUNDLEDIR="$(dirname "$0")"
-export DEVDRAW="$BUNDLEDIR/devdraw"
+# Point libdraw at the devdraw binary inside this bundle so that the
+# display server process inherits the bundle's icon and app name.
+export DEVDRAW="$(dirname "$0")/devdraw"
 
-SRVNAME=p9p-9term
-
-# Start devdraw in server mode if not already running.
-# getns() in plan9port outputs the namespace directory.
-NS="$("$PLAN9/bin/namespace")"
-SOCKPATH="$NS/$SRVNAME"
-
-if ! [ -S "$SOCKPATH" ]; then
-    # Launch devdraw as the server. It will call [NSApp run] and stay alive.
-    # -D sets argv[0] for ps listings; -s names the announce socket.
-    "$DEVDRAW" -D 9term -s "$SRVNAME" &
-    # Wait up to 2 seconds for the socket to appear.
-    for i in $(seq 1 40); do
-        [ -S "$SOCKPATH" ] && break
-        sleep 0.05
-    done
-fi
-
-# Connect the first 9term client to the running server.
-unset NOLIBTHREADDAEMONIZE
-trap '' HUP
-export wsysid="$SRVNAME/0"
-exec "$PLAN9/bin/9term" -l -W600x800
+exec "$PLAN9/bin/9term"
