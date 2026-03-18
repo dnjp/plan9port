@@ -55,6 +55,7 @@ void	tfree(void);
 void	killprocs(void);
 void	killtasks(void);
 int	runeeq(Rune*, uint, Rune*, uint);
+int	runehasdirlabel(Rune*, uint);
 int	ALEF_tid(void);
 void	iconinit(void);
 Timer*	timerstart(int);

@@ -534,12 +534,16 @@ winsettag1(Window *w)
 	/* compute the text for the whole tag, replacing current only if it differs */
 	namelen = i;
 	/* Use file->name in new when tag shows the current path or tag is empty (e.g. after Load).
+	 * Also use file->name when both the tag and file->name look like win directory labels
+	 * (path/-sysname from awd/label), so ctl "name" updates from win take effect.
 	 * Otherwise preserve the tag's left part so we don't overwrite user typing. */
 	if(w->body.file->nname != 0 && w->body.file->name != nil){
 		int tag_matches = (namelen == 0) ||
 			(runeeq(old, namelen, w->body.file->name, w->body.file->nname) == TRUE) ||
 			(w->body.file->nename > 0 && w->body.file->ename != nil &&
 			 runeeq(old, namelen, w->body.file->ename, w->body.file->nename) == TRUE);
+		if(!tag_matches && runehasdirlabel(old, namelen) && runehasdirlabel(w->body.file->name, w->body.file->nname))
+			tag_matches = TRUE;	/* win/awd directory update: show new path */
 		if(tag_matches){
 			new = runemalloc(w->body.file->nname+100);
 			runemove(new, w->body.file->name, w->body.file->nname);
