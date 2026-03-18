@@ -1,0 +1,31 @@
+<$PLAN9/src/mkhdr
+
+all:V: walk field sor
+
+# walk
+walk:V:
+	$CC $CFLAGS -o o.walk.o walk.c
+	$LD -o o.walk o.walk.o
+	rm -f o.walk.o
+
+# field uses bio and regexp in addition to libc
+field:V:
+	$CC $CFLAGS -o o.field.o field.c
+	$LD -o o.field o.field.o -lbio -lregexp9
+	rm -f o.field.o
+
+sor:V:
+
+install:V: walk.install field.install sor.install
+
+walk.install:V: walk
+	$INSTALL o.walk $BIN/walk
+
+field.install:V: field
+	$INSTALL o.field $BIN/field
+
+sor.install:V:
+	install -m 755 sor $BIN/sor
+
+clean:V:
+	rm -f o.walk o.field o.walk.o o.field.o
