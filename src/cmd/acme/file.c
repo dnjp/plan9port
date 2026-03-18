@@ -37,6 +37,26 @@ enum
 	Undosize = sizeof(Undo)/sizeof(Rune)
 };
 
+static void
+filerecalcenname(File *f)
+{
+	int n;
+	Rune *r;
+
+	free(f->ename);
+	f->ename = nil;
+	f->nename = 0;
+	if(f->name == nil || f->nname <= 0)
+		return;
+
+	n = f->nname;
+	r = runemalloc(n);
+	runemove(r, f->name, n);
+	r = expandhome(r, &n);
+	f->ename = r;
+	f->nename = n;
+}
+
 File*
 fileaddtext(File *f, Text *t)
 {
@@ -138,12 +158,37 @@ fileundelete(File *f, Buffer *delta, uint p0, uint p1)
 void
 filesetname(File *f, Rune *name, int n)
 {
+	int ne, nd;
+	Rune *er, *dr;
+
 	if(f->seq > 0)
 		fileunsetname(f, &f->delta);
 	free(f->name);
-	f->name = runemalloc(n);
-	runemove(f->name, name, n);
-	f->nname = n;
+
+	/* Maintain both a display (contracted) and external (expanded) name. */
+	free(f->ename);
+	f->ename = nil;
+	f->nename = 0;
+
+	if(n <= 0 || name == nil){
+		f->name = nil;
+		f->nname = 0;
+		f->unread = TRUE;
+		return;
+	}
+
+	/* Expand ~/$home first so contracthome can reliably produce ~/... */
+	ne = n;
+	er = runemalloc(ne);
+	runemove(er, name, ne);
+	er = expandhome(er, &ne);
+
+	dr = contracthome(er, ne, &nd);
+
+	f->name = dr;
+	f->nname = nd;
+	f->ename = er;
+	f->nename = ne;
 	f->unread = TRUE;
 }
 
@@ -268,6 +313,7 @@ fileundo(File *f, int isundo, uint *q0p, uint *q1p)
 				f->name = runemalloc(u.n);
 			bufread(delta, up, f->name, u.n);
 			f->nname = u.n;
+			filerecalcenname(f);
 			break;
 		}
 		bufdelete(delta, up, delta->nc);
@@ -292,6 +338,9 @@ fileclose(File *f)
 	free(f->name);
 	f->nname = 0;
 	f->name = nil;
+	free(f->ename);
+	f->nename = 0;
+	f->ename = nil;
 	free(f->text);
 	f->ntext = 0;
 	f->text = nil;

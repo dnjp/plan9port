@@ -20,6 +20,7 @@ CFid *plumbeditfid;
 Window*	openfile(Text*, Expand*);
 
 int	nuntitled;
+static int	plumbdebug;
 
 void
 plumbthread(void *v)
@@ -73,6 +74,8 @@ plumbthread(void *v)
 void
 startplumbing(void)
 {
+	if(getenv("plumbdebug") != nil)
+		plumbdebug = 1;
 	cplumb = chancreate(sizeof(Plumbmsg*), 0);
 	chansetname(cplumb, "cplumb");
 	threadcreate(plumbthread, nil, STACK);
@@ -186,9 +189,20 @@ look3(Text *t, uint q0, uint q1, int external, int reverse)
 		m->data = runetobyte(r, q1-q0);
 		m->ndata = strlen(m->data);
 		free(r);
+		if(plumbdebug)
+			fprint(2, "acme plumb: wdir=%q data=%q ndata=%d expanded=%d\n",
+				m->wdir ? m->wdir : "", m->data ? m->data : "", m->ndata, expanded);
 		if(m->ndata<messagesize-1024 && plumbsendtofid(plumbsendfid, m) >= 0){
+			if(plumbdebug)
+				fprint(2, "acme plumb: sent ok\n");
 			plumbfree(m);
 			goto Return;
+		}
+		if(plumbdebug){
+			if(m->ndata >= messagesize-1024)
+				fprint(2, "acme plumb: send skipped (too large), falling back\n");
+			else
+				fprint(2, "acme plumb: send failed: %r; falling back\n");
 		}
 		plumbfree(m);
 		/* plumber failed to match; fall through */
@@ -452,17 +466,37 @@ isfilec(Rune r)
 	return FALSE;
 }
 
-/* Runestr wrapper for cleanname */
+/* Runestr wrapper for cleanname.
+ * Always returns a new allocation (caller must free .r). Does not free input. */
 Runestr
 cleanrname(Runestr rs)
 {
 	char *s;
 	int nb, nulls;
+	Rune *newr;
+	int nbytes, ssize;
 
-	s = runetobyte(rs.r, rs.nr);
+	if(rs.r == nil || rs.nr == 0){
+		rs.r = nil;
+		rs.nr = 0;
+		return rs;
+	}
+	ssize = rs.nr * UTFmax + 1;
+	/* cleanname can lengthen the path (e.g. ".." -> "/.."); use a larger buffer. */
+	s = emalloc(2 * ssize);
+	nb = snprint(s, 2*ssize, "%.*S", rs.nr, rs.r);
+	if(nb >= 2*ssize){
+		free(s);
+		rs.r = nil;
+		rs.nr = 0;
+		return rs;
+	}
 	cleanname(s);
-	cvttorunes(s, strlen(s), rs.r, &nb, &rs.nr, &nulls);
+	nbytes = strlen(s);
+	newr = runemalloc(nbytes+1);
+	cvttorunes(s, nbytes, newr, &nb, &rs.nr, &nulls);
 	free(s);
+	rs.r = newr;
 	return rs;
 }
 
@@ -472,6 +506,7 @@ includefile(Rune *dir, Rune *file, int nfile)
 	int m, n;
 	char *a;
 	Rune *r;
+	Runestr rs;
 	static Rune Lslash[] = { '/', 0 };
 
 	m = runestrlen(dir);
@@ -486,7 +521,9 @@ includefile(Rune *dir, Rune *file, int nfile)
 	runemove(r+m, Lslash, 1);
 	runemove(r+m+1, file, nfile);
 	free(file);
-	return cleanrname(runestr(r, m+1+nfile));
+	rs = cleanrname(runestr(r, m+1+nfile));
+	free(r);
+	return rs;
 }
 
 static	Rune	*objdir;
@@ -579,6 +616,29 @@ dirname(Text *t, Rune *r, int n)
 			i = ei;
 		}
 	}
+
+	/*
+	 * For directory windows, the tag name is the directory itself.
+	 * If a relative path (r, n) was passed, return directory + "/" + r;
+	 * otherwise return the directory path as-is (expanded).
+	 */
+	if(t->w->isdir){
+		if(n > 0){
+			Rune *out = runemalloc(i + 1 + n + 1);
+			runemove(out, b, i);
+			out[i] = '/';
+			runemove(out + i + 1, r, n);
+			free(r);
+			free(b);
+			tmp = cleanrname(runestr(out, i + 1 + n));
+			free(out);
+			return tmp;
+		}
+		free(r);
+		tmp = cleanrname(runestr(b, i));
+		free(b);
+		return tmp;
+	}
 	slash = -1;
 	for(i--; i >= 0; i--){
 		if(b[i] == '/'){
@@ -590,7 +650,9 @@ dirname(Text *t, Rune *r, int n)
 		goto Rescue;
 	runemove(b+slash+1, r, n);
 	free(r);
-	return cleanrname(runestr(b, slash+1+n));
+	tmp = cleanrname(runestr(b, slash+1+n));
+	free(b);
+	return tmp;
 
     Rescue:
 	free(b);
@@ -867,13 +929,35 @@ openfile(Text *t, Expand *e)
 			 * Make the name a full path, just like we would if
 			 * opening via the plumber.
 			 */
-			n = utflen(wdir)+1+e->nname+1;
+			/*
+			 * Prefer the invoking window's directory (t) if available,
+			 * falling back to global wdir.
+			 */
+			char *base;
+			Runestr d;
+
+			base = nil;
+			d.r = nil;
+			d.nr = 0;
+			if(t != nil)
+				d = dirname(t, nil, 0);
+			if(d.nr > 0)
+				base = runetobyte(d.r, d.nr);
+			else
+				base = estrdup(wdir);
+			free(d.r);
+
+			n = utflen(base)+1+e->nname+1;
 			rp = runemalloc(n);
-			runesnprint(rp, n, "%s/%.*S", wdir, e->nname, e->name);
+			runesnprint(rp, n, "%s/%.*S", base, e->nname, e->name);
+			free(base);
 			rs = cleanrname(runestr(rp, n-1));
 			free(e->name);
 			e->name = rs.r;
 			e->nname = rs.nr;
+			/* so textload() in the new-window path gets the full path */
+			free(e->bname);
+			e->bname = runetobyte(e->name, e->nname);
 			w = lookfile(e->name, e->nname);
 		}
 	}

@@ -223,7 +223,10 @@ rulerwintype(Window *w)
 	/* Fallback: win(1) names its window "<dir>/-<shell>". */
 	if(w->body.file == nil || w->body.file->nname == 0)
 		return "file";
-	path = runetobyte(w->body.file->name, w->body.file->nname);
+	if(w->body.file->ename != nil && w->body.file->nename > 0)
+		path = runetobyte(w->body.file->ename, w->body.file->nename);
+	else
+		path = runetobyte(w->body.file->name, w->body.file->nname);
 	if(path == nil)
 		return "file";
 	t = strstr(path, "/-") != nil ? "win" : "file";
@@ -241,7 +244,10 @@ rulerquerypath(Window *w)
 	char *path, *abspath;
 	int pathlen;
 
-	path = runetobyte(w->body.file->name, w->body.file->nname);
+	if(w->body.file->ename != nil && w->body.file->nename > 0)
+		path = runetobyte(w->body.file->ename, w->body.file->nename);
+	else
+		path = runetobyte(w->body.file->name, w->body.file->nname);
 	if(path == nil || path[0] == '\0'){
 		free(path);
 		return nil;
