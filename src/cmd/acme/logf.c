@@ -187,14 +187,14 @@ xfidlog(Window *w, char *op)
 		}
 	}
 	f = w->body.file;
-	name = runetobyte(f->name, f->nname);
+	if(f->ename != nil && f->nename > 0)
+		name = runetobyte(f->ename, f->nename);
+	else
+		name = runetobyte(f->name, f->nname);
 	if(name == nil)
 		name = estrdup("");
-	/* expand ~ to absolute path so external tools always see real paths */
-	char *ename = expandhome_c(name);
+	eventlog.ev[eventlog.nev++] = smprint("%d %s %s\n", w->id, op, name);
 	free(name);
-	eventlog.ev[eventlog.nev++] = smprint("%d %s %s\n", w->id, op, ename);
-	free(ename);
 	if(eventlog.r.l == nil)
 		eventlog.r.l = &eventlog.lk;
 	rwakeupall(&eventlog.r);

@@ -494,7 +494,7 @@ parsetag(Window *w, int extra, int *len)
 void
 winsettag1(Window *w)
 {
-	int i, j, k, n, bar, dirty, resize;
+	int i, j, k, n, bar, dirty, resize, namelen;
 	Rune *new, *old, *r;
 	uint q0, q1;
 	static Rune Ldelsnarf[] = { ' ', 'D', 'e', 'l', ' ',
@@ -510,21 +510,50 @@ winsettag1(Window *w)
 	if(w->tag.ncache!=0 || w->tag.file->mod)
 		wincommit(w, &w->tag);	/* check file name; also guarantees we can modify tag contents */
 	old = parsetag(w, 0, &i);
-	if(runeeq(old, i, w->body.file->name, w->body.file->nname) == FALSE){
-		textdelete(&w->tag, 0, i, TRUE);
-		textinsert(&w->tag, 0, w->body.file->name, w->body.file->nname, TRUE);
-		free(old);
-		old = runemalloc(w->tag.file->b.nc+1);
-		bufread(&w->tag.file->b, 0, old, w->tag.file->b.nc);
-		old[w->tag.file->b.nc] = '\0';
+	/* Only replace the tag left part with file->name when the tag shows the same path
+	 * (e.g. expanded form) so we normalize to contracted display. Never overwrite when
+	 * the user is typing a different path. */
+	if(w->body.file->name != nil && w->body.file->nname > 0 &&
+	   runeeq(old, i, w->body.file->name, w->body.file->nname) == FALSE){
+		Rune *rc;
+		int ic;
+		rc = contracthome(old, i, &ic);
+		if(runeeq(rc, ic, w->body.file->name, w->body.file->nname) == TRUE){
+			/* Tag path contracts to current file: normalize display (e.g. /Users/daniel → ~) */
+			textdelete(&w->tag, 0, i, TRUE);
+			textinsert(&w->tag, 0, w->body.file->name, w->body.file->nname, TRUE);
+			free(old);
+			old = runemalloc(w->tag.file->b.nc+1);
+			bufread(&w->tag.file->b, 0, old, w->tag.file->b.nc);
+			old[w->tag.file->b.nc] = '\0';
+			i = w->body.file->nname;
+		}
+		free(rc);
 	}
 
 	/* compute the text for the whole tag, replacing current only if it differs */
-	new = runemalloc(w->body.file->nname+100);
-	i = 0;
-	if(w->body.file->nname != 0)
-		runemove(new, w->body.file->name, w->body.file->nname);
-	i += w->body.file->nname;
+	namelen = i;
+	/* Use file->name in new when tag shows the current path or tag is empty (e.g. after Load).
+	 * Otherwise preserve the tag's left part so we don't overwrite user typing. */
+	if(w->body.file->nname != 0 && w->body.file->name != nil){
+		int tag_matches = (namelen == 0) ||
+			(runeeq(old, namelen, w->body.file->name, w->body.file->nname) == TRUE) ||
+			(w->body.file->nename > 0 && w->body.file->ename != nil &&
+			 runeeq(old, namelen, w->body.file->ename, w->body.file->nename) == TRUE);
+		if(tag_matches){
+			new = runemalloc(w->body.file->nname+100);
+			runemove(new, w->body.file->name, w->body.file->nname);
+			i = w->body.file->nname;
+		}else{
+			new = runemalloc(namelen+100);
+			runemove(new, old, namelen);
+			i = namelen;
+		}
+	}else{
+		new = runemalloc(namelen+100);
+		runemove(new, old, namelen);
+		i = namelen;
+	}
 	runemove(new+i, Ldelsnarf, 10);
 	i += 10;
 	if(w->filemenu){
@@ -619,27 +648,19 @@ winsettag(Window *w)
 void
 wincommit(Window *w, Text *t)
 {
-	Rune *r;
-	int i;
 	File *f;
+	int i;
 
 	textcommit(t, TRUE);
 	f = t->file;
 	if(f->ntext > 1)
 		for(i=0; i<f->ntext; i++)
 			textcommit(f->text[i], FALSE);	/* no-op for t */
+	/* Tag: only commit text. Do not apply the tag's path to the file name here;
+	 * that happens when the user runs Get. Otherwise typing /Users/daniel would
+	 * contract to ~ immediately and move the cursor. */
 	if(t->what == Body)
 		return;
-	r = parsetag(w, 0, &i);
-	if(runeeq(r, i, w->body.file->name, w->body.file->nname) == FALSE){
-		seq++;
-		filemark(w->body.file);
-		w->body.file->mod = TRUE;
-		w->dirty = TRUE;
-		winsetname(w, r, i);
-		winsettag(w);
-	}
-	free(r);
 }
 
 void

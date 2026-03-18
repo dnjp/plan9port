@@ -132,8 +132,12 @@ struct File
 	Buffer	epsilon;	/* inversion of delta for redo */
 	Buffer	*elogbuf;	/* log of pending editor changes */
 	Elog		elog;		/* current pending change */
-	Rune		*name;	/* name of associated file */
-	int		nname;	/* size of name */
+	/* Display name (usually contracted: ~/...) */
+	Rune		*name;
+	int		nname;
+	/* External name (expanded absolute path: /Users/... when applicable) */
+	Rune		*ename;
+	int		nename;
 	uvlong	qidpath;	/* of file when read */
 	ulong	mtime;	/* of file when read */
 	int		dev;		/* of file when read */

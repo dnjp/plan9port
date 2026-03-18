@@ -85,6 +85,21 @@ pressed with the Shift modifier. Handles both the "no existing selection" case
 (cursor is the anchor) and the "existing selection" case (moves the nearer end).
 `t->cursoratq1` tracks which end is the cursor across successive shift+clicks.
 
+### Tag path and Get
+
+- **When the path is applied**: The tag's left part (file/dir path) is not applied to the
+  window's file name on every commit; it is applied only when the user runs **Get** (or
+  when the file is opened via Look/plumb). So typing a path in the tag does not contract
+  it until Get is run.
+- **Get with no argument**: When the tag has a path, Get uses that path (so renaming the
+  tag then running Get loads the new path). When the tag has no path (empty left part),
+  Get re-loads the current file path. When getarg returns the command word (e.g. "Get")
+  rather than a path, `getname` promotes and uses the tag path or current file path as above.
+- **Dump/Load**: Paths are expanded with `expandhome_c()` so `~/acme.dump` works.
+- **Event path**: When Get is run via the 9P event interface (e.g. menu), `argt` is set to
+  `&w->tag` in `xfideventwrite`; when `argt` is nil in `get()`, it is set to `&w->tag` so
+  the tag is always available for parsing.
+
 ### Ruler integration
 
 `ruler.c` in `src/cmd/acme/`:
@@ -356,6 +371,7 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | `Kscrolloneup`/`Kscrollonedown` conflict with `Kshiftaltright`/`Kcmdleft` | 9term's `dat.h` defined scroll constants at `KF\|0x20` and `KF\|0x21`, which collide with `keyboard.h` values added later | Renumbered to `KF\|0x26` and `KF\|0x27`; safe because these are only sent internally via `wkeyctl(w, Kscrolloneup)`, never from the keyboard driver |
 | `cannot refer to declaration with an array type inside block` in Objective-C block | C-style stack arrays cannot be captured by blocks | Heap-allocate with `malloc`/`strdup`, `free` after use inside the block |
 | Dock menu shows app name for all windows instead of file paths | `setlabel:` was setting `[win setTitle:label]`, making window title and Dock label the same | Set `[win setTitle:bundleName]` for the title bar; store full label separately in `winreg_pending_title` for the Dock menu |
+| `Put`/`acme/put` emits `~/...` paths instead of `/Users/...` | `File.name` was used inconsistently as both display and external name | Store **both** contracted (`File.name`) and expanded (`File.ename`) forms; use `File.ename` for 9P/log/external operations and `File.name` only for UI display |
 | `sor '~ $1 *.go'` matches every file regardless of extension | `eval` in plan9port rc does not set `$*` from extra args; snippet text `~ $1 *.go` ends in `.go` and matches its own pattern | Fix `eval` in `src/cmd/rc/exec.c` to set `$*` from extra arguments as original Plan 9 rc did |
 | `while(file = `{read})` loop never terminates or errors with "null list in concatenation" | `read` resolves to macOS `/bin/read` or plan9port's external `read` binary; at EOF it exits non-zero and `` `{read} `` returns `()`, which errors on assignment | Use `while (file = `{9 read})` to force plan9port's `read`, or `for (file in `{cat})` to buffer all input first |
 | Plan9 executables not taking precedence over system tools (e.g. wrong `read` used) | `plan9.sh` is sourced early in `~/.profile`; later tools (homebrew, asdf, etc.) prepend to `PATH` and bury `$PLAN9/bin` | Source `plan9.sh` **last** in `~/.profile`, after all other PATH-modifying tool setup |
@@ -366,3 +382,5 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | Window close crashes even after `self.win = nil` in `windowWillClose:` | `rpc_clientgone`'s `__bridge_transfer` ran while AppKit's autorelease pool still held a pending release on the window | Ensure `viewRegistry_remove` + `__bridge_transfer` happen inside a `dispatch_async` block on the main thread wrapped in `@autoreleasepool`, never on the RPC thread |
 | plumber / `editinacme` can't find acme when launched from Acme.app | `bin/acme` was creating a random `$NAMESPACE` (`/tmp/ns.$USER.$$`) for every devdraw-managed window, so acme's 9P service never landed in the shared namespace | `newWindow:` in `mac-screen.m` now assigns `NAMESPACE`: cid=0 gets the shared namespace (`:0`), cid>0 gets a predictable derived namespace (`:1`, `:2`, …). `bin/acme` no longer overrides `$NAMESPACE` when `$wsysid` is set |
 | `9p stat acme` fails even though Acme.app is running | acme posted its 9P service in a random namespace, not the shared one | See above — first window always uses the shared namespace |
+| acme "Illegal instruction: 4" when typing a path like `/Users/daniel` in the tag | Infinite recursion: `wincommit` parses tag (raw path), calls `winsetname` → `filesetname` contracts name (e.g. to `~`) → `winsettag` → `winsettag1` → `wincommit` again; tag buffer still has raw path so comparison with `file->name` (`~`) fails and we loop until stack/malloc blows up | In `wincommit`, compare **contracted** parsed tag name to `w->body.file->name`; if equal, return without calling `winsetname`/`winsettag` so the cycle is broken |
+| Get after renaming tag still loads old directory | In promote path, file name was used before tag; so tag path was ignored when file had a name | In `getname`, when promote and n<=0, use **tag path first** if tag has a non-empty left part; only fall back to file->ename/file->name when tag is empty |

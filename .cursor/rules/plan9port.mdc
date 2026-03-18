@@ -140,6 +140,14 @@ The ruler daemon applies per-window directives (font, tabstop, etc.) in acme.
 - `rulerprefont(w)` is called before `textload` to set the font before the frame is filled, avoiding a re-render flash.
 - Acme's custom 64-entry LRU subfont cache (`src/cmd/acme/cache.c`) overrides libdraw's single-entry cache to prevent thrashing when variable and fixed fonts are both in use.
 
+## Acme file names (contracted vs expanded)
+
+Acme keeps two versions of a file path on `File`:
+- `File.name` / `File.nname`: **display name** (usually contracted, e.g. `~/.profile`)
+- `File.ename` / `File.nename`: **external name** (expanded, e.g. `/Users/daniel/.profile`)
+
+Use the contracted form for UI (row/window/tag). Use the expanded form for logs and 9P (`acme/log`, `acme/index`, `.../tag`) and for filesystem operations like `Put`.
+
 ## Shell environment templates
 
 Files ending in `.sh.in`, `.fish.in`, `.rc.in` in `shell/` are templates.
@@ -236,3 +244,4 @@ first in `PATH`, `read` may resolve to macOS's `/bin/read`.
 - Namespace: all daemons and terminals must share `/tmp/ns.$USER.:0`. Set `NAMESPACE` explicitly in daemon launchers.
 - When acme is already running, the `acme` wrapper script creates a fresh namespace (`/tmp/ns.$USER.$RANDOM`) to avoid socket conflicts.
 - `shell/mkfile install` uses `cmp -s src dst || cp src dst` — macOS `cp` errors if source and destination are the same file.
+- **Acme `wincommit` (tag name)**: when comparing the parsed tag name to the file name, compare the **contracted** form of the parsed name to `w->body.file->name`. Otherwise typing a full path (e.g. `/Users/daniel`) causes winsetname → filesetname (contracts to `~`) → winsettag → wincommit → parsed tag still raw → comparison fails → infinite recursion and crash.
