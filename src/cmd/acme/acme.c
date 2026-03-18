@@ -1,5 +1,7 @@
 #include <u.h>
 #include <libc.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <draw.h>
 #include <thread.h>
 #include <cursor.h>
@@ -55,6 +57,21 @@ derror(Display *d, char *errorstr)
 {
 	USED(d);
 	error(errorstr);
+}
+
+static FILE *acmelogf = NULL;
+static void
+acmelog(const char *fmt, ...)
+{
+	if(acmelogf == NULL)
+		acmelogf = fopen("/tmp/acme-shutdown.log", "a");
+	if(acmelogf){
+		va_list ap;
+		va_start(ap, fmt);
+		vfprintf(acmelogf, fmt, ap);
+		va_end(ap);
+		fflush(acmelogf);
+	}
 }
 
 void
@@ -296,6 +313,7 @@ threadmain(int argc, char *argv[])
 	threadcreate(xfidallocthread, nil, STACK);
 	threadcreate(newwindowthread, nil, STACK);
 /*	threadcreate(shutdownthread, nil, STACK); */
+	acmelog("acme: registering threadnotify, pid=%d\n", (int)getpid());
 	threadnotify(shutdown, 1);
 	recvul(cexit);
 	killprocs();
@@ -355,9 +373,13 @@ shutdown(void *v, char *msg)
 
 	USED(v);
 
+	acmelog("acme: shutdown called with msg='%s' pid=%d\n", msg, getpid());
+
 	for(i=0; ignotes[i]; i++)
-		if(strncmp(ignotes[i], msg, strlen(ignotes[i])) == 0)
+		if(strncmp(ignotes[i], msg, strlen(ignotes[i])) == 0){
+			acmelog("acme: ignoring note '%s'\n", msg);
 			return 1;
+		}
 
 	killprocs();
 	if(!dumping && strcmp(msg, "kill")!=0 && strcmp(msg, "exit")!=0 && getpid()==mainpid){

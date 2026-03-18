@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>acme</string>
+	<string>devdraw</string>
 	<key>CFBundleGetInfoString</key>
 	<string>0.1-1</string>
 	<key>CFBundleIconFile</key>

@@ -23,9 +23,10 @@ static void listenproc(void*);
 Client *client0;
 
 int trace = 0;
-static char *srvname;
+char *srvname = nil;
 static int afd;
 static char adir[40];
+int nclients = 0; // count of live server-mode clients
 
 static void
 usage(void)
@@ -50,9 +51,39 @@ threadmain(int argc, char **argv)
 		// TODO: Update usage, man page.
 		srvname = EARGF(usage());
 		break;
+	case 'p':
+		/* macOS passes -psn_X_XXXXXX to app bundles; ignore it */
+		ARGF();
+		break;
 	default:
 		usage();
 	}ARGEND
+
+	/*
+	 * When launched as a macOS app bundle (e.g. from the Dock),
+	 * no -s flag is passed. Auto-detect by checking if argv[0]
+	 * is inside a .app bundle and derive the service name from
+	 * the bundle name (e.g. "9term.app" → "devdraw.9term").
+	 */
+	if(srvname == nil && argv0 != nil){
+		char *app = strstr(argv0, ".app/Contents/MacOS");
+		if(app != nil){
+			/* walk back to find the start of "Name.app" */
+			char *p2 = app;
+			while(p2 > argv0 && *(p2-1) != '/')
+				p2--;
+			/* p2..app is the bundle name without ".app" */
+			int len = app - p2;
+			char *name = malloc(len + 9); /* "devdraw." + name + NUL */
+			if(name != nil){
+				snprint(name, len + 9, "devdraw.%.*s", len, p2);
+				/* lowercase the bundle name portion */
+				for(char *c = name + 4; *c; c++)
+					if(*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';
+				srvname = name;
+			}
+		}
+	}
 
 	memimageinit();
 	fmtinstall('H', encodefmt);
@@ -108,7 +139,9 @@ gfx_started(void)
 	if((afd = announce(addr, adir)) < 0)
 		sysfatal("announce %s: %r", addr);
 
+	fprint(2, "devdraw: listening on %s\n", addr);
 	proccreate(listenproc, nil, 0);
+	free(addr);
 }
 
 static void
@@ -132,6 +165,9 @@ listenproc(void *v)
 		c->displaydpi = 100;
 		c->rfd = fd;
 		c->wfd = fd;
+		c->clientpid = gfx_peerpid(fd);
+		nclients++;
+		fprint(2, "listenproc: new client fd=%d clientpid=%d nclients=%d\n", fd, (int)c->clientpid, nclients);
 		proccreate(serveproc, c, 0);
 	}
 }
@@ -169,12 +205,22 @@ serveproc(void *v)
 			break;
 		}
 		if(trace) fprint(2, "%ud [%d] <- %W\n", nsec()/1000000, threadid(), &m);
+		fprint(2, "serveproc: runmsg type=%d\n", m.type);
 		runmsg(c, &m);
+		fprint(2, "serveproc: runmsg done type=%d\n", m.type);
 	}
 
+	fprint(2, "serveproc: read loop exited, n=%d nclients=%d\n", n, nclients);
+	free(mbuf);
 	if(c == client0) {
+		// Legacy single-client mode: client gone means we're done.
 		rpc_shutdown();
 		threadexitsall(nil);
+	} else {
+		// Server mode: one client disconnected; close its window and free it.
+		nclients--;
+		fprint(2, "serveproc: client disconnected, nclients now %d\n", nclients);
+		rpc_clientgone(c);
 	}
 }
 
