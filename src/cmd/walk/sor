@@ -1,0 +1,13 @@
+#!/usr/local/plan9/bin/rc
+rfork e
+fn runtests {
+	file=$1; shift
+	f=$file
+	while (! ~ $#* 0 && ! eval $1 $file)
+		shift
+	if (! ~ $#* 0)
+		echo $file
+}
+while (file = `{9 read}) {
+	runtests $file $*
+}

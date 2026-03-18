@@ -1,0 +1,1 @@
+`walk` and `sor` were originally written for Plan 9 from Bell Labs by [Dan Cross](https://pub.gajendra.net/about). The [original source](https://web.archive.org/web/20170601083931/http://plan9.bell-labs.com/sources/contrib/cross/) is available.

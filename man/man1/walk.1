@@ -1,0 +1,138 @@
+.TH WALK 1
+.SH NAME
+walk, sor \- walk a file tree; filter filenames by rc expression
+.SH SYNOPSIS
+.B walk
+[
+.B -q
+] [
+.BI -d " depth"
+] [
+.I dir ...
+]
+.PP
+.B sor
+.I snippet
+[
+.I snippet ...
+]
+.SH DESCRIPTION
+.I Walk
+prints the path of every file and directory reachable from each
+.I dir
+argument, one per line, in the style of
+.IR du (1).
+If no
+.I dir
+is given,
+.B .
+is used.
+Files named
+.B .
+or
+.B ..
+are never printed.
+.PP
+The options are:
+.TP
+.BI -d " depth"
+Limit recursion to
+.I depth
+levels.
+A depth of
+.B 0
+prints nothing;
+.B 1
+prints only the immediate children of each
+.IR dir .
+.TP
+.B -q
+Quote each path using
+.IR rc (1)
+quoting rules so that the output can be safely re-read by
+.IR rc (1)
+even when filenames contain spaces or special characters.
+.PP
+.I Sor
+(select on rc) reads filenames from standard input, one per line,
+and prints each filename for which at least one
+.I snippet
+succeeds.
+Each
+.I snippet
+is an
+.IR rc (1)
+expression evaluated with the current filename available as
+.BR $f .
+A snippet succeeds when its exit status is zero.
+Multiple snippets are tried in order; the filename is printed as soon
+as the first succeeds (short-circuit OR).
+.SH EXAMPLES
+List all files under the current directory:
+.EX
+    walk
+.EE
+.PP
+List all files up to two levels deep under
+.BR /sys/src :
+.EX
+    walk -d 2 /sys/src
+.EE
+.PP
+Find all C source files under the current directory:
+.EX
+    walk | sor '~ $f *.c'
+.EE
+.PP
+Find all C source and header files:
+.EX
+    walk | sor '~ $f *.c' '~ $f *.h'
+.EE
+.PP
+Find all regular files (not directories):
+.EX
+    walk | sor 'test -f $f'
+.EE
+.PP
+Find files modified in the last day:
+.EX
+    walk | sor 'test `{find $f -maxdepth 0 -mtime -1 2>/dev/null}'
+.EE
+.PP
+Print all Go files with rc-safe quoting, then pass to another tool:
+.EX
+    walk -q | sor '~ $f *.go' | xargs grep -l 'func main'
+.EE
+.PP
+.I Walk
+and
+.I sor
+compose naturally with other Plan 9 tools:
+.EX
+    walk /usr/local/plan9/src | sor '~ $f *.c' | xargs wc -l
+.EE
+.SH SOURCE
+.B /sys/src/cmd/walk
+.SH "SEE ALSO"
+.IR du (1),
+.IR rc (1),
+.IR field (1),
+.IR grep (1)
+.SH BUGS
+.I Walk
+does not follow symbolic links.
+.PP
+.I Sor
+reads all input before processing when the input is a pipe,
+since it uses
+.IR rc (1)'s
+.B for
+statement to iterate over lines.
+This makes it unsuitable for infinite or very large input streams.
+.PP
+The
+.B -d
+flag counts directory levels, not path components;
+a depth of
+.B 1
+descends into the top-level directory but does not recurse further.
