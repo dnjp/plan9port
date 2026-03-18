@@ -290,12 +290,15 @@ execeval(void)
 {
 	char *cmdline, *s, *t;
 	int len = 0;
-	word *ap;
+	word *ap, *star;
 	if(count(runq->argv->words)<=1){
 		Xerror1("Usage: eval cmd ...");
 		return;
 	}
 	eflagok = 1;
+	/* words->next is the command string; words->next->next are the $* args */
+	star = runq->argv->words->next->next;
+	runq->argv->words->next->next = 0;
 	for(ap = runq->argv->words->next;ap;ap = ap->next)
 		len+=1+strlen(ap->word);
 	cmdline = emalloc(len);
@@ -307,6 +310,10 @@ execeval(void)
 	s[-1]='\n';
 	poplist();
 	execcmds(opencore(cmdline, len));
+	/* set $* in the new thread from the extra arguments, as Plan 9 rc did */
+	runq->local = newvar(strdup("*"), runq->local);
+	runq->local->val = star;
+	runq->local->changed = 1;
 	efree(cmdline);
 }
 union code dotcmds[14];
