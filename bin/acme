@@ -29,6 +29,11 @@ fi
 # We use fixfont as the sentinel: plan9.sh always sets it, so its absence
 # means we're running in a minimal environment (app bundle or plumber spawn).
 if [[ -z "$fixfont" ]]; then
+	# Preserve devdraw client vars across profile sourcing — the profile
+	# may reset or unset them.
+	_saved_wsysid="$wsysid"
+	_saved_ddns="$DEVDRAW_NAMESPACE"
+	_saved_ns="$NAMESPACE"
 	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
 	fshell=${fshell:-$SHELL}
 	case "$fshell" in
@@ -39,6 +44,11 @@ if [[ -z "$fixfont" ]]; then
 	if [[ ":$PATH:" != *":$PLAN9/bin:"* ]]; then
 		PATH=$PATH:$PLAN9/bin
 	fi
+	# Restore devdraw client vars if they were set before sourcing.
+	[[ -n "$_saved_wsysid" ]] && export wsysid="$_saved_wsysid"
+	[[ -n "$_saved_ddns"   ]] && export DEVDRAW_NAMESPACE="$_saved_ddns"
+	[[ -n "$_saved_ns"     ]] && export NAMESPACE="$_saved_ns"
+	unset _saved_wsysid _saved_ddns _saved_ns
 fi
 
 # Apply font and dump defaults if not already set.
@@ -56,18 +66,39 @@ ARGS+=(-a)
 ARGS+=(-F "$fixfont")
 ARGS+=(-f "$varfont")
 # load dump file if it exists
-if [[ -f "$acmedump" ]]; then
-	ARGS+=(-l "$acmedump")
-fi
+# TODO: fix this so that it only loads on the first time acme is opened
+# if [[ -f "$acmedump" ]]; then
+	# ARGS+=(-l "$acmedump")
+# fi
 
-# Handle namespace collisions: if acme is already mounted, spin up a fresh
-# namespace so the new instance does not conflict with the running one.
-if "$PLAN9/bin/9p" stat acme >/dev/null 2>&1; then
-	ns=/tmp/ns.$USER.$RANDOM
-	mkdir -p "$ns"
-	export NAMESPACE="$ns"
-else
-	rm -f "$("$PLAN9/bin/namespace" 2>/dev/null)"/acme 2>/dev/null || true
+# Handle namespace collisions when launched directly from the terminal
+# (not via devdraw/Acme.app).  When $wsysid is set, devdraw has already
+# assigned the correct $NAMESPACE for this window — use it as-is.
+if [[ -z "$wsysid" ]]; then
+	if "$PLAN9/bin/9p" stat acme >/dev/null 2>&1; then
+		# Another acme is already running in this namespace; find a free slot.
+		# Increment the display number (:0 → :1 → :2 …) for predictability.
+		base_ns="${NAMESPACE:-$("$PLAN9/bin/namespace" 2>/dev/null)}"
+		if [[ "$base_ns" =~ ^(.*:)([0-9]+)$ ]]; then
+			prefix="${BASH_REMATCH[1]}"
+			n="${BASH_REMATCH[2]}"
+			while true; do
+				n=$((n + 1))
+				ns="${prefix}${n}"
+				mkdir -p "$ns" 2>/dev/null
+				# Check if acme is already posted in this candidate namespace.
+				if ! NAMESPACE="$ns" "$PLAN9/bin/9p" stat acme >/dev/null 2>&1; then
+					break
+				fi
+			done
+		else
+			ns=/tmp/ns.$USER.$RANDOM
+			mkdir -p "$ns"
+		fi
+		export NAMESPACE="$ns"
+	else
+		rm -f "$("$PLAN9/bin/namespace" 2>/dev/null)"/acme 2>/dev/null || true
+	fi
 fi
 
 # Select the native architecture on Apple Silicon so we don't run under Rosetta.

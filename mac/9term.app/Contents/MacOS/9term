@@ -2,7 +2,7 @@
 export INSIDE_P9P=true
 export INSIDE_9TERM=true
 
-PLAN9=${PLAN9:-/usr/local/plan9}
+PLAN9="${PLAN9:-/usr/local/plan9}"
 export PLAN9
 export PATH="$PLAN9/bin:$PATH"
 
@@ -10,4 +10,4 @@ export PATH="$PLAN9/bin:$PATH"
 # display server process inherits the bundle's icon and app name.
 export DEVDRAW="$(dirname "$0")/devdraw"
 
-exec "$PLAN9/bin/9term" -l -W600x800
+exec "$PLAN9/bin/9term"

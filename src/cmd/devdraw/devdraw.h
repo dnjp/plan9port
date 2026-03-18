@@ -101,6 +101,10 @@ struct Client
 	// Only accessed/modified by the graphics thread.
 	const void*		view;
 
+	// PID of the connected client process (server mode only).
+	// Set once in listenproc via getpeereid; used to send SIGHUP on window close.
+	pid_t		clientpid;
+
 	// eventlk protects the keyboard and mouse events.
 	QLock eventlk;
 	Kbdbuf kbd;
@@ -200,6 +204,7 @@ struct DScreen
 void	gfx_abortcompose(Client*);
 void	gfx_keystroke(Client*, int);
 void	gfx_main(void);
+pid_t	gfx_peerpid(int fd);	// returns PID of process connected to unix socket fd
 void	gfx_mousetrack(Client*, int, int, int, uint);
 void	gfx_replacescreenimage(Client*, Memimage*);
 void	gfx_mouseresized(Client*);
@@ -212,6 +217,7 @@ Memimage *rpc_attach(Client*, char*, char*);
 char*	rpc_getsnarf(void);
 void	rpc_putsnarf(char*);
 void	rpc_shutdown(void);
+void	rpc_clientgone(Client*);
 void	rpc_main(void);
 
 // rpc_gfxdrawlock and rpc_gfxdrawunlock
@@ -233,4 +239,6 @@ int latin1(Rune*, int);
 int mouseswap(int);
 int parsewinsize(char*, Rectangle*, int*);
 
-extern Client *client0; // set in single-client mode
+extern Client *client0;   // set in single-client mode; nil in server mode
+extern char   *srvname;   // non-nil when running as -s server
+extern int     nclients;  // live client count in server mode
