@@ -539,7 +539,22 @@ getname(Text *t, Text *argt, Rune *arg, int narg, int isput)
 	promote = FALSE;
 	if(r == nil)
 		promote = TRUE;
-	else if(isput){
+	else if(n == 0){
+		free(r);
+		r = nil;
+		promote = TRUE;
+	}else if(narg == 0 && argt != nil){
+		/* Selection in tag is often the command word (e.g. "Get") when user middle-clicks it.
+		 * If it doesn't look like a path, use promote path (current file name or tag left part). */
+		int looks_like_path = 0;
+		for(i=0; i<n; i++)
+			if(r[i]=='/' || r[i]=='~'){ looks_like_path=1; break; }
+		if(!looks_like_path){
+			free(r);
+			r = nil;
+			promote = TRUE;
+		}
+	}else if(isput){
 		/* if are doing a Put, want to synthesize name even for non-existent file */
 		/* best guess is that file name doesn't contain a slash */
 		promote = TRUE;
@@ -557,14 +572,54 @@ getname(Text *t, Text *argt, Rune *arg, int narg, int isput)
 	if(promote){
 		n = narg;
 		if(n <= 0){
-			/* expand ~ / $HOME / $home in the file's stored name */
-			int nn = t->file->nname;
-			Rune *tmp = runemalloc(nn);
-			runemove(tmp, t->file->name, nn);
-			tmp = expandhome(tmp, &nn);
-			s = runetobyte(tmp, nn);
-			free(tmp);
-			return s;
+			/* Prefer path from tag when present (user may have renamed to a different dir). */
+			if(argt != nil && argt->file->b.nc > 0){
+				uint nc = argt->file->b.nc;
+				Rune *buf = runemalloc(nc+1);
+				bufread(&argt->file->b, 0, buf, nc);
+				buf[nc] = 0;
+				for(i=0; i<nc; i++)
+					if(buf[i]==' ' || buf[i]=='\t')
+						break;
+				if(i > 0){
+					r = runemalloc(i+1);
+					runemove(r, buf, i);
+					free(buf);
+					n = i;
+					r = expandhome(r, &n);
+					dir.r = nil;
+					dir.nr = 0;
+					if(n>0 && r[0]!='/'){
+						dir = dirname(t, nil, 0);
+						if(dir.nr==1 && dir.r[0]=='.'){
+							free(dir.r);
+							dir.r = nil;
+							dir.nr = 0;
+						}
+					}
+					if(dir.r){
+						Rune *rp = runemalloc(dir.nr+n+2);
+						runemove(rp, dir.r, dir.nr);
+						free(dir.r);
+						if(dir.nr>0 && rp[dir.nr-1]!='/')
+							rp[dir.nr++] = '/';
+						runemove(rp+dir.nr, r, n);
+						n += dir.nr;
+						free(r);
+						r = rp;
+					}
+					s = runetobyte(r, n);
+					free(r);
+					return strlen(s) > 0 ? s : (free(s), (char*)nil);
+				}
+				free(buf);
+			}
+			/* Tag empty or no path: use current file name (re-load current). */
+			if(t->file->nename > 0 && t->file->ename != nil)
+				return runetobyte(t->file->ename, t->file->nename);
+			if(t->file->nname > 0 && t->file->name != nil)
+				return runetobyte(t->file->name, t->file->nname);
+			return nil;
 		}
 		/* expand ~ / $HOME / $home before checking if path is absolute */
 		{
@@ -675,6 +730,9 @@ get(Text *et, Text *t, Text *argt, int flag1, int _0, Rune *arg, int narg)
 		return;
 	w = et->w;
 	t = &w->body;
+	/* When argt is nil (e.g. middle-click without button-1 pick, or event path), use tag for path. */
+	if(argt == nil)
+		argt = &w->tag;
 	name = getname(t, argt, arg, narg, FALSE);
 	if(name == nil){
 		warning(nil, "no file name\n");
@@ -724,8 +782,8 @@ get(Text *et, Text *t, Text *argt, int flag1, int _0, Rune *arg, int narg)
 	}
 	for(i=0; i<t->file->ntext; i++)
 		t->file->text[i]->w->dirty = dirty;
-	/* store contracted name so tag shows ~/... form */
-	winsetname_contract(w, r, n);
+	/* normalize/contract for display; File keeps expanded form too */
+	winsetname(w, r, n);
 	free(name);
 	free(r);
 	winsettag(w);
@@ -790,7 +848,7 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 	w = f->curtext->w;
 	name = runetobyte(namer, nname);
 	d = dirstat(name);
-	if(d!=nil && runeeq(namer, nname, f->name, f->nname)){
+	if(d!=nil && f->ename!=nil && runeeq(namer, nname, f->ename, f->nename)){
 		if(f->dev!=d->dev || f->qidpath!=d->qid.path || f->mtime != d->mtime)
 			checksha1(name, f, d);
 		if(f->dev!=d->dev || f->qidpath!=d->qid.path || f->mtime != d->mtime) {
@@ -852,7 +910,7 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 		warning(nil, "can't write file %s: %r\n", name);
 		goto Rescue2; // flush or close failed
 	}
-	if(runeeq(namer, nname, f->name, f->nname)){
+	if(f->ename!=nil && runeeq(namer, nname, f->ename, f->nename)){
 		if(q0!=0 || q1!=f->b.nc){
 			f->mod = TRUE;
 			w->dirty = TRUE;
@@ -1008,7 +1066,7 @@ put(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg)
 void
 dump(Text *_0, Text *_1, Text *argt, int isdump, int _2, Rune *arg, int narg)
 {
-	char *name;
+	char *name, *path;
 
 	USED(_0);
 	USED(_1);
@@ -1018,6 +1076,12 @@ dump(Text *_0, Text *_1, Text *argt, int isdump, int _2, Rune *arg, int narg)
 		name = runetobyte(arg, narg);
 	else
 		getbytearg(argt, FALSE, TRUE, &name);
+	/* Expand ~ and $HOME so Dump/Load accept paths like ~/acme.test.dump */
+	if(name != nil){
+		path = expandhome_c(name);
+		free(name);
+		name = path;
+	}
 	if(isdump)
 		rowdump(&row, name);
 	else
@@ -1263,11 +1327,11 @@ putall(Text *et, Text *_0, Text *_1, int _2, int _3, Rune *_4, int _5)
 		c = row.col[i];
 		for(j=0; j<c->nw; j++){
 			w = c->w[j];
-			if(w->isscratch || w->isdir || w->body.file->nname==0)
+			if(w->isscratch || w->isdir || w->body.file->nename==0 || w->body.file->ename==nil)
 				continue;
 			if(w->nopen[QWevent] > 0)
 				continue;
-			a = runetobyte(w->body.file->name, w->body.file->nname);
+			a = runetobyte(w->body.file->ename, w->body.file->nename);
 			e = access(a, 0);
 			if(w->body.file->mod || w->body.ncache)
 				if(e < 0)

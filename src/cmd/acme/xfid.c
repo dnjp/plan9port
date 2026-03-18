@@ -401,13 +401,13 @@ xfidread(Xfid *x)
 				&& tagr[namelen2] != '\n')
 				namelen2++;
 
-			/* convert name runes to C string and expand ~ */
-			{
+			/* authoritative expanded name from the File */
+			if(w->body.file->ename != nil && w->body.file->nename > 0)
+				ename2 = runetobyte(w->body.file->ename, w->body.file->nename);
+			else{
 				Rune *namer = tagr;
 				int nn = namelen2;
-				char *namec = runetobyte(namer, nn);
-				ename2 = expandhome_c(namec);
-				free(namec);
+				ename2 = runetobyte(namer, nn);
 			}
 
 			/* convert rest of tag to C string */
@@ -945,7 +945,8 @@ xfideventwrite(Xfid *x, Window *w)
 		switch(c){
 		case 'x':
 		case 'X':
-			execute(t, q0, q1, TRUE, nil);
+			/* Pass tag so Get etc. can read file name from tag when run via event (menu/external). */
+			execute(t, q0, q1, TRUE, &w->tag);
 			break;
 		case 'l':
 		case 'L':
@@ -1174,9 +1175,11 @@ xfidindexread(Xfid *x)
 			/* emit expanded window name so external tools see absolute paths */
 			{
 				File *wf = w->body.file;
-				char *wname = runetobyte(wf->name, wf->nname);
-				char *ename = expandhome_c(wname);
-				free(wname);
+				char *ename = nil;
+				if(wf->ename != nil && wf->nename > 0)
+					ename = runetobyte(wf->ename, wf->nename);
+				else
+					ename = runetobyte(wf->name, wf->nname);
 				n += snprint(b+n, nmax-n-1, "%s", ename);
 				free(ename);
 			}
