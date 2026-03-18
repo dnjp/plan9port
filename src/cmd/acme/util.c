@@ -283,6 +283,19 @@ runeeq(Rune *s1, uint n1, Rune *s2, uint n2)
 	return memcmp(s1, s2, n1*sizeof(Rune)) == 0;
 }
 
+/* true if s[0..n) contains "/-" (win/awd directory label format) */
+int
+runehasdirlabel(Rune *s, uint n)
+{
+	uint i;
+	if(s == nil || n < 2)
+		return FALSE;
+	for(i = 0; i < n-1; i++)
+		if(s[i] == '/' && s[i+1] == '-')
+			return TRUE;
+	return FALSE;
+}
+
 uint
 min(uint a, uint b)
 {
