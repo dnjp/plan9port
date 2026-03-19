@@ -1,0 +1,98 @@
+#!/usr/local/plan9/bin/rc
+# Guide - open the nearest project "guide" file in Acme.
+# Traverses up from the current window's file (or the given path) until it finds
+# a file named "guide", then opens it in Acme or brings focus to it if already open.
+# Run from an Acme window (e.g. "Guide" in the tag) or: Guide [path]
+
+if(~ $#PLAN9 0)
+	PLAN9=/usr/local/plan9
+path=($PLAN9/bin $path)
+
+fn usage {
+	echo 'usage: Guide [-p] [path]' >[1=2]
+	echo '  Run inside Acme with no path, or pass a path when run from shell.' >[1=2]
+	exit usage
+}
+
+# Source acme helpers when running inside Acme ($winid set by Acme).
+if(! ~ $#winid 0)
+	. $PLAN9/lib/acme.rc
+
+fn findguide {
+	# $1 = directory to start from. Emit all matching guide files upward, nearest first.
+	if(test -f $1/guide)
+		echo $1/guide
+	if(! ~ $1 /)
+		findguide `{dirname $1}
+}
+
+parentmode=0
+argpath=()
+if(~ $#* 1) {
+	if(~ $1 -p)
+		parentmode=1
+	if not
+		argpath=$1
+}
+if(~ $#* 2) {
+	if(~ $1 -p) {
+		parentmode=1
+		argpath=$2
+	}
+	if not {
+		usage
+	}
+}
+if(! ~ $#* 0 && ! ~ $#* 1 && ! ~ $#* 2) {
+	usage
+}
+if(! ~ $#argpath 0 && ~ $argpath -*) {
+	echo 'Guide: unknown option '$argpath >[1=2]
+	usage
+}
+
+# Resolve current file path: from Acme window tag or from optional argument.
+# Leave currentpath unset so $#currentpath 0 means "not set" (empty string would make $# 1).
+if(! ~ $#winid 0) {
+	# First line of tag, before |, trimmed (path may be contracted e.g. ~/foo)
+	currentpath=`{winread tag | sed -n '1p' | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$1); print $1}'}
+	currentpath=$currentpath(1)
+}
+if(~ $#currentpath 0 && ! ~ $#argpath 0)
+	currentpath=$argpath
+if(~ $#currentpath 0) {
+	# No path from tag and no argument: must be in Acme to use cwd.
+	# $#winid is 0 when unset (run from shell) or when empty.
+	if(~ $#winid 0) {
+		echo 'Guide: not running inside Acme and no path was provided.' >[1=2]
+		usage
+	}
+	# In Acme but tag has no path (e.g. new window); use cwd.
+	currentpath=`{pwd}
+	currentpath=$currentpath(1)
+}
+
+# Expand to absolute path; if that fails (e.g. new buffer), use path as-is for dirname.
+fullpath=`{realpath $currentpath >[2]/dev/null}
+if(~ $status '')
+	fullpath=$fullpath(1)
+if not
+	fullpath=$currentpath
+
+startdir=`{dirname $fullpath}
+guides=`{findguide $startdir}
+if(~ $#guides 0) {
+	echo 'Guide: no guide file found in '$startdir' or any parent' >[1=2]
+	exit 1
+}
+idx=1
+if(~ $parentmode 1)
+	idx=2
+guidepath=$guides($idx)
+if(~ $#guidepath 0) {
+	echo 'Guide: no parent guide file found above '$startdir >[1=2]
+	exit 1
+}
+
+# Open in Acme or focus existing window. plumb -d edit does both (openfile uses lookfile).
+plumb -d edit $guidepath
