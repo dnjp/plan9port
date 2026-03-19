@@ -254,6 +254,7 @@ bin/yuv
 bin/zcat
 bin/zerotrunc
 bin/zip
+!bin/Guide
 config
 dict/
 install.log
