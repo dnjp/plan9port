@@ -343,6 +343,9 @@ scrorigin(Flayer *l, int but, long p0)
 {
 	Text *t=(Text *)l->user1;
 
+	if(t->tag == Untagged)
+		return;
+
 	switch(but){
 	case 1:
 		outTsll(Torigin, t->tag, l->origin, p0);
