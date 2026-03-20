@@ -106,6 +106,9 @@ scroll(Flayer *l, int but)
 	int x, y, my, oy, h;
 	long p0;
 
+	if(l->visible==None)
+		return;
+
 	s = l->scroll;
 	x = s.min.x+FLSCROLLWID(l)/2;
 	scr = scrpos(l->scroll, l->origin, l->origin+l->f.nchars, tot);
