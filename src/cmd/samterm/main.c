@@ -530,8 +530,8 @@ flushtyping(int clearesc)
 #define	CUT	(Kcmd+'x')
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
-#define	BACK	(Kcmd+'b')
-#define	LAST	(Kcmd+'g')
+#define	BACK	0x2 // ctrl+b
+#define	LAST	0x7 // ctrl+g
 
 int
 nontypingkey(int c)
