@@ -17,7 +17,6 @@ PLAN9=${PLAN9:-/usr/local/plan9}
 
 # Sam.app launches this script before the login shell environment is loaded.
 if [[ "${INSIDE_P9P}" == "true" ]]; then
-	cd "$HOME"
 	fshell=$(finger "$(whoami)" 2>/dev/null | sed -n 's/.*Shell: //p' | sed 1q)
 	fshell=${fshell:-$SHELL}
 	case "$fshell" in
