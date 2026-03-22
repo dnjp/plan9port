@@ -2206,7 +2206,7 @@ runproc(void *argvp)
 		nincl = 0;
 		incl = nil;
 		if(win){
-			filename = smprint("%.*S", win->body.file->nname, win->body.file->name);
+			filename = smprint("%.*S", win->body.file->nename, win->body.file->ename);
 			nincl = win->nincl;
 			if(nincl > 0){
 				incl = emalloc(nincl*sizeof(Rune*));
