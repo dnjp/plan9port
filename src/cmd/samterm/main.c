@@ -25,6 +25,7 @@ char	hasunlocked = 0;
 int	maxtab = 8;
 int	chord;
 int	autoindent;
+int	spacesindent;
 
 #define chording 0	/* code here for reference but it causes deadlocks */
 
@@ -39,7 +40,7 @@ notifyf(void *a, char *msg)
 void
 threadmain(int argc, char *argv[])
 {
-	int i, got, scr, w;
+	int i, got, nclick, scr, w;
 	Text *t;
 	Rectangle r;
 	Flayer *nwhich;
@@ -109,22 +110,28 @@ threadmain(int argc, char *argv[])
 			}
 			nwhich = flwhich(mousep->xy);
 			scr = which && ptinrect(mousep->xy, which->scroll);
+			scr = which && (ptinrect(mousep->xy, which->scroll) ||
+				mousep->buttons&(8|16));
 			if(mousep->buttons)
 				flushtyping(1);
 			if(chording && chord==1 && !mousep->buttons)
 				chord = 0;
 			if(chording && chord)
 				chord |= mousep->buttons;
-			else if(mousep->buttons&1){
+			else if(mousep->buttons&(1|8)){
 				if(nwhich){
 					if(nwhich!=which)
 						current(nwhich);
 					else if(scr)
-						scroll(which, 1);
+						scroll(which, (mousep->buttons&8) ? 4 : 1);
 					else{
 						t=(Text *)which->user1;
-						if(flselect(which)){
-							outTsl(Tdclick, t->tag, which->p0);
+						nclick = flselect(which);
+						if(nclick > 0){
+							if(nclick > 1)
+								outTsl(Ttclick, t->tag, which->p0);
+							else
+								outTsl(Tdclick, t->tag, which->p0);
 							t->lock++;
 						}else if(t!=&cmd)
 							outcmd();
@@ -137,9 +144,9 @@ threadmain(int argc, char *argv[])
 					scroll(which, 2);
 				else
 					menu2hit();
-			}else if((mousep->buttons&4)){
+			}else if((mousep->buttons&(4|16))){
 				if(scr)
-					scroll(which, 3);
+					scroll(which, (mousep->buttons&16) ? 5 : 3);
 				else
 					menu3hit();
 			}
@@ -341,6 +348,9 @@ scrorigin(Flayer *l, int but, long p0)
 {
 	Text *t=(Text *)l->user1;
 
+	if(t->tag == Untagged)
+		return;
+
 	switch(but){
 	case 1:
 		outTsll(Torigin, t->tag, l->origin, p0);
@@ -378,6 +388,33 @@ raspc(Rasp *r, long p)
 	if(n)
 		return scratch[0];
 	return 0;
+}
+
+int
+getcol(Rasp *r, long p)
+{
+	int col;
+
+	for(col = 0; p > 0 && raspc(r, p-1)!='\n'; p--, col++)
+		;
+	return col;
+}
+
+long
+del(Rasp *r, long o, long p)
+{
+	int i, col, n;
+
+	if(--p < 0)
+		return o;
+	if(!spacesindent || raspc(r, p)!=' ')
+		return p;
+	col = getcol(r, p) + 1;
+	if((n = col % maxtab) == 0)
+		n = maxtab;
+	for(i = 0; p-1>=o && raspc(r, p-1)==' ' && i<n-1; --p, i++)
+		;
+	return p>=0? p : o;
 }
 
 long
@@ -497,6 +534,8 @@ flushtyping(int clearesc)
 #define	CUT	(Kcmd+'x')
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
+#define	BACK	0x2 // ctrl+b
+#define	LAST	0x7 // ctrl+g
 
 int
 nontypingkey(int c)
@@ -515,6 +554,8 @@ nontypingkey(int c)
 	case CUT:
 	case COPY:
 	case PASTE:
+	case BACK:
+	case LAST:
 		return 1;
 	}
 	return 0;
@@ -555,7 +596,14 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 				break;
 			}
 		}
-		*p++ = c;
+		if(spacesindent && c == '\t'){
+			int i, col, n;
+			col = getcol(&t->rasp, a);
+			n = maxtab - col % maxtab;
+			for(i = 0; i < n && p < buf+nelem(buf); i++)
+				*p++ = ' ';
+		} else
+			*p++ = c;
 		if(autoindent)
 		if(c == '\n'){
 			/* autoindent */
@@ -635,7 +683,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 			switch(c){
 			case '\b':
 			case 0x7F:	/* del */
-				l->p0 = a-1;
+				l->p0 = del(&t->rasp, l->origin, a);
 				break;
 			case 0x15:	/* ctrl-u */
 				l->p0 = ctlu(&t->rasp, l->origin, a);
@@ -671,6 +719,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 			}
 		}
 	}else{
+		int i;
 		if(c==ESC && typeesc>=0){
 			l->p0 = typeesc;
 			l->p1 = a;
@@ -691,6 +740,32 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		case PASTE:
 			flushtyping(0);
 			paste(t, t->front);
+			break;
+		case BACK:
+			t = &cmd;
+			for(l=t->l; l->textfn==0; l++)
+				;
+			current(l);
+			flushtyping(0);
+			a = t->rasp.nrunes;
+			flsetselect(l, a, a);
+			center(l, a);
+			break;
+		case LAST:
+			if(work == nil)
+				return;
+			if(which != work){
+				current(work);
+				return;
+			}
+			t = (Text*)work->user1;
+			l = &t->l[t->front];
+			for(i=t->front; t->nwin>1 && (i = (i+1)%NL) != t->front; )
+				if(t->l[i].textfn != 0){
+					l = &t->l[i];
+					break;
+				}
+			current(l);
 			break;
 		}
 	}
