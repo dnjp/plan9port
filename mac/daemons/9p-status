@@ -27,7 +27,13 @@ logs_tail() {
 		echo "No log dir yet: $LOG_DIR"
 		exit 1
 	fi
-	tail -f "$LOG_DIR"/*.log
+	p="$LOG_DIR/*.log"
+	echo $p
+
+	for file in "$LOG_DIR"/*.log; do
+		tail -f "$file" &
+	done
+	wait
 }
 
 case "${1:-}" in
