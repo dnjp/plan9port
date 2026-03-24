@@ -1,0 +1,71 @@
+#!/usr/local/plan9/bin/rc
+
+path=($PLAN9/bin $path)
+
+. $PLAN9/lib/acme.rc
+
+srcfile=`{ echo $samfile | sed 's/\+git//g' }
+if (~ $srcfile */guide)
+	srcfile=`{ echo $srcfile | sed 's/\/guide//g' }
+
+dstname=$srcfile^'+diff'
+dstwinid=()
+ifs='
+' 9p read acme/index | while (index = `{9 read}) {
+	indexname=`{echo $index | awk '{print $6}'}
+	if(~ $indexname $dstname){
+		dstwinid=`{echo $index | awk '{print $1}'}
+	}
+}
+
+startc=()
+endc=()
+while(line=`{9 read}) {
+	if (! ~ $#line 0) {
+		commit=`{echo $line | awk '{print $1}'}
+		if (~ $#startc 0)
+			startc=$commit
+		if not
+			endc=$commit
+	}
+}
+
+gitcmd=()
+if (~ $#startc 0 && ~ $#endc 0) {
+	gitcmd='diff'
+}
+if not {
+	startd=`{ git show -s --format=%ct $startc }
+	endd=`{ git show -s --format=%ct $endc }
+	if (~ $startd -gt $endd) {
+		# swap
+		tmpc=$endc
+		endc=$startc
+		startc=$tmpc
+
+		tmpd=$endd
+		endd=$startd
+		startd=$tmpd
+	}
+	gitcmd='diff '^$startc^'..'^$endc
+}
+
+if (~ $#dstwinid 0) {
+	newwindow
+	winname $dstname
+}
+if not {
+	winid=$dstwinid
+	# reset the contents of the window
+	echo -n ',' | winwrite addr
+	echo -n '' | winwrite data
+}
+
+cmd='git '^$gitcmd^' '^$srcfile
+eval $cmd | winwrite body
+winctl clean
+
+# set dot to beginning of window
+echo -n '#0' | winwrite addr
+echo -n 'dot=addr' | winwrite ctl
+echo -n 'show' | winwrite ctl

@@ -1,0 +1,43 @@
+#!/usr/local/plan9/bin/rc
+
+. $PLAN9/lib/acme.rc
+
+file=$samfile
+if (~ $#* 1)
+	file=$1
+if (test -d $file)
+	name=$name^'/'
+
+name=$file^'+git'
+
+if(~ $samfile */guide)
+	file=`{dirname $samfile}
+
+openwinid=()
+ifs='
+' 9p read acme/index | while (index = `{9 read}) {
+	indexname=`{echo $index | awk '{print $6}'}
+	if(~ $indexname $name){
+		openwinid=`{echo $index | awk '{print $1}'}
+	}
+}
+
+if (~ $#openwinid 0) {
+	newwindow
+	winname $name
+}
+if not {
+	winid=$openwinid
+	# reset the contents of the window
+	echo -n ',' | winwrite addr
+	echo -n '' | winwrite data
+	winctl clean
+}
+
+git log --oneline $* -- $file | winwrite body
+winctl clean
+
+# set dot to beginning of window
+echo -n '#0' | winwrite addr
+echo -n 'dot=addr' | winwrite ctl
+echo -n 'show' | winwrite ctl
