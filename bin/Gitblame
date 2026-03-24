@@ -1,0 +1,8 @@
+#!/usr/local/plan9/bin/rc
+
+file=$samfile
+if (~ $#* 1)
+	file=$1
+
+name=$file^'+blame'
+git blame --date='short' $file | plumb -i -d edit -a 'action=showdata filename='^$name
