@@ -1,0 +1,110 @@
+#!/bin/sh
+# Set macOS desktop background to Rio's background color (#777777).
+#
+# This script:
+#   1. Generates a small solid-color PNG in a persistent location.
+#   2. Tells System Events to set that PNG as the wallpaper for each desktop.
+#
+# On first run, macOS may prompt for "Automation" permission for osascript/System Events.
+
+set -eu
+
+COLOR_HEX="#777777"
+
+# Keep the generated wallpaper around; the file path must still exist after the script exits.
+APP_SUPPORT_DIR="${HOME}/Library/Application Support/plan9port"
+WALLPAPER_PATH="${APP_SUPPORT_DIR}/${COLOR_HEX#\#}.png"
+
+mkdir -p "$APP_SUPPORT_DIR"
+
+if [ ! -f "$WALLPAPER_PATH" ]; then
+	# Minimal PNG writer using only Python's standard library.
+	# Generates a 1x1 truecolor RGB PNG using zlib-compressed scanline data.
+	PYBIN="$(command -v python3 2>/dev/null || true)"
+	if [ -z "$PYBIN" ]; then
+		PYBIN="$(command -v python 2>/dev/null || true)"
+	fi
+	RUBYBIN="$(command -v ruby 2>/dev/null || true)"
+
+	if [ -n "$PYBIN" ]; then
+		"$PYBIN" - "$WALLPAPER_PATH" "$COLOR_HEX" <<'PY'
+import sys, binascii, struct, zlib
+
+path = sys.argv[1]
+hexcolor = sys.argv[2].lstrip('#')
+
+if len(hexcolor) != 6:
+    raise SystemExit(f"invalid hex color: {sys.argv[2]}")
+
+r = int(hexcolor[0:2], 16)
+g = int(hexcolor[2:4], 16)
+b = int(hexcolor[4:6], 16)
+
+sig = b'\x89PNG\r\n\x1a\n'
+
+# IHDR: width, height, bit depth, color type (2=truecolor), compression, filter, interlace
+ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+
+# PNG scanline: filter byte (0) + RGB
+raw = b'\x00' + bytes([r, g, b])
+idat_data = zlib.compress(raw)
+
+def chunk(tag, data):
+    crc = binascii.crc32(tag + data) & 0xffffffff
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+png = sig
+png += chunk(b'IHDR', ihdr)
+png += chunk(b'IDAT', idat_data)
+png += chunk(b'IEND', b'')
+
+with open(path, 'wb') as f:
+    f.write(png)
+PY
+	elif [ -n "$RUBYBIN" ]; then
+		"$RUBYBIN" - "$WALLPAPER_PATH" "$COLOR_HEX" <<'RB'
+require 'zlib'
+
+path = ARGV[0]
+hexcolor = ARGV[1].sub(/^#/, '')
+raise "invalid hex color: #{ARGV[1]}" unless hexcolor.length == 6
+
+r = hexcolor[0,2].to_i(16)
+g = hexcolor[2,2].to_i(16)
+b = hexcolor[4,2].to_i(16)
+
+sig = "\x89PNG\r\n\x1a\n".b
+
+ihdr = [1, 1, 8, 2, 0, 0, 0].pack("N N C C C C C")
+raw = [0, r, g, b].pack("C4")
+idat_data = Zlib::Deflate.deflate(raw)
+
+def chunk(tag, data)
+  crc = Zlib.crc32(tag + data) & 0xffffffff
+  [data.bytesize, tag, data, crc].pack("N a4 a* N")
+end
+
+png = sig.dup
+png << chunk("IHDR", ihdr)
+png << chunk("IDAT", idat_data)
+png << chunk("IEND", "".b)
+
+File.binwrite(path, png)
+RB
+	else
+		echo "error: python3/python or ruby not found (needed to generate the wallpaper PNG)" >&2
+		exit 1
+	fi
+fi
+
+# Apply as wallpaper for each desktop.
+osascript >/dev/null <<OSA
+tell application "System Events"
+	tell every desktop to set picture to POSIX file "${WALLPAPER_PATH}"
+end tell
+OSA
+
+# Nudge the Dock to refresh UI state (harmless if it fails).
+killall Dock >/dev/null 2>&1 || true
+
+echo "Desktop wallpaper set to ${WALLPAPER_PATH}"
