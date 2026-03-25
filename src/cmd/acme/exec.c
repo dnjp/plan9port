@@ -846,6 +846,8 @@ putfile(File *f, int q0, int q1, Rune *namer, int nname)
 	DigestState *h;
 
 	w = f->curtext->w;
+	if(namer != nil && nname > 0)
+		namer = expandhome(namer, &nname);
 	name = runetobyte(namer, nname);
 	d = dirstat(name);
 	if(d!=nil && f->ename!=nil && runeeq(namer, nname, f->ename, f->nename)){
