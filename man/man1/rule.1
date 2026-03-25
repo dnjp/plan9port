@@ -43,7 +43,7 @@ reads the complete raw request from standard input
 line per field) and forwards it verbatim to the daemon.
 This form is useful in scripts that construct the full request themselves:
 .EX
-	printf 'query=/home/user/src/main.go\nclient=acme\nevent=open\nid=1\n' | rule
+	printf 'query=/home/user/src/main.go\\nclient=acme\\nevent=open\\nid=1\\n' | rule
 .EE
 .PP
 The options are:

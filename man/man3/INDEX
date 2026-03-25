@@ -960,7 +960,6 @@ plumbunmount plumb.3
 plumbunpack plumb.3
 plumbunpackattr plumb.3
 plumbunpackpartial plumb.3
-ruler ruler.3
 post9pservice post9pservice.3
 postnote postnote.3
 DSAprimes prime.3
@@ -1075,6 +1074,7 @@ rsaprivfree rsa.3
 rsaprivtopub rsa.3
 rsapuballoc rsa.3
 rsapubfree rsa.3
+ruler ruler.3
 chartorune rune.3
 fullrune rune.3
 rune rune.3

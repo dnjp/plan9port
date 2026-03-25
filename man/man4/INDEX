@@ -12,8 +12,8 @@ fossil fossil.4
 import import.4
 mntgen mntgen.4
 plumber plumber.4
-ruler ruler.4
 ramfs ramfs.4
+ruler ruler.4
 smugfs smugfs.4
 9fs srv.4
 srv srv.4

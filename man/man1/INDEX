@@ -14,6 +14,7 @@ acidtypes acid.1
 acme acme.1
 awd acme.1
 win acme.1
+acmeaddr acmeaddr.1
 acme.rc acmeevent.1
 acmeevent acmeevent.1
 ascii ascii.1
@@ -58,9 +59,11 @@ diff diff.1
 doctype doctype.1
 echo echo.1
 ed ed.1
+editinacme editinacme.1
 eqn eqn.1
 factor factor.1
 primes factor.1
+field field.1
 fmt fmt.1
 htmlfmt fmt.1
 fortune fortune.1
@@ -71,6 +74,8 @@ codereview git.1
 cvs git.1
 git git.1
 hg git.1
+Gitlink gitlink.1
+gitlink gitlink.1
 grap grap.1
 graph graph.1
 g grep.1
@@ -174,7 +179,6 @@ whatis rc.1
 readcons readcons.1
 resample resample.1
 rio rio.1
-rulerquery rulerquery.1
 rm rm.1
 asn12dsa rsa.1
 asn12rsa rsa.1
@@ -188,6 +192,7 @@ rsa2ssh rsa.1
 rsa2x509 rsa.1
 rsafill rsa.1
 rsagen rsa.1
+rule rule.1
 B sam.1
 E sam.1
 sam sam.1
@@ -206,6 +211,7 @@ sftpcache sftpcache.1
 sleep sleep.1
 snarfer snarfer.1
 soelim soelim.1
+sor sor.1
 sort sort.1
 spell spell.1
 sprog spell.1
@@ -241,6 +247,8 @@ copy venti.1
 read venti.1
 venti venti.1
 write venti.1
+sor walk.1
+walk walk.1
 wc wc.1
 web web.1
 wmail web.1

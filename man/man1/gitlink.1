@@ -1,8 +1,8 @@
 .TH GITLINK 1
 .SH NAME
-gitlink \- print a web URL for a file or directory in a Git repository
+Gitlink \- print a web URL for a file or directory in a Git repository
 .SH SYNOPSIS
-.B gitlink
+.B Gitlink
 [
 .I file
 [
@@ -30,14 +30,14 @@ The URL points to the file or directory at the current branch,
 or at the commit hash if the repository is in detached HEAD state.
 .SS "Running from Acme"
 With no arguments,
-.I gitlink
+.I Gitlink
 reads the current window's path from its tag
 and the selection from
 .MR acmeaddr 1 .
 .PP
 If the window's path is a
 .IR directory ,
-.I gitlink
+.I Gitlink
 produces a URL for the directory itself.
 If text is selected in the window,
 the first non-empty line of the selection is taken as the name
@@ -47,7 +47,7 @@ No line numbers are ever added for directory windows.
 .PP
 If the window's path is a
 .IR file ,
-.I gitlink
+.I Gitlink
 produces a URL for that file.
 If text is selected, the URL includes a line range fragment
 corresponding to the selected lines.
@@ -70,7 +70,7 @@ for a range.
 When invoked with a
 .I file
 argument,
-.I gitlink
+.I Gitlink
 prints the URL for that file.
 Relative paths and paths containing
 .B ..
@@ -89,20 +89,20 @@ to
 Print the URL for a file on the current branch:
 .IP
 .EX
-% gitlink src/cmd/acme/acme.c
+% Gitlink src/cmd/acme/acme.c
 https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c
 .EE
 .PP
 Print the URL for lines 10 through 20 of a file:
 .IP
 .EX
-% gitlink src/cmd/acme/acme.c 10 20
+% Gitlink src/cmd/acme/acme.c 10 20
 https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c#L10-L20
 .EE
 .PP
 From an Acme window showing a source file with lines 42\(en48 selected,
 executing
-.B gitlink
+.B Gitlink
 from the tag prints:
 .IP
 .EX
@@ -112,14 +112,14 @@ https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c#L42-L48
 From an Acme directory window with
 .B acme.c
 selected, executing
-.B gitlink
+.B Gitlink
 from the tag prints:
 .IP
 .EX
 https://github.com/owner/repo/blob/main/src/cmd/acme/acme.c
 .EE
 .SH SOURCE
-.B \*9/bin/gitlink
+.B \*9/bin/Gitlink
 .SH SEE ALSO
 .MR acme 1 ,
 .MR acmeaddr 1 ,
