@@ -537,10 +537,17 @@ contracthome(Rune *name, int n, int *outn)
 		free(htmp);
 		if(match){
 			int rest = n - homelen; /* 0 if exact match, else includes leading / */
+			if(rest == 0){
+				/* Treat the directory $HOME as ~/ (not ~) for readability. */
+				Rune *out = runemalloc(2);
+				out[0] = '~';
+				out[1] = '/';
+				*outn = 2;
+				return out;
+			}
 			Rune *out = runemalloc(1 + rest + 1);
 			out[0] = '~';
-			if(rest > 0)
-				runemove(out+1, name+homelen, rest);
+			runemove(out+1, name+homelen, rest); /* rest includes the leading '/' */
 			*outn = 1 + rest;
 			return out;
 		}

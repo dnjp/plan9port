@@ -495,6 +495,7 @@ void
 winsettag1(Window *w)
 {
 	int i, j, k, n, bar, dirty, resize, namelen;
+	int tagtyping;
 	Rune *new, *old, *r;
 	uint q0, q1;
 	static Rune Ldelsnarf[] = { ' ', 'D', 'e', 'l', ' ',
@@ -507,7 +508,8 @@ winsettag1(Window *w)
 	static Rune Lpipe[] = { ' ', '|', 0 };
 
 	/* there are races that get us here with stuff in the tag cache, so we take extra care to sync it */
-	if(w->tag.ncache!=0 || w->tag.file->mod)
+	tagtyping = (w->tag.ncache!=0 || w->tag.file->mod);
+	if(tagtyping)
 		wincommit(w, &w->tag);	/* check file name; also guarantees we can modify tag contents */
 	old = parsetag(w, 0, &i);
 	/* Only replace the tag left part with file->name when the tag shows the same path
@@ -538,7 +540,7 @@ winsettag1(Window *w)
 	 * (path/-sysname from awd/label), so ctl "name" updates from win take effect.
 	 * Otherwise preserve the tag's left part so we don't overwrite user typing. */
 	if(w->body.file->nname != 0 && w->body.file->name != nil){
-		int tag_matches = (namelen == 0) ||
+		int tag_matches = ((namelen == 0) && !tagtyping) ||
 			(runeeq(old, namelen, w->body.file->name, w->body.file->nname) == TRUE) ||
 			(w->body.file->nename > 0 && w->body.file->ename != nil &&
 			 runeeq(old, namelen, w->body.file->ename, w->body.file->nename) == TRUE);
