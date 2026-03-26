@@ -148,6 +148,8 @@ Acme keeps two versions of a file path on `File`:
 
 Use the contracted form for UI (row/window/tag). Use the expanded form for logs and 9P (`acme/log`, `acme/index`, `.../tag`) and for filesystem operations like `Put`.
 
+For `Put`/edit file creation, `putfile()` expands `~`/`$HOME` before calling OS `create()`/`open()`, so contracted paths do not fail.
+
 ## Shell environment templates
 
 Files ending in `.sh.in`, `.fish.in`, `.rc.in` in `shell/` are templates.
