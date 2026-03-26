@@ -34,14 +34,34 @@ export NAMESPACE="/tmp/ns.${USER}.:0"
 mkdir -p "$NAMESPACE"
 chmod 0700 "$NAMESPACE"
 
+# Optional dependency: wait for plumber socket before launching.
+# Used by daemons that expect plumbing/rules to be available at startup.
+if [[ "${P9P_REQUIRE_PLUMB:-0}" == "1" ]]; then
+	for i in {1..30}; do
+		if [[ -S "$NAMESPACE/plumb" ]]; then
+			break
+		fi
+		sleep 1
+	done
+	if [[ ! -S "$NAMESPACE/plumb" ]]; then
+		notify "plan9port: plumber not ready" \
+			"Expected $NAMESPACE/plumb before starting $(basename "${1:-daemon}")."
+		exit 1
+	fi
+fi
+
 # Determine the 9p socket name for this daemon.
 if [[ $# -ge 1 ]]; then
 	bin=$(basename "$1")
-	case "$bin" in
-		fontsrv)  svc=font  ;;
-		plumber)  svc=plumb ;;
-		*)        svc=$bin  ;;
-	esac
+	if [[ -n "${P9P_SERVICE_NAME:-}" ]]; then
+		svc="$P9P_SERVICE_NAME"
+	else
+		case "$bin" in
+			fontsrv)  svc=font  ;;
+			plumber)  svc=plumb ;;
+			*)        svc=$bin  ;;
+		esac
+	fi
 
 	# Kill any existing instance so we can bind the socket cleanly.
 	pkill -x "$bin" 2>/dev/null || true

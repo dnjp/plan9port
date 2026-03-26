@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.plan9port.mailfs.@MAIL_TAG@</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@DAEMONDIR@/run-with-env.sh</string>
+    <string>@PLAN9@/bin/mailfs</string>
+    <string>-s</string>
+    <string>@MAIL_SRVNAME@</string>
+    <string>-t</string>
+    <string>-u</string>
+    <string>@MAIL_USER@</string>
+    <string>@MAIL_SERVER@</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>P9P_SERVICE_NAME</key>
+    <string>@MAIL_SRVNAME@</string>
+    <key>P9P_REQUIRE_PLUMB</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>StandardOutPath</key>
+  <string>@HOME@/.local/var/log/plan9port/mailfs.@MAIL_TAG@.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>@HOME@/.local/var/log/plan9port/mailfs.@MAIL_TAG@.err.log</string>
+</dict>
+</plist>

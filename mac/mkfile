@@ -5,12 +5,15 @@ LOG_DIR=$HOME/.local/var/log/plan9port
 # Absolute path to this daemons/ directory (scripts referenced directly from plists).
 DAEMONDIR=`pwd`/daemons
 
-DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler
+DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler com.plan9port.factotum
 
 all:V: install
 
 # Install .app bundles and daemons.
-install:V: apps daemons
+install:V: apps daemons deps
+
+deps:V:
+	brew bundle install
 
 # Build devdraw from source (must be done before updating app bundles).
 build-devdraw:V:
@@ -86,6 +89,43 @@ status:V:
 # Tail all plan9port daemon logs.
 logs:V:
 	sh daemons/9p-status tail
+
+# Install/load a per-account mailfs LaunchAgent from template.
+# Not included in DAEMONS by default (fresh clones have no account config).
+#
+# Usage:
+#   mk mailfs-daemon MAIL_TAG=posteo MAIL_USER=you@posteo.net MAIL_SERVER=posteo.de
+# Optional:
+#   MAIL_SRVNAME=mail.posteo   # 9p service/socket name (default: mail)
+mailfs-daemon:V:
+	mkdir -p $LOG_DIR $LAUNCH_AGENTS
+	if test -z "$MAIL_TAG" || test -z "$MAIL_USER" || test -z "$MAIL_SERVER"; then \
+		echo "usage: mk mailfs-daemon MAIL_TAG=tag MAIL_USER=user@domain MAIL_SERVER=imap.host [MAIL_SRVNAME=mail]"; \
+		exit 1; \
+	fi
+	if test -z "$MAIL_SRVNAME"; then MAIL_SRVNAME=mail; fi
+	sed \
+		-e 's|@HOME@|'$HOME'|g' \
+		-e 's|@PLAN9@|'$PLAN9'|g' \
+		-e 's|@DAEMONDIR@|'$DAEMONDIR'|g' \
+		-e 's|@MAIL_TAG@|'$MAIL_TAG'|g' \
+		-e 's|@MAIL_USER@|'$MAIL_USER'|g' \
+		-e 's|@MAIL_SERVER@|'$MAIL_SERVER'|g' \
+		-e 's|@MAIL_SRVNAME@|'$MAIL_SRVNAME'|g' \
+		daemons/com.plan9port.mailfs.plist.template > $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist
+	launchctl bootout gui/`id -u` $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist 2>/dev/null || true
+	launchctl bootstrap gui/`id -u` $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist
+	echo installed+loaded $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist
+
+mailfs-daemon-unload:V:
+	if test -z "$MAIL_TAG"; then \
+		echo "usage: mk mailfs-daemon-unload MAIL_TAG=tag"; \
+		exit 1; \
+	fi
+	launchctl bootout gui/`id -u` $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist 2>/dev/null || true
+	echo unloaded com.plan9port.mailfs.$MAIL_TAG
+
+mailfs-daemon-reload:V: mailfs-daemon-unload mailfs-daemon
 
 # Register Plumb.app as the default handler for text and source-code file types.
 #

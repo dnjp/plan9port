@@ -162,6 +162,35 @@ it appends `bundleID<TAB>file` to that path and touches `<path>.done`. The test
 runner in `tests/plumb/run-tests` uses this to verify routing without opening
 actual apps.
 
+## Mail setup (`~/mail`) with upas
+
+Personal mail configuration can live outside `$PLAN9` (for example `~/mail`)
+while still using upas binaries from plan9port.
+
+Recommended pattern:
+
+- Keep personal `rewrite`, `lib/qmail`, and `lib/remotemail` under `~/mail`.
+- Prefer **environment overrides** (implemented in `src/cmd/upas/common/config.c`):
+  set `UPASLIB` to `~/mail/lib` and `MAILROOT` to `~/mail` before running
+  `marshal`, `send`, or `runq` so the stock tree under `$PLAN9/mail/lib` stays
+  untouched and git-clean. A generated snippet (e.g. `~/mail/upas-mail.rc`) is
+  convenient once **`mk install` has been run** for `src/cmd/upas` after pulling.
+- Alternative: symlink those three paths under `$PLAN9/mail/lib` into `~/mail`
+  — simple but **dirties** the plan9port working tree (files are tracked).
+- Keep queue path consistent between `qer` and manual `runq` commands.
+  If `qmail` enqueues to `~/mail/queue`, drain that same queue and pass your
+  `~/mail/lib/remotemail` to `runq` (or source `upas-mail.rc` and use paths
+  under `MAILROOT`).
+
+### upas delivery nuances
+
+- `upas/marshal` success means "accepted for send pipeline", not necessarily
+  final SMTP delivery.
+- `qmail` typically starts `runq` in background; queue files can appear only
+  briefly on successful delivery.
+- `runq` retries are backoff-driven by `E.*` file mtimes.
+  Use `runq -E` to force retry ignoring error-file age checks.
+
 ### `Plumb.app` and `bin/macedit`
 
 `Plumb.app` is the macOS default handler for files double-clicked in Finder. Its
@@ -387,3 +416,9 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | Get after renaming tag still loads old directory | In promote path, file name was used before tag; so tag path was ignored when file had a name | In `getname`, when promote and n<=0, use **tag path first** if tag has a non-empty left part; only fall back to file->ename/file->name when tag is empty |
 | `win` in acme: tag doesn't update when shell runs `awd` (e.g. on `cd` via p9p-session) | `winsettag1` preserves the tag's left part when it doesn't match `file->name` (to avoid overwriting user typing). After a ctl "name" write from win/awd, the tag still showed the previous path, so we preserved that instead of the new one | When both the current tag and `file->name` look like win directory labels (path/-sysname), treat as awd update and use `file->name` in the tag. Added `runehasdirlabel()` (true if string contains "/-") and use it in `winsettag1` so ctl "name" updates from win take effect |
 | `duplicate symbol` linking `upas/fs` or `upas/send` on macOS | Plan 9's linker often merges tentative definitions; LLVM `ld` rejects duplicate globals | `upas/fs`: `extern` for `msgallocd`/`msgfreed` in `dat.h`, single `debug` def (e.g. in `fs.c`); `upas/send`: `received` is defined in `smtp/rfc822.tab.c` — add `extern int received` to `smtp.h`, remove `int received` from `send/message.c` |
+| `mailfs` LaunchAgent starts but clients can't see `mail` service | Wrapper inferred socket name from binary (`mailfs`) instead of 9p service name (`mail` by default or `-s` value), and daemon raced plumber startup | In `mac/daemons/run-with-env.sh`, set `P9P_SERVICE_NAME` for non-default service sockets and `P9P_REQUIRE_PLUMB=1` to wait for plumber socket; use account-specific plist template `mac/daemons/com.plan9port.mailfs.plist.template` |
+| `marshal` / `upas/send` "succeed" but mail never arrives; queue `E.*` shows failures to `mx*.domain:587` | On plan9port, `mxdial` MX-looked up the recipient domain even for `tcp!host!587`, so it connected to MX hosts that do not accept submission | Patched `mxdial.c`: for port **587**, dial `stunnel` to the **named host** only (skip `callmx`). Re-run `upas/runq` after installing the new `upas/smtp` |
+| `upas/send` appears to work but manual `runq` drains nothing | Queue path mismatch: `qmail` enqueues to `~/mail/queue` while operator drains `$PLAN9/mail/queue` | Ensure `runq` root matches `qer` root configured in `~/mail/lib/qmail` |
+| Posteo rejects send: `554 5.1.8 ... Sender address rejected: Domain not found` | Envelope sender defaults to local login/host form (e.g. `daniel@MacBookAir.lan`) | In `~/mail/lib/remotemail`, normalize non-`@` sender to the account email before invoking `upas/smtp` |
+| `runq` executes `remotemail` but exits immediately with status `1` | rc syntax bug in script (`if not(~...)`) | Use valid rc conditional form `if(! ~ $sender *@*){ ... }` and inspect `E.*` files for script errors |
+| Sending still uses stock `$PLAN9/mail` `rewrite` / paths | `UPASLIB` and `MAILROOT` unset | Export `UPASLIB=$HOME/mail/lib` and `MAILROOT=$HOME/mail` before `marshal`/`send`/`runq` (e.g. source `~/mail/upas-mail.rc` from `mk env`); requires upas built from a tree with `getenv` overrides in `src/cmd/upas/common/config.c` |

@@ -244,6 +244,12 @@ first in `PATH`, `read` may resolve to macOS's `/bin/read`.
 - `9p stat acme` is the reliable signal that acme's 9P server is up.
 - `plumb/edit` existing in `9p ls plumb` does NOT mean acme is running — it's a static port declaration.
 - Namespace: all daemons and terminals must share `/tmp/ns.$USER.:0`. Set `NAMESPACE` explicitly in daemon launchers.
+- LaunchAgents started via `mac/daemons/run-with-env.sh` can require plumber with `P9P_REQUIRE_PLUMB=1`; use this for `mailfs` daemons so they start after plumbing is available.
+- For daemons whose 9P socket name differs from the binary name (e.g. `mailfs -s mail`), set `P9P_SERVICE_NAME` so health checks/cleanup target the correct socket.
+- Acme Mail service names must match `mailfs` service names: if daemon/service is `mail.posteo`, start with `o.Mail -n mail.posteo`.
+- For personal mail setups, keep `qer` and `runq` queue roots identical (for example both `~/mail/queue`), or manual drain commands will appear to do nothing.
+- Personal upas config under `~/mail` without touching tracked `$PLAN9/mail/lib`: set `UPASLIB=$HOME/mail/lib` and `MAILROOT=$HOME/mail` (see `upasconfig()` in `src/cmd/upas/common/config.c`). Symlinking `rewrite`/`qmail`/`remotemail` into `$PLAN9/mail/lib` works but modifies git-tracked paths.
+- `upas/marshal` success only means the message entered the send pipeline; inspect queue `E.*` files and/or run `upas/runq -E ...` to force retries when debugging.
 - When acme is already running, the `acme` wrapper script creates a fresh namespace (`/tmp/ns.$USER.$RANDOM`) to avoid socket conflicts.
 - `shell/mkfile install` uses `cmp -s src dst || cp src dst` — macOS `cp` errors if source and destination are the same file.
 - **Acme `wincommit` (tag name)**: when comparing the parsed tag name to the file name, compare the **contracted** form of the parsed name to `w->body.file->name`. Otherwise typing a full path (e.g. `/Users/daniel`) causes winsetname → filesetname (contracts to `~`) → winsettag → wincommit → parsed tag still raw → comparison fails → infinite recursion and crash.
