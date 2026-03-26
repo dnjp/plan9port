@@ -10,7 +10,6 @@ bin/9import
 bin/9p
 bin/9pfuse
 bin/9pserve
-bin/Mail
 bin/Netfiles
 bin/acid
 bin/acidtypes
@@ -324,3 +323,4 @@ bin/upas/smtp
 bin/upas/smtpd
 bin/upas/unvf
 bin/upas/vf
+bin/Mail.bin

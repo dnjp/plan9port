@@ -246,7 +246,10 @@ first in `PATH`, `read` may resolve to macOS's `/bin/read`.
 - Namespace: all daemons and terminals must share `/tmp/ns.$USER.:0`. Set `NAMESPACE` explicitly in daemon launchers.
 - LaunchAgents started via `mac/daemons/run-with-env.sh` can require plumber with `P9P_REQUIRE_PLUMB=1`; use this for `mailfs` daemons so they start after plumbing is available.
 - For daemons whose 9P socket name differs from the binary name (e.g. `mailfs -s mail`), set `P9P_SERVICE_NAME` so health checks/cleanup target the correct socket.
-- Acme Mail service names must match `mailfs` service names: if daemon/service is `mail.posteo`, start with `o.Mail -n mail.posteo`.
+- Acme Mail is invoked via the `bin/mail` wrapper (also accessible as `Mail` on case-insensitive macOS). The actual binary is `Mail.bin` (`src/cmd/acme/mail/mkfile` sets `TARG=Mail.bin`). The wrapper only exports `MAIL_SRVNAME` (from `-n <srvname>`, or `mail` as the default when no `-n` is given) — it has no knowledge of `~/mail`. `~/mail/pipefrom` maps `MAIL_SRVNAME` → account via `~/mail/accounts` and injects the correct `From:` header.
+- `~/mail/accounts` uses blank-line-delimited blocks with keys: `name`, `display`, `account`, `imap`, `smtp`, `srv`. `display` is the human name used in `From:`.
+- `~/mail/headers` is kept **empty**. `From:` injection is handled entirely by `~/mail/pipefrom` using awk (to avoid rc word-splitting on display names with spaces). `pipefrom` also falls back to `$replymsg` path for replies when `MAIL_ACCOUNT` is not set.
+- Acme Mail service names must match `mailfs` service names: if daemon/service is `mail.posteo`, start with `Mail -n mail.posteo`.
 - For personal mail setups, keep `qer` and `runq` queue roots identical (for example both `~/mail/queue`), or manual drain commands will appear to do nothing.
 - Personal upas config under `~/mail` without touching tracked `$PLAN9/mail/lib`: set `UPASLIB=$HOME/mail/lib` and `MAILROOT=$HOME/mail` (see `upasconfig()` in `src/cmd/upas/common/config.c`). Symlinking `rewrite`/`qmail`/`remotemail` into `$PLAN9/mail/lib` works but modifies git-tracked paths.
 - `upas/marshal` success only means the message entered the send pipeline; inspect queue `E.*` files and/or run `upas/runq -E ...` to force retries when debugging.

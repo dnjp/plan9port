@@ -182,6 +182,54 @@ Recommended pattern:
   `~/mail/lib/remotemail` to `runq` (or source `upas-mail.rc` and use paths
   under `MAILROOT`).
 
+### Multi-account From: header injection
+
+Acme Mail is split into a generic wrapper and a binary, following the same
+`bin/acme` → `acme.bin` pattern:
+
+- **`bin/mail`** (bash wrapper; also `bin/Mail` on case-insensitive macOS):
+  Parses the `-n <srvname>` argument (or defaults to `mail` when absent),
+  exports `MAIL_SRVNAME=<srvname>`, then execs `Mail.bin`. It has **no
+  knowledge of `~/mail`** — it only propagates the service name, which is a
+  standard plan9port concept.
+
+- **`Mail.bin`** (compiled binary; `src/cmd/acme/mail/mkfile` has `TARG=Mail.bin`):
+  After modifying mail source, run `mk install` in `src/cmd/acme/mail/`.
+
+**`~/mail/pipefrom`** does all the user-config-specific work. It resolves the
+sending account via a priority chain:
+
+1. `$MAIL_ACCOUNT` — manual override (highest priority).
+2. `$MAIL_SRVNAME` — looks up `srv=<name>` in `~/mail/accounts` to get the
+   account email.
+3. `$replymsg` path — `marshal` sets this for replies; the second-to-last path
+   component is the mailfs service name, looked up the same way.
+4. First `account=` in `~/mail/accounts` — default fallback.
+
+Once the account email is known, a single awk invocation reads `~/mail/accounts`
+for the `display=` name, builds `From: "Display Name" <email>`, and
+rewrites/injects it in the message header stream. All space-containing values
+stay inside awk to avoid rc word-splitting.
+
+**Why not query mailfs?** `mailfs`'s `ctl` file is mode `0222` (write-only) and
+its uid is just `upas` — it does not expose the user account via 9P. The
+`~/mail/accounts` lookup table in `pipefrom` (user config space) is the
+appropriate layer for this mapping.
+
+`~/mail/accounts` block format (blank-line delimited):
+```
+name=posteo
+display=Daniel Posthuma
+account=user@example.com
+imap=imap.example.com
+smtp=smtp.example.com
+srv=mail.posteo
+```
+
+`~/mail/headers` is kept **empty** — `marshal` no longer injects a hardcoded
+`From:`. The `pipefrom` awk replaces any auto-generated `From:` (e.g. from
+`marshal`'s `printfrom()`) with the correct account-specific one.
+
 ### upas delivery nuances
 
 - `upas/marshal` success means "accepted for send pipeline", not necessarily
@@ -422,3 +470,6 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | Posteo rejects send: `554 5.1.8 ... Sender address rejected: Domain not found` | Envelope sender defaults to local login/host form (e.g. `daniel@MacBookAir.lan`) | In `~/mail/lib/remotemail`, normalize non-`@` sender to the account email before invoking `upas/smtp` |
 | `runq` executes `remotemail` but exits immediately with status `1` | rc syntax bug in script (`if not(~...)`) | Use valid rc conditional form `if(! ~ $sender *@*){ ... }` and inspect `E.*` files for script errors |
 | Sending still uses stock `$PLAN9/mail` `rewrite` / paths | `UPASLIB` and `MAILROOT` unset | Export `UPASLIB=$HOME/mail/lib` and `MAILROOT=$HOME/mail` before `marshal`/`send`/`runq` (e.g. source `~/mail/upas-mail.rc` from `mk env`); requires upas built from a tree with `getenv` overrides in `src/cmd/upas/common/config.c` |
+| `pipefrom` injects wrong/empty `From:`, or injects it twice | rc `var=''` creates a 1-element list (`$#var` == 1, not 0), so `if(~ $#var 0)` default-fallback never fires; also, building `From:` with `^` in rc splits display names on spaces | Initialize sentinel variables as `acct=()` (empty list, `$#acct` == 0); do all display-name lookup and `From:` construction inside a single awk invocation that reads the accounts file directly, avoiding rc word-splitting entirely |
+| `Mail -n mail.posteo` sends with `From: daniel` or wrong account | `MAIL_SRVNAME` not set; `bin/mail` wrapper missing, or `Mail` binary invoked directly instead of wrapper | `src/cmd/acme/mail/mkfile` sets `TARG=Mail.bin`; `bin/mail` is the bash wrapper (also `bin/Mail` on case-insensitive macOS) — run `mk install` in `src/cmd/acme/mail/` after any source change to keep `Mail.bin` current |
+| `bin/mail` sets `MAIL_ACCOUNT` but pipefrom still picks wrong account | Old wrapper version looked up `~/mail/accounts` itself; superseded design | `bin/mail` only exports `MAIL_SRVNAME`; account lookup belongs entirely in `~/mail/pipefrom` |

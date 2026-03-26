@@ -1,0 +1,27 @@
+#!/bin/bash
+# mail — wrapper for Mail.bin.
+#
+# Propagates the mailbox service name as MAIL_SRVNAME so that user-space
+# scripts (e.g. ~/mail/pipefrom) can map it to an account without this
+# wrapper needing to know anything about the user's mail configuration.
+#
+# On macOS's case-insensitive filesystem this file is also "Mail".
+# Mirrors the pattern used by bin/acme → acme.bin.
+
+PLAN9=${PLAN9:-/usr/local/plan9}
+
+# Determine the mailfs service name from -n <srvname>.
+# When -n is absent, Mail connects to the default "mail" service.
+srvname='mail'
+prev=''
+for arg in "$@"; do
+	if [[ "$prev" == "-n" ]]; then
+		srvname="$arg"
+		break
+	fi
+	prev="$arg"
+done
+
+export MAIL_SRVNAME="$srvname"
+
+exec "$PLAN9/bin/Mail.bin" "$@"
