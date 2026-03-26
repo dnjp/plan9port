@@ -6,7 +6,7 @@ file=$samfile
 if (~ $#* 1)
 	file=$1
 if (test -d $file)
-	name=$name^'/'
+	file=$file^'/'
 
 name=$file^'+git'
 
