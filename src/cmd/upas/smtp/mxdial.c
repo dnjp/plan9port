@@ -77,6 +77,18 @@ mxdial(char *addr, char *ddomain, char *gdomain)
 	addr = netmkaddr(addr, 0, "smtp");
 	dial_string_parse(addr, &ds);
 
+#ifdef PLAN9PORT
+	/*
+	 * Submission on port 587: connect to the dial string's host via stunnel
+	 * STARTTLS, not to MX hosts. mx*.domain often does not listen on 587,
+	 * so callmx would pick the wrong peers and mail would never leave queue.
+	 */
+	if(ds.service && strcmp(ds.service, "587") == 0 && ds.host && ds.host[0]){
+		strncpy(ddomain, ds.host, 1023);
+		ddomain[1023] = '\0';
+		return smtpdial(ds.host);
+	}
+#endif
 	/* try connecting to destination or any of it's mail routers */
 	fd = callmx(&ds, addr, ddomain);
 

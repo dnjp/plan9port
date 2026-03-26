@@ -217,4 +217,4 @@ Hash	*hlook(ulong, char*);
 void	henter(ulong, char*, Qid, Message*, Mailbox*);
 void	hfree(ulong, char*);
 
-ulong msgallocd, msgfreed;
+extern ulong msgallocd, msgfreed;
