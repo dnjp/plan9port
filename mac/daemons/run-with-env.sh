@@ -64,7 +64,14 @@ if [[ $# -ge 1 ]]; then
 	fi
 
 	# Kill any existing instance so we can bind the socket cleanly.
-	pkill -x "$bin" 2>/dev/null || true
+	# When P9P_SERVICE_NAME is set the same binary may run as multiple services
+	# (e.g. mailfs for posteo and gmail). Use a specific pattern that includes the
+	# service name so we only kill this instance, not sibling services.
+	if [[ -n "${P9P_SERVICE_NAME:-}" ]]; then
+		pkill -f "$bin.*$svc" 2>/dev/null || true
+	else
+		pkill -x "$bin" 2>/dev/null || true
+	fi
 	pkill -f "9pserve.*/$svc$" 2>/dev/null || true
 	sleep 0.2
 	rm -f "$NAMESPACE/$svc"
@@ -87,6 +94,12 @@ if [[ $# -ge 1 ]]; then
 	if [[ $started -eq 0 ]]; then
 		notify "plan9port: $bin failed to start" \
 			"$bin did not create $NAMESPACE/$svc within 5 seconds. Check ~/.local/var/log/plan9port/$bin.err.log"
+	fi
+
+	# Optional post-start hook: run a script after the socket appears.
+	# Used by factotum to load keys from an encrypted file.
+	if [[ $started -eq 1 && -n "${P9P_POST_START_HOOK:-}" && -x "$P9P_POST_START_HOOK" ]]; then
+		"$P9P_POST_START_HOOK" || true
 	fi
 fi
 
