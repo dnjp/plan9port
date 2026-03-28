@@ -8,10 +8,6 @@ DAEMONDIR=`pwd`/daemons
 
 DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler com.plan9port.factotum
 
-# aescbc key persistence (~/lib/fact.keys, passphrase in macOS Keychain)
-KEYFILE=$HOME/lib/factotum
-KEYCHAIN_SVC=plan9port-factotum
-
 all:V: install
 
 # Install .app bundles and daemons.
@@ -159,56 +155,6 @@ mailfs-daemon-unload:V:
 	echo unloaded com.plan9port.mailfs.$MAIL_TAG
 
 mailfs-daemon-reload:V: mailfs-daemon-unload mailfs-daemon
-
-# ── factotum key management (aescbc-encrypted ~/lib/fact.keys) ──────────────
-#
-# factotum key persistence via aescbc.
-#
-# The key file ($KEYFILE, named "factotum" so ipso handles flush+reload) is the
-# source of truth.  It contains real !password=value entries encrypted with aescbc.
-# factotum intentionally redacts passwords as !password? in /ctl — reading from
-# /ctl cannot reconstruct the actual values; always write !password=value.
-#
-# Workflow:
-#   mk factotum-keys-init    # one-time: store aescbc passphrase in Keychain, create file
-#   mk factotum-keys-edit    # ongoing: ipso -a decrypts, opens in Acme, re-encrypts, reloads
-#
-# mk auth (in ~/mail/mkfile) writes key specs directly to the encrypted file
-# using the Keychain passphrase — no editor required, no round-trip through /ctl.
-
-# One-time setup: store aescbc passphrase in Keychain and create the empty key file.
-# The passphrase is reused at daemon startup (load-factotum-keys.sh) and by mk auth.
-# After running this, use mk factotum-keys-edit to add keys.
-factotum-keys-init:V:
-	# if(/usr/bin/security find-generic-password -s $KEYCHAIN_SVC -a $USER -w >[2]/dev/null >[1]/dev/null){
-		# echo 'Keychain passphrase already set — use: mk factotum-keys-edit'
-		# exit 0
-	# }
-	mkdir -p `{dirname $KEYFILE}
-	ifs='
-	'
-	pw=`{readcons -s 'aescbc passphrase for '$KEYFILE}
-	if(~ $#pw 0){
-		echo 'error: empty passphrase — aborted'
-		exit 1
-	}
-	/usr/bin/security add-generic-password -s $KEYCHAIN_SVC -a $USER -w $pw -U
-	echo 'Passphrase stored in Keychain ('$KEYCHAIN_SVC').'
-	tmp=/tmp/p9p_pw.$pid
-	echo $pw > $tmp
-	chmod 600 $tmp
-	echo '' | aescbc -i -e > $KEYFILE <[3] $tmp
-	chmod 600 $KEYFILE
-	rm -f $tmp
-	echo 'Key file created: '$KEYFILE
-	echo 'Run  mk factotum-keys-edit  to add key specs.'
-
-# Edit: ipso -a decrypts $KEYFILE, opens it in Acme, waits for you to press Enter,
-# then flushes all factotum keys, loads the updated ones, and re-encrypts the file.
-# ipso prompts for the aescbc passphrase directly (does not use the Keychain).
-# Key spec format: key proto=pass service=imap server=host user=you@host !password=secret
-factotum-keys-edit:V:
-	ipso -a $KEYFILE
 
 # Register Plumb.app as the default handler for text and source-code file types.
 #

@@ -1,0 +1,12 @@
+**/outgoing
+saved-messages
+sent-mail
+tags
+dead.letter
+accounts
+runq.log
+lib/remotemail
+lib/rewrite
+headers
+queue
+pipefrom

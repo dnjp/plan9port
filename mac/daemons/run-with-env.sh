@@ -81,9 +81,11 @@ if [[ $# -ge 1 ]]; then
 	# macOS has no setsid(1); we use a subshell with job control disabled.
 	(set +m; "$@" &)
 
-	# Wait for the socket to appear (up to 5 seconds).
+	# Wait for the socket to appear (up to 5 minutes; first-run syncs
+	# of large inboxes can take several minutes while mailfs fetches
+	# metadata for all messages).
 	started=0
-	for i in 1 2 3 4 5; do
+	for i in $(seq 1 300); do
 		sleep 1
 		if [[ -S "$NAMESPACE/$svc" ]]; then
 			started=1

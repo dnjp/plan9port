@@ -1,0 +1,242 @@
+MKSHELL=/usr/local/plan9/bin/rc
+
+PLAN9=/usr/local/plan9
+MAILDIR=$PLAN9/mail
+
+# aescbc key file for factotum credential persistence.
+KEYFILE=$HOME/lib/factotum
+KEYCHAIN_SVC=plan9port-factotum
+
+# Account-specific values — passed by SETUP or on the mk command line.
+ACCOUNT=
+IMAPSERVER=
+SMTPSERVER=
+MAIL_TAG=
+MAIL_SRVNAME=
+
+all:V:
+	echo 'mk deps           # chmod scripts, mkdir queue'
+	echo 'mk account        # deps + auth + daemon-load + daemon-reload'
+	echo 'mk auth           # load IMAP+SMTP creds into factotum'
+	echo 'mk start          # start mailfs directly (cross-platform)'
+	echo 'mk stop           # stop mailfs by service name (cross-platform)'
+	echo 'mk daemon-load    # start account mailfs daemon (macOS: LaunchAgent)'
+	echo 'mk daemon-reload  # reload account mailfs daemon'
+	echo 'mk daemon-unload  # stop account mailfs daemon'
+	echo 'mk logs           # tail daemon logs for account'
+	echo 'mk refresh        # force mailbox refresh'
+	echo 'mk drainqueue     # flush outgoing queue'
+	echo 'mk keys           # one-time: create encrypted factotum key file'
+	echo 'mk keysedit       # edit encrypted factotum key file interactively'
+	echo 'mk remove         # stop daemon and remove plist/logs for account'
+	echo 'required account vars: ACCOUNT IMAPSERVER SMTPSERVER MAIL_TAG MAIL_SRVNAME'
+	echo 'hint: run ./SETUP with no args for guided setup of all accounts'
+
+deps:V:
+	mkdir -p $MAILDIR/queue
+	chmod +x $MAILDIR/pipefrom $MAILDIR/lib/qmail $MAILDIR/SETUP
+	if(test -f $MAILDIR/lib/remotemail) chmod +x $MAILDIR/lib/remotemail
+	echo 'dependencies ready'
+
+print:V:
+	echo ACCOUNT=$ACCOUNT
+	echo IMAPSERVER=$IMAPSERVER
+	echo SMTPSERVER=$SMTPSERVER
+	echo MAIL_TAG=$MAIL_TAG
+	echo MAIL_SRVNAME=$MAIL_SRVNAME
+
+check-account-vars:V: print
+	if(~ $#ACCOUNT 0) { echo 'missing ACCOUNT' >[1=2]; exit 1 }
+	if(~ $#IMAPSERVER 0) { echo 'missing IMAPSERVER' >[1=2]; exit 1 }
+	if(~ $#SMTPSERVER 0) { echo 'missing SMTPSERVER' >[1=2]; exit 1 }
+	if(~ $#MAIL_TAG 0) { echo 'missing MAIL_TAG' >[1=2]; exit 1 }
+	if(~ $#MAIL_SRVNAME 0) { echo 'missing MAIL_SRVNAME' >[1=2]; exit 1 }
+	echo account configuration is valid
+
+account:V: check-account-vars deps keys-if-missing auth daemon-load daemon-reload
+	echo done
+
+# Run mk keys only if key persistence is not yet configured.
+# On macOS checks Keychain; elsewhere checks for the key file.
+# Having this as a prerequisite of account ensures ./SETUP works from a fresh state.
+keys-if-missing:V:
+	os=`{uname}
+	have_keys=false
+	if(~ $os Darwin){
+		pw_test=`{/usr/bin/security find-generic-password -s $KEYCHAIN_SVC -a $USER -w >[2]/dev/null}
+		if(! ~ $#pw_test 0)
+			have_keys=true
+	}
+	if(~ $have_keys false){
+		if(test -f $KEYFILE)
+			have_keys=true
+	}
+	if(~ $have_keys true)
+		status=''
+	if not {
+		echo 'Key persistence not configured; initializing now...'
+		mk -f $MAILDIR/mkfile keys
+	}
+
+auth:V: check-account-vars
+	echo Enter password for $ACCOUNT
+	# ifs=newline-only so spaces in the password survive as one element.
+	ifs='
+	'
+	pw=`{readcons -s Password}
+	if(~ $#pw 0){
+		echo 'readcons returned empty password; re-run: ./SETUP auth '$MAIL_TAG
+		exit 1
+	}
+	# Single-quote the password so factotum treats spaces inside as part of the value.
+	factotum -g 'proto=pass service=imap server='^$IMAPSERVER^' user='^$ACCOUNT^' !password='''^$pw^''''
+	factotum -g 'proto=pass service=smtp server='^$SMTPSERVER^' user='^$ACCOUNT^' !password='''^$pw^''''
+	echo 'loaded IMAP+SMTP creds into factotum'
+	# Persist credentials to the encrypted key file for survival across daemon restarts.
+	# Passphrase source: Keychain on macOS, keyfile prompt elsewhere.
+	# Each if/if-not chain uses a single-command body (no inner if) so the ifnot flag
+	# is not corrupted by nested conditionals.
+	os=`{uname}
+	aescbc_pw=()
+	if(~ $os Darwin)
+		aescbc_pw=`{/usr/bin/security find-generic-password -s $KEYCHAIN_SVC -a $USER -w >[2]/dev/null}
+	if not {
+		if(test -f $KEYFILE){
+			ifs='
+			'
+			aescbc_pw=`{readcons -s 'aescbc passphrase for key file'}
+		}
+	}
+	if(~ $#aescbc_pw 0)
+		echo 'Tip: run  mk keys  to enable key persistence across factotum restarts'
+	if not {
+		pw_tmp=/tmp/p9p_authpw.$pid
+		keys_tmp=/tmp/p9p_authkeys.$pid
+		echo $aescbc_pw > $pw_tmp
+		chmod 600 $pw_tmp
+		> $keys_tmp
+		if(test -f $KEYFILE) aescbc -i -d < $KEYFILE > $keys_tmp <[3] $pw_tmp
+		grep -v 'user='^$ACCOUNT $keys_tmp > $keys_tmp.new
+		echo 'key proto=pass service=imap server='^$IMAPSERVER^' user='^$ACCOUNT^' !password='''^$pw^'''' >> $keys_tmp.new
+		echo 'key proto=pass service=smtp server='^$SMTPSERVER^' user='^$ACCOUNT^' !password='''^$pw^'''' >> $keys_tmp.new
+		aescbc -i -e < $keys_tmp.new > $KEYFILE <[3] $pw_tmp
+		chmod 600 $KEYFILE
+		rm -f $pw_tmp $keys_tmp $keys_tmp.new
+		echo 'credentials saved to '$KEYFILE
+	}
+
+# start — run mailfs directly (backgrounds itself via 9pserve).
+# Works on any platform. On macOS, prefer daemon-load for automatic restart.
+# Prints the command so users can run it manually in future sessions.
+start:V: check-account-vars
+	echo 'mailfs -s '$MAIL_SRVNAME' -t -u '$ACCOUNT' '$IMAPSERVER
+	mailfs -s $MAIL_SRVNAME -t -u $ACCOUNT $IMAPSERVER
+
+# stop — kill a running mailfs by service name.
+stop:V: check-account-vars
+	echo 'pkill -f mailfs.*'$MAIL_SRVNAME
+	pkill -f 'mailfs.*'^$MAIL_SRVNAME >[2]/dev/null || status=''
+
+daemon-load:V: check-account-vars
+	os=`{uname}
+	if(~ $os Darwin){
+		cd $PLAN9/mac && mk mailfs-daemon MAIL_TAG=$MAIL_TAG MAIL_USER=$ACCOUNT MAIL_SERVER=$IMAPSERVER MAIL_SRVNAME=$MAIL_SRVNAME
+	}
+	if not {
+		echo 'no daemon manager on this platform; starting mailfs directly:'
+		mk -f $MAILDIR/mkfile start ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
+	}
+
+daemon-reload:V: check-account-vars
+	os=`{uname}
+	if(~ $os Darwin){
+		cd $PLAN9/mac && mk mailfs-daemon-reload MAIL_TAG=$MAIL_TAG MAIL_USER=$ACCOUNT MAIL_SERVER=$IMAPSERVER MAIL_SRVNAME=$MAIL_SRVNAME
+	}
+	if not {
+		mk -f $MAILDIR/mkfile stop ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
+		mk -f $MAILDIR/mkfile start ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
+	}
+
+daemon-unload:V: check-account-vars
+	os=`{uname}
+	if(~ $os Darwin){
+		cd $PLAN9/mac && mk mailfs-daemon-unload MAIL_TAG=$MAIL_TAG
+	}
+	if not
+		mk -f $MAILDIR/mkfile stop ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
+
+logs:V: check-account-vars
+	errlog=$HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.err.log
+	outlog=$HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.out.log
+	echo '=== '$MAIL_SRVNAME' stderr (last 50 lines) ==='
+	if(test -f $errlog)
+		tail -50 $errlog
+	if not
+		echo '(no error log at '$errlog')'
+	echo '=== '$MAIL_SRVNAME' stdout (last 20 lines) ==='
+	if(test -f $outlog)
+		tail -20 $outlog
+	if not
+		echo '(no stdout log at '$outlog')'
+
+refresh:V: check-account-vars
+	echo refresh | 9p write $MAIL_SRVNAME/mbox/ctl
+
+drainqueue:V:
+	$PLAN9/bin/upas/runq -n 20 $MAILDIR/queue $MAILDIR/lib/remotemail
+
+remove:V: check-account-vars
+	os=`{uname}
+	if(~ $os Darwin){
+		cd $PLAN9/mac && mk mailfs-daemon-unload MAIL_TAG=$MAIL_TAG || status=''
+		rm -f $HOME/Library/LaunchAgents/com.plan9port.mailfs.$MAIL_TAG.plist
+		rm -f $HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.out.log
+		rm -f $HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.err.log
+	}
+	if not
+		echo 'stop the mailfs daemon for '$MAIL_TAG' manually before removing it'
+	echo removed account daemon/plist/logs for $MAIL_TAG
+
+# Factotum key file management
+# Keys are stored encrypted with aescbc in $KEYFILE (default: ~/lib/factotum).
+# On macOS, the aescbc passphrase is kept in Keychain; on other systems it is
+# prompted interactively.  factotum intentionally redacts passwords as
+# !password? in /ctl — always write !password=value, never read back from /ctl.
+
+# One-time setup: create an empty encrypted key file.
+# On macOS, stores the passphrase in Keychain so load-factotum-keys.sh can
+# decrypt at daemon startup without user interaction.
+# After running this, use  mk keysedit  to add key specs.
+keys:V:
+	mkdir -p `{dirname $KEYFILE}
+	ifs='
+	'
+	pw=`{readcons -s 'aescbc passphrase for '$KEYFILE}
+	if(~ $#pw 0){
+		echo 'error: empty passphrase — aborted'
+		exit 1
+	}
+	os=`{uname}
+	if(~ $os Darwin){
+		/usr/bin/security add-generic-password -s $KEYCHAIN_SVC -a $USER -w $pw -U
+		echo 'Passphrase stored in Keychain ('$KEYCHAIN_SVC').'
+	}
+	if not {
+		echo 'Note: on non-macOS, the passphrase is not stored automatically.'
+		echo 'You will be prompted for it each time it is needed.'
+	}
+	tmp=/tmp/p9p_pw.$pid
+	echo $pw > $tmp
+	chmod 600 $tmp
+	echo '' | aescbc -i -e > $KEYFILE <[3] $tmp
+	chmod 600 $KEYFILE
+	rm -f $tmp
+	echo 'Key file created: '$KEYFILE
+	echo 'Run  mk keysedit  to add key specs.'
+
+# Edit the encrypted key file interactively via ipso.
+# ipso decrypts, opens the file in Acme, waits for Enter, then re-encrypts
+# and reloads factotum.  Works on any platform.
+# Key format: key proto=pass service=imap server=host user=you@host !password=secret
+keysedit:V:
+	ipso -a $KEYFILE
