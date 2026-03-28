@@ -65,6 +65,10 @@ ARGS+=(-a)
 # fonts
 ARGS+=(-F "$fixfont")
 ARGS+=(-f "$varfont")
+if [[ ! -z "$ACME_MOUNT" ]]; then
+	ARGS+=(-m "$ACME_MOUNT")
+fi
+
 # load dump file if it exists
 # TODO: fix this so that it only loads on the first time acme is opened
 # if [[ -f "$acmedump" ]]; then
@@ -100,6 +104,9 @@ if [[ -z "$wsysid" ]]; then
 		rm -f "$("$PLAN9/bin/namespace" 2>/dev/null)"/acme 2>/dev/null || true
 	fi
 fi
+
+# Necessary so that builtin executables work as expected
+PATH=$PLAN9/bin:$PATH
 
 # Select the native architecture on Apple Silicon so we don't run under Rosetta.
 arch=x86_64

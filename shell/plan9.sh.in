@@ -24,6 +24,11 @@ esac
 : "${acmedump:=$HOME/acme.dump}"
 export acmedump
 
+# Mail (upas) — UPASLIB and MAILROOT default to $PLAN9/mail and $PLAN9/mail/lib.
+# Uncomment and edit these only if you have relocated the mail directory.
+#export MAILROOT="${PLAN9}/mail"
+#export UPASLIB="${PLAN9}/mail/lib"
+
 # Interactive shell setup inside a plan9port app (acme, sam, 9term).
 # When $INSIDE_P9P is set, source p9p-session.sh from your ~/.bashrc or
 # ~/.zshrc to get the right terminal behaviour (TERM=dumb, awd, PAGER=nobs,

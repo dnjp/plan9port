@@ -36,6 +36,7 @@ export TERM=dumb
 # nobs strips backspace-bold sequences that man/less emit on dumb terminals.
 export PAGER=nobs
 export MANPAGER=nobs
+export NO_COLOR=1
 
 # Disable readline editing modes — p9p apps handle input themselves.
 set +o emacs 2>/dev/null || true

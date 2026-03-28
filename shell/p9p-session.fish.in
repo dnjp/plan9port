@@ -14,6 +14,7 @@ end
 set -gx TERM dumb
 set -gx PAGER nobs
 set -gx MANPAGER nobs
+set -gx NO_COLOR 1
 
 # Set $home to mirror $HOME so plumbing rules using $home/path work.
 set -gx home $HOME

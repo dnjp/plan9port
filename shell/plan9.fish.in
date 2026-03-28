@@ -6,6 +6,11 @@
 
 set -gx PLAN9 /usr/local/plan9
 
+# Mail (upas) — MAILROOT and UPASLIB default to $PLAN9/mail and $PLAN9/mail/lib.
+# Uncomment and edit these only if you have relocated the mail directory.
+#set -gx MAILROOT "$PLAN9/mail"
+#set -gx UPASLIB "$PLAN9/mail/lib"
+
 if not contains $PLAN9/bin $fish_user_paths
     fish_add_path $PLAN9/bin
 end

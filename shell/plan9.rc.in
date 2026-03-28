@@ -17,3 +17,8 @@ if(~ $#varfont 0)
 	varfont=/mnt/font/LucidaGrande/14a/font,/mnt/font/LucidaGrande/28a/font
 if(~ $#acmedump 0)
 	acmedump=$home/acme.dump
+
+# Mail (upas) — MAILROOT and UPASLIB default to $PLAN9/mail and $PLAN9/mail/lib.
+# Uncomment and edit these only if you have relocated the mail directory.
+#if(~ $#MAILROOT 0) MAILROOT=$PLAN9/mail
+#if(~ $#UPASLIB 0)  UPASLIB=$PLAN9/mail/lib
