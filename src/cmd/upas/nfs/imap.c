@@ -255,6 +255,289 @@ getboxes(Imap *z)
 	return 0;
 }
 
+/*
+ * IMAP UID/flags disk cache.
+ *
+ * Cache file layout (all integers big-endian):
+ *   "p9mlfsx2\n"   9 bytes   magic (bumped from v1 to invalidate old files)
+ *   uidvalidity    4 bytes   (u32)
+ *   uidnext        4 bytes   (u32, max seen UID + 1)
+ *   msgid          4 bytes   (u32, b->msgid counter, stable across restarts)
+ *   nmsg           4 bytes   (u32)
+ *   nmsg × {
+ *     uid      u32
+ *     flags    u32
+ *     date     u32   (unix timestamp, msg->date)
+ *     size     u32   (RFC822.SIZE, msg->size)
+ *     from     u16-length-prefixed UTF-8 string
+ *     subject  u16-length-prefixed UTF-8 string
+ *     datestr  u16-length-prefixed UTF-8 string (hdr->date, RFC822 date)
+ *   }
+ *
+ * Cache files live at
+ *   $HOME/.cache/plan9port/mailfs/<server>/<user>/<mailbox>
+ * with non-alphanumeric chars (except '-' and '.') replaced by '_'.
+ */
+
+static u32int
+get32(uchar *p)
+{
+	return ((u32int)p[0]<<24)|((u32int)p[1]<<16)|((u32int)p[2]<<8)|(u32int)p[3];
+}
+
+static void
+put32(uchar *p, u32int v)
+{
+	p[0]=v>>24; p[1]=v>>16; p[2]=v>>8; p[3]=v;
+}
+
+/* Create directory and all parents; ignores EEXIST. */
+static void
+mkdirp(char *path)
+{
+	char *p;
+	for(p = path+1; *p; p++){
+		if(*p == '/'){
+			*p = '\0';
+			create(path, OREAD, DMDIR|0700);
+			*p = '/';
+		}
+	}
+	create(path, OREAD, DMDIR|0700);
+}
+
+/* Sanitise a string for use as a filesystem path component. */
+static char*
+safepathelem(char *s)
+{
+	char *d, *p;
+	d = estrdup(s ? s : "unknown");
+	for(p = d; *p; p++)
+		if(!isalnum((uchar)*p) && *p != '-' && *p != '.')
+			*p = '_';
+	return d;
+}
+
+/*
+ * Return the cache file path for this Imap connection and mailbox.
+ * Caller must free the returned string.
+ */
+static char*
+cachepath(Imap *z, Box *b)
+{
+	char *home, *srv, *usr, *box, *dir, *path;
+
+	home = getenv("HOME");
+	if(home == nil || home[0] == '\0')
+		return nil;
+	srv = safepathelem(z->server);
+	usr = safepathelem(z->user);
+	box = safepathelem(b->imapname);
+	dir  = smprint("%s/.cache/plan9port/mailfs/%s/%s", home, srv, usr);
+	path = smprint("%s/%s", dir, box);
+	free(srv); free(usr); free(box); free(dir);
+	return path;
+}
+
+/* Write a 2-byte length-prefixed string to fd; s may be nil (written as ""). */
+static int
+putstr(int fd, const char *s)
+{
+	uchar buf[2];
+	int n;
+
+	n = s ? strlen(s) : 0;
+	if(n > 0xFFFF)
+		n = 0xFFFF;
+	buf[0] = n >> 8;
+	buf[1] = n;
+	if(write(fd, buf, 2) != 2)
+		return -1;
+	if(n > 0 && write(fd, (void*)s, n) != n)
+		return -1;
+	return 0;
+}
+
+/* Read a 2-byte length-prefixed string from fd; returns malloc'd string or nil on error. */
+static char*
+getstr(int fd)
+{
+	uchar buf[2];
+	int n;
+	char *s;
+
+	if(readn(fd, buf, 2) != 2)
+		return nil;
+	n = ((int)buf[0] << 8) | buf[1];
+	s = emalloc(n + 1);
+	if(n > 0 && readn(fd, s, n) != n){
+		free(s);
+		return nil;
+	}
+	s[n] = '\0';
+	return s;
+}
+
+/*
+ * Try to load the cache for box b.
+ * Returns 1 on success (cache valid, b->msg[] populated, b->uidnext set).
+ * Returns 0 on any failure (caller should do a full sync).
+ *
+ * Requires b->validity to already be set from the SELECT response.
+ */
+static int
+loadcache(Imap *z, Box *b)
+{
+	char *path, *from, *subj, *datestr;
+	int fd, i;
+	uint nm, uid, flags;
+	u32int uv, un, mi, date, size;
+	uchar fhdr[9+4+4+4+4];
+	uchar entry[16];
+	static const char magic[] = "p9mlfsx2\n";
+	Msg *msg;
+	Hdr *hdr;
+
+	path = cachepath(z, b);
+	if(path == nil)
+		return 0;
+	fd = open(path, OREAD);
+	free(path);
+	if(fd < 0)
+		return 0;
+
+	/* read and validate header */
+	if(readn(fd, fhdr, sizeof fhdr) != sizeof fhdr)
+		goto fail;
+	if(memcmp(fhdr, (void*)magic, 9) != 0)
+		goto fail;
+	uv = get32(fhdr+9);
+	un = get32(fhdr+13);
+	mi = get32(fhdr+17);
+	nm = get32(fhdr+21);
+
+	if(uv != b->validity)
+		goto fail;
+	if(nm == 0){
+		close(fd);
+		return 0;
+	}
+
+	/* populate b->msg[] from cache */
+	for(i = 0; i < (int)nm; i++){
+		if(readn(fd, entry, 16) != 16)
+			goto fail;
+		uid     = get32(entry);
+		flags   = get32(entry+4);
+		date    = get32(entry+8);
+		size    = get32(entry+12);
+		from    = getstr(fd);
+		subj    = getstr(fd);
+		datestr = getstr(fd);
+		if(from == nil || subj == nil || datestr == nil){
+			free(from);
+			free(subj);
+			free(datestr);
+			goto fail;
+		}
+
+		msg = msgbyimapuid(b, uid, 1);
+		msg->flags = flags;
+		msg->date  = date;
+		msg->size  = size;
+		/*
+		 * Use position-based imapid (1-indexed) as a placeholder.
+		 * Real IMAP sequence numbers may differ after expunges;
+		 * checkbox() will reconcile when b->exists < b->nmsg.
+		 */
+		msg->imapid = i + 1;
+
+		/* Populate the RFC822 envelope so Acme Mail can display headers. */
+		hdrfree(msg->part[0]->hdr);
+		hdr = emalloc(sizeof(Hdr));
+		memset(hdr, 0, sizeof(Hdr));
+		hdr->from    = from;
+		hdr->subject = subj;
+		hdr->date    = datestr;
+		msg->part[0]->hdr = hdr;
+
+		if(b->maxseen < (int)(i + 1))
+			b->maxseen = i + 1;
+		if(msg->imapuid >= b->uidnext)
+			b->uidnext = msg->imapuid + 1;
+	}
+	b->msgid = mi;
+	close(fd);
+	return 1;
+
+fail:
+	close(fd);
+	return 0;
+}
+
+/*
+ * Write the cache for box b.  Called after a successful full sync so the
+ * next restart can take the fast path.
+ */
+static void
+savecache(Imap *z, Box *b)
+{
+	char *path, *dir, *sep;
+	int fd, i;
+	uchar fhdr[9+4+4+4+4];
+	uchar entry[16];
+	static const char magic[] = "p9mlfsx2\n";
+	Msg *m;
+	Hdr *h;
+
+	if(b == nil || b->nmsg == 0)
+		return;
+	path = cachepath(z, b);
+	if(path == nil)
+		return;
+
+	/* ensure directory exists */
+	dir = estrdup(path);
+	sep = strrchr(dir, '/');
+	if(sep != nil){
+		*sep = '\0';
+		mkdirp(dir);
+	}
+	free(dir);
+
+	fd = create(path, OWRITE, 0600);
+	free(path);
+	if(fd < 0)
+		return;
+
+	memcpy(fhdr, magic, 9);
+	put32(fhdr+9,  b->validity);
+	put32(fhdr+13, b->uidnext);
+	put32(fhdr+17, b->msgid);
+	put32(fhdr+21, b->nmsg);
+	if(write(fd, fhdr, sizeof fhdr) != sizeof fhdr){
+		close(fd);
+		return;
+	}
+	for(i = 0; i < b->nmsg; i++){
+		m = b->msg[i];
+		h = (m->npart > 0 && m->part[0]) ? m->part[0]->hdr : nil;
+		put32(entry,    m->imapuid);
+		put32(entry+4,  m->flags);
+		put32(entry+8,  m->date);
+		put32(entry+12, m->size);
+		if(write(fd, entry, 16) != 16)
+			break;
+		if(putstr(fd, h ? h->from    : nil) < 0)
+			break;
+		if(putstr(fd, h ? h->subject : nil) < 0)
+			break;
+		if(putstr(fd, h ? h->date    : nil) < 0)
+			break;
+	}
+	close(fd);
+}
+
 static int
 getbox(Imap *z, Box *b)
 {
@@ -264,9 +547,50 @@ getbox(Imap *z, Box *b)
 	if(b == nil)
 		return 0;
 
+	/*
+	 * Trigger SELECT (which sets b->validity and b->exists) by issuing a
+	 * NOOP when this box isn't already selected.  We need b->validity
+	 * before we can validate any on-disk cache.
+	 */
+	if(b != z->box)
+		imapcmd(z, b, "NOOP");
+
+	/*
+	 * Fast path: load from disk cache.
+	 *
+	 * If the server-reported b->exists (number of messages currently in the
+	 * mailbox) is >= our cached count, no deletions occurred and we can use
+	 * the cache as-is.  checkbox() will issue UID FETCH uidnext:* to pick
+	 * up any messages added since the cache was written.
+	 *
+	 * If b->exists < cached count, messages were deleted.  Fall through to
+	 * the full sync so we don't show stale entries.
+	 */
 	for(i=0; i<b->nmsg; i++)
 		b->msg[i]->imapid = 0;
-	if(imapcmd(z, b, "UID FETCH 1:* FLAGS") < 0)
+
+	if(loadcache(z, b)){
+		if(b->exists >= b->nmsg){
+			b->imapinit = 1;
+			checkbox(z, b);
+			return 0;
+		}
+		/* Deletions detected – discard cache, fall through to full sync. */
+		for(i=0; i<b->nmsg; i++)
+			msgfree(b->msg[i]);
+		free(b->msg);
+		b->msg  = nil;
+		b->nmsg = 0;
+		b->uidnext  = 1;
+		b->maxseen  = 0;
+	}
+
+	/*
+	 * Slow path: full sync.  Fetches envelope and size alongside flags so
+	 * the cache stores enough to display message headers without a per-
+	 * message round-trip on subsequent restarts.
+	 */
+	if(imapcmd(z, b, "UID FETCH 1:* (UID FLAGS RFC822.SIZE ENVELOPE INTERNALDATE)") < 0)
 		return -1;
 	for(r=b->msg, w=b->msg, e=b->msg+b->nmsg; r<e; r++){
 		if((*r)->imapid == 0)
@@ -278,6 +602,7 @@ getbox(Imap *z, Box *b)
 	}
 	b->nmsg = w - b->msg;
 	b->imapinit = 1;
+	savecache(z, b);
 	checkbox(z, b);
 	return 0;
 }
@@ -315,6 +640,8 @@ checkbox(Imap *z, Box *b)
 		if(b==z->box && b->exists > b->maxseen){
 			imapcmd(z, b, "UID FETCH %d:* FULL",
 				b->uidnext);
+			/* keep cache current so next restart is fast */
+			savecache(z, b);
 		}
 	}
 }
@@ -1464,6 +1791,11 @@ haveuid:
 	if(msg->imapid && msg->imapid != n)
 		warn("msg id mismatch: want %d have %d", msg->id, n);
 	msg->imapid = n;
+	/* Update uidnext/maxseen from any FETCH response, not just BODY. */
+	if(msg->box->maxseen < msg->imapid)
+		msg->box->maxseen = msg->imapid;
+	if(msg->imapuid >= msg->box->uidnext)
+		msg->box->uidnext = msg->imapuid+1;
 	for(i=0; i<sx->nsx; i+=2){
 		for(j=0; j<nelem(msgtab); j++)
 			if(isatom(sx->sx[i], msgtab[j].name))
