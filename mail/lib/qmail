@@ -1,6 +1,80 @@
 #!/usr/local/plan9/bin/rc
-# qmail sender machine user...
+# Sender-aware qmail: reads the From: header from the message to pick the
+# right SMTP server from $MAILROOT/accounts, so outgoing mail always leaves
+# through the correct authenticated relay regardless of recipient domain.
+#
+# Called by upas/send via a rewrite rule pipe action.
+# $* = recipient address(es) passed from the rewrite rule.
+path=(/usr/local/plan9/bin $path)
 rfork s
-upas/vf | upas/qer $PLAN9/mail/queue smtp $* || exit 'qer failed'
-upas/runq -n 10 $PLAN9/mail/queue $PLAN9/mail/lib/remotemail </dev/null >/dev/null >[2=1] &
+
+mailroot=$MAILROOT
+if(~ $#mailroot 0)
+	mailroot=$PLAN9/mail
+upaslib=$UPASLIB
+if(~ $#upaslib 0)
+	upaslib=$mailroot/lib
+accounts=$mailroot/accounts
+
+# Buffer stdin so we can (1) parse headers and (2) pipe to qer.
+tmp=/tmp/qmail.$pid
+cat > $tmp
+
+# Extract sender email from the From: header.
+# Passed via ENVIRON to avoid awk treating @ as special.
+sender=`{awk '
+	/^[Ff][Rr][Oo][Mm]:/ {
+		s = substr($0, index($0, ":") + 1)
+		sub(/^[ \t]+/, "", s)
+		if(match(s, /<[^>]+>/)) s = substr(s, RSTART+1, RLENGTH-2)
+		sub(/[ \t]+$/, "", s)
+		print s; exit
+	}
+	/^$/ { exit }
+' $tmp}
+
+# Look up SMTP user+host for this sender.  Print two lines:
+#   line 1: account email (smtp auth user)
+#   line 2: tcp!smtp_host!587
+# Falls back to the first account in $MAILROOT/accounts if sender not found.
+smtp_info=`{ACCT=$sender ACCTS=$accounts awk '
+	BEGIN {
+		acct  = ENVIRON["ACCT"]
+		accts = ENVIRON["ACCTS"]
+		while((getline line < accts) > 0) {
+			if(line ~ /^account=/) blk_acct = substr(line, index(line,"=")+1)
+			if(line ~ /^smtp=/)    blk_smtp = substr(line, index(line,"=")+1)
+			if(line == "") {
+				if(blk_acct == acct) { found=1; break }
+				blk_acct = ""; blk_smtp = ""
+			}
+		}
+		if(!found && blk_acct == acct) found = 1
+		if(found) {
+			print blk_acct
+			print "tcp!" blk_smtp "!587"
+			exit
+		}
+		# Fall back to the first account.
+		close(accts)
+		while((getline line < accts) > 0) {
+			if(line ~ /^account=/ && ba == "") ba = substr(line, index(line,"=")+1)
+			if(line ~ /^smtp=/ && ba != "") {
+				print ba
+				print "tcp!" substr(line, index(line,"=")+1) "!587"
+				exit
+			}
+		}
+	}
+'}
+smtp_user=$smtp_info(1)
+smtp_host=$smtp_info(2)
+
+# Queue the buffered message through upas/vf, then drain asynchronously.
+cat $tmp | upas/vf | upas/qer $mailroot/queue smtp $smtp_user $smtp_host $* || {
+	rm -f $tmp
+	exit 'qer failed'
+}
+rm -f $tmp
+upas/runq -n 10 $mailroot/queue $upaslib/remotemail </dev/null >>$mailroot/runq.log >[2=1] &
 exit ''

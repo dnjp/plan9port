@@ -1,0 +1,25 @@
+# Blank-line delimited account blocks.
+# Required keys per block:
+#   name, display, account, imap, smtp, srv
+#
+# display: human-readable name used in the From: header
+# account: full email address (used for IMAP/SMTP auth and as From: address)
+# imap:    IMAP server hostname
+# smtp:    SMTP server hostname (port 587 STARTTLS via stunnel)
+# srv:     mailfs service name (passed to Mail -n <srv>)
+#
+# Example (first account):
+name=work
+display=Your Name
+account=you@work.example
+imap=imap.work.example
+smtp=smtp.work.example
+srv=mail.work
+
+# Example (second account):
+name=personal
+display=Your Name
+account=you@personal.example
+imap=imap.personal.example
+smtp=smtp.personal.example
+srv=mail.personal

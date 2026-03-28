@@ -34,17 +34,44 @@ export NAMESPACE="/tmp/ns.${USER}.:0"
 mkdir -p "$NAMESPACE"
 chmod 0700 "$NAMESPACE"
 
+# Optional dependency: wait for plumber socket before launching.
+# Used by daemons that expect plumbing/rules to be available at startup.
+if [[ "${P9P_REQUIRE_PLUMB:-0}" == "1" ]]; then
+	for i in {1..30}; do
+		if [[ -S "$NAMESPACE/plumb" ]]; then
+			break
+		fi
+		sleep 1
+	done
+	if [[ ! -S "$NAMESPACE/plumb" ]]; then
+		notify "plan9port: plumber not ready" \
+			"Expected $NAMESPACE/plumb before starting $(basename "${1:-daemon}")."
+		exit 1
+	fi
+fi
+
 # Determine the 9p socket name for this daemon.
 if [[ $# -ge 1 ]]; then
 	bin=$(basename "$1")
-	case "$bin" in
-		fontsrv)  svc=font  ;;
-		plumber)  svc=plumb ;;
-		*)        svc=$bin  ;;
-	esac
+	if [[ -n "${P9P_SERVICE_NAME:-}" ]]; then
+		svc="$P9P_SERVICE_NAME"
+	else
+		case "$bin" in
+			fontsrv)  svc=font  ;;
+			plumber)  svc=plumb ;;
+			*)        svc=$bin  ;;
+		esac
+	fi
 
 	# Kill any existing instance so we can bind the socket cleanly.
-	pkill -x "$bin" 2>/dev/null || true
+	# When P9P_SERVICE_NAME is set the same binary may run as multiple services
+	# (e.g. mailfs for posteo and gmail). Use a specific pattern that includes the
+	# service name so we only kill this instance, not sibling services.
+	if [[ -n "${P9P_SERVICE_NAME:-}" ]]; then
+		pkill -f "$bin.*$svc" 2>/dev/null || true
+	else
+		pkill -x "$bin" 2>/dev/null || true
+	fi
 	pkill -f "9pserve.*/$svc$" 2>/dev/null || true
 	sleep 0.2
 	rm -f "$NAMESPACE/$svc"
@@ -54,9 +81,11 @@ if [[ $# -ge 1 ]]; then
 	# macOS has no setsid(1); we use a subshell with job control disabled.
 	(set +m; "$@" &)
 
-	# Wait for the socket to appear (up to 5 seconds).
+	# Wait for the socket to appear (up to 5 minutes; first-run syncs
+	# of large inboxes can take several minutes while mailfs fetches
+	# metadata for all messages).
 	started=0
-	for i in 1 2 3 4 5; do
+	for i in $(seq 1 300); do
 		sleep 1
 		if [[ -S "$NAMESPACE/$svc" ]]; then
 			started=1
@@ -67,6 +96,12 @@ if [[ $# -ge 1 ]]; then
 	if [[ $started -eq 0 ]]; then
 		notify "plan9port: $bin failed to start" \
 			"$bin did not create $NAMESPACE/$svc within 5 seconds. Check ~/.local/var/log/plan9port/$bin.err.log"
+	fi
+
+	# Optional post-start hook: run a script after the socket appears.
+	# Used by factotum to load keys from an encrypted file.
+	if [[ $started -eq 1 && -n "${P9P_POST_START_HOOK:-}" && -x "$P9P_POST_START_HOOK" ]]; then
+		"$P9P_POST_START_HOOK" || true
 	fi
 fi
 

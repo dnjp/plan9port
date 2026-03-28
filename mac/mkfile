@@ -1,3 +1,4 @@
+MKSHELL=/usr/local/plan9/bin/rc
 PLAN9=$PLAN9
 HOME=$HOME
 LAUNCH_AGENTS=$HOME/Library/LaunchAgents
@@ -5,7 +6,7 @@ LOG_DIR=$HOME/.local/var/log/plan9port
 # Absolute path to this daemons/ directory (scripts referenced directly from plists).
 DAEMONDIR=`pwd`/daemons
 
-DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler
+DAEMONS=com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler com.plan9port.factotum
 
 all:V: install
 
@@ -43,41 +44,47 @@ apps:V: build-devdraw
 daemons:V:
 	mkdir -p $LOG_DIR $LAUNCH_AGENTS
 	chmod +x daemons/run-with-env.sh daemons/9p-status daemons/p9p-notify
-	for d in $DAEMONS; do \
+	for(d in $DAEMONS){
 		sed \
 			-e 's|@HOME@|'$HOME'|g' \
 			-e 's|@PLAN9@|'$PLAN9'|g' \
 			-e 's|@DAEMONDIR@|'$DAEMONDIR'|g' \
-			daemons/$d.plist.template > $LAUNCH_AGENTS/$d.plist; \
-		echo installed $LAUNCH_AGENTS/$d.plist; \
-	done
+			daemons/$d.plist.template > $LAUNCH_AGENTS/$d.plist
+		echo installed $LAUNCH_AGENTS/$d.plist
+	}
 	echo 'Daemons installed. Run mk load to start them.'
 
 # Load (start) all LaunchAgents.
 # launchctl load/unload are deprecated since macOS 10.10; use bootstrap/bootout.
 # bootout first (ignored if not loaded) so bootstrap never fails on re-runs.
+# '|| status=''' on the same line as launchctl makes each call a single compound
+# expression (always exits 0): bootout exits non-zero when a service is not
+# loaded (harmless); bootstrap exits 5 (EALREADY) on a race with bootout
+# propagation — both are expected non-errors.
 load:V:
-	for d in $DAEMONS; do \
-		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
-		launchctl bootstrap gui/`id -u` $LAUNCH_AGENTS/$d.plist; \
-		echo loaded $d; \
-	done
+	for(d in $DAEMONS){
+		launchctl bootout gui/`{id -u} $LAUNCH_AGENTS/$d.plist >[2]/dev/null || status=''
+		launchctl bootstrap gui/`{id -u} $LAUNCH_AGENTS/$d.plist >[2]/dev/null || status=''
+		echo loaded $d
+	}
 
 # Unload (stop) all LaunchAgents.
 unload:V:
-	for d in $DAEMONS; do \
-		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
-		echo unloaded $d; \
-	done
+	for(d in $DAEMONS){
+		launchctl bootout gui/`{id -u} $LAUNCH_AGENTS/$d.plist >[2]/dev/null || status=''
+		echo unloaded $d
+	}
 
 # Unload then load (restart after editing plists or run-with-env.sh).
-# bootstrap fails if already loaded, so always bootout first (errors ignored).
+# Brief sleep between bootout and bootstrap gives launchd time to deregister
+# the old job before we re-register it, avoiding spurious EALREADY (5) errors.
 reload:V:
-	for d in $DAEMONS; do \
-		launchctl bootout gui/`id -u` $LAUNCH_AGENTS/$d.plist 2>/dev/null || true; \
-		launchctl bootstrap gui/`id -u` $LAUNCH_AGENTS/$d.plist; \
-		echo reloaded $d; \
-	done
+	for(d in $DAEMONS){
+		launchctl bootout gui/`{id -u} $LAUNCH_AGENTS/$d.plist >[2]/dev/null || status=''
+		sleep 0.5
+		launchctl bootstrap gui/`{id -u} $LAUNCH_AGENTS/$d.plist >[2]/dev/null || status=''
+		echo reloaded $d
+	}
 
 # Show status of all LaunchAgents.
 status:V:
@@ -86,6 +93,68 @@ status:V:
 # Tail all plan9port daemon logs.
 logs:V:
 	sh daemons/9p-status tail
+
+# Show logs for a specific mailfs account (last 50 lines of each log file).
+# Usage: mk mailfs-logs MAIL_TAG=gmail
+mailfs-logs:V:
+	if(~ $#MAIL_TAG 0){
+		echo 'usage: mk mailfs-logs MAIL_TAG=tag'
+		exit 1
+	}
+	echo '=== stdout: mailfs.'^$MAIL_TAG^' ==='
+	tail -50 $LOG_DIR/mailfs.$MAIL_TAG.out.log >[2]/dev/null || echo '(empty)'
+	echo ''
+	echo '=== stderr: mailfs.'^$MAIL_TAG^' ==='
+	tail -50 $LOG_DIR/mailfs.$MAIL_TAG.err.log >[2]/dev/null || echo '(empty)'
+
+# Tail live logs for a specific mailfs account.
+# Usage: mk mailfs-tail MAIL_TAG=gmail
+mailfs-tail:V:
+	if(~ $#MAIL_TAG 0){
+		echo 'usage: mk mailfs-tail MAIL_TAG=tag'
+		exit 1
+	}
+	tail -f \
+		$LOG_DIR/mailfs.$MAIL_TAG.out.log \
+		$LOG_DIR/mailfs.$MAIL_TAG.err.log >[2]/dev/null
+
+# Install/load a per-account mailfs LaunchAgent from template.
+# Not included in DAEMONS by default (fresh clones have no account config).
+#
+# Usage:
+#   mk mailfs-daemon MAIL_TAG=posteo MAIL_USER=you@posteo.net MAIL_SERVER=posteo.de
+# Optional:
+#   MAIL_SRVNAME=mail.posteo   # 9p service/socket name (default: mail)
+mailfs-daemon:V:
+	mkdir -p $LOG_DIR $LAUNCH_AGENTS
+	if(~ $#MAIL_TAG 0 || ~ $#MAIL_USER 0 || ~ $#MAIL_SERVER 0){
+		echo 'usage: mk mailfs-daemon MAIL_TAG=tag MAIL_USER=user@domain MAIL_SERVER=imap.host [MAIL_SRVNAME=mail]'
+		exit 1
+	}
+	if(~ $#MAIL_SRVNAME 0) MAIL_SRVNAME=mail
+	sed \
+		-e 's|@HOME@|'$HOME'|g' \
+		-e 's|@PLAN9@|'$PLAN9'|g' \
+		-e 's|@DAEMONDIR@|'$DAEMONDIR'|g' \
+		-e 's|@MAIL_TAG@|'$MAIL_TAG'|g' \
+		-e 's|@MAIL_USER@|'$MAIL_USER'|g' \
+		-e 's|@MAIL_SERVER@|'$MAIL_SERVER'|g' \
+		-e 's|@MAIL_SRVNAME@|'$MAIL_SRVNAME'|g' \
+		daemons/com.plan9port.mailfs.plist.template > $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist
+	launchctl bootout gui/`{id -u} $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist >[2]/dev/null || status=''
+	sleep 0.5
+	launchctl bootstrap gui/`{id -u} $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist >[2]/dev/null || status=''
+	echo installed+loaded $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist
+
+mailfs-daemon-unload:V:
+	if(~ $#MAIL_TAG 0){
+		echo 'usage: mk mailfs-daemon-unload MAIL_TAG=tag'
+		exit 1
+	}
+	launchctl bootout gui/`{id -u} $LAUNCH_AGENTS/com.plan9port.mailfs.$MAIL_TAG.plist >[2]/dev/null || status=''
+	echo unloaded com.plan9port.mailfs.$MAIL_TAG
+
+mailfs-daemon-reload:V: mailfs-daemon-unload mailfs-daemon
 
 # Register Plumb.app as the default handler for text and source-code file types.
 #
@@ -110,52 +179,39 @@ logs:V:
 # apps from opening these files.  Specialised document formats (Pages, Word,
 # PDF, images, etc.) are intentionally excluded.
 register-defaults:V:
-	sh -c '\
-		if ! command -v duti >/dev/null 2>&1; then \
-			echo "error: duti not found. Install with: brew install duti"; \
-			exit 1; \
-		fi; \
-		BUNDLE=com.swtch.plan9port.plumb; \
-		echo "==> Registering named UTIs..."; \
-		for uti in \
-			public.plain-text \
-			public.source-code \
-			public.script \
-			public.shell-script \
-			public.bash-script \
-			public.zsh-script \
-			public.python-script \
-			public.ruby-script \
-			public.perl-script \
-			public.c-source \
-			public.c-header \
-			public.c-plus-plus-source \
-			public.objective-c-source \
-			public.make-source \
-			com.netscape.javascript-source \
-			com.sun.java-source \
-			public.yaml \
-			public.json \
-			net.daringfireball.markdown \
-		; do \
-			duti -s "$BUNDLE" "$uti" all && echo "  $uti" || echo "  FAILED: $uti"; \
-		done; \
-		echo "==> Registering extensions (dynamic/unknown UTIs)..."; \
-		for ext in \
-			ts \
-			go \
-			rs \
-			toml \
-			lua \
-			vim \
-			fish \
-			conf \
-			rc \
-			mk \
-			profile \
-			gitconfig \
-		; do \
-			duti -s "$BUNDLE" ".$ext" all && echo "  .$ext" || echo "  FAILED: .$ext"; \
-		done; \
-		echo "==> Done. You may need to relaunch Finder for changes to take effect." \
-	'
+	duti_path=`{/usr/bin/which duti >[2]/dev/null}
+	if(~ $#duti_path 0){
+		echo 'error: duti not found. Install with: brew install duti'
+		exit 1
+	}
+	echo '==> Registering named UTIs...'
+	utis=(
+		public.plain-text
+		public.source-code
+		public.script
+		public.shell-script
+		public.bash-script
+		public.zsh-script
+		public.python-script
+		public.ruby-script
+		public.perl-script
+		public.c-source
+		public.c-header
+		public.c-plus-plus-source
+		public.objective-c-source
+		public.make-source
+		com.netscape.javascript-source
+		com.sun.java-source
+		public.yaml
+		public.json
+		net.daringfireball.markdown
+	)
+	for(uti in $utis){
+		duti -s com.swtch.plan9port.plumb $uti all && echo '  '^$uti || echo '  FAILED: '^$uti
+	}
+	echo '==> Registering extensions (dynamic/unknown UTIs)...'
+	exts=(ts go rs toml lua vim fish conf rc mk profile gitconfig)
+	for(ext in $exts){
+		duti -s com.swtch.plan9port.plumb '.'^$ext all && echo '  .'^$ext || echo '  FAILED: .'^$ext
+	}
+	echo '==> Done. You may need to relaunch Finder for changes to take effect.'

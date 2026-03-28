@@ -14,6 +14,7 @@ void
 upasconfig(void)
 {
 	static int did;
+	char *e;
 
 	if(did)
 		return;
@@ -24,4 +25,17 @@ upasconfig(void)
 	_UPASBIN = unsharp(_UPASBIN);
 	_SHELL = unsharp(_SHELL);
 	_POST = unsharp(_POST);
+
+	/*
+	 * Personal mail layout (no symlinks in $PLAN9/mail/lib): set before running
+	 * upas/send, upas/marshal, upas/aliasmail, etc.
+	 *   export UPASLIB=$HOME/mail/lib
+	 *   export MAILROOT=$HOME/mail
+	 */
+	e = getenv("UPASLIB");
+	if(e != nil && *e != '\0')
+		_UPASLIB = strdup(e);
+	e = getenv("MAILROOT");
+	if(e != nil && *e != '\0')
+		_MAILROOT = strdup(e);
 }

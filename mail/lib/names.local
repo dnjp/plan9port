@@ -1,5 +1,5 @@
-# alias file, listed in /mail/lib/namefiles
-
-# postmaster goes to glenda
-postmaster	glenda
-
+# Local mail aliases.  Format:
+#   alias: address [address ...]
+# Examples:
+#   me: you@provider.example
+#   work: you@work.example

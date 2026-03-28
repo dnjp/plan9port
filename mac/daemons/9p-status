@@ -2,18 +2,48 @@
 # Show status and log locations for plan9port LaunchAgents.
 # Usage: 9p-status [tail|logs]
 LOG_DIR="${HOME}/.local/var/log/plan9port"
-AGENTS=(com.plan9port.fontsrv com.plan9port.plumber com.plan9port.ruler)
+LAUNCH_AGENTS="${HOME}/Library/LaunchAgents"
+
+# Core daemons (fixed set).
+CORE_AGENTS=(
+	com.plan9port.fontsrv
+	com.plan9port.plumber
+	com.plan9port.ruler
+	com.plan9port.factotum
+)
+
+# Discover any installed mailfs account daemons dynamically.
+MAILFS_AGENTS=()
+for plist in "$LAUNCH_AGENTS"/com.plan9port.mailfs.*.plist; do
+	[[ -f "$plist" ]] || continue
+	label=$(basename "$plist" .plist)
+	MAILFS_AGENTS+=("$label")
+done
 
 status() {
 	echo "=== plan9port LaunchAgents (gui/$(id -u)) ==="
 	echo ""
-	for label in "${AGENTS[@]}"; do
+
+	all_agents=("${CORE_AGENTS[@]}" "${MAILFS_AGENTS[@]}")
+	for label in "${all_agents[@]}"; do
 		if launchctl print "gui/$(id -u)/$label" &>/dev/null; then
 			echo "  $label: loaded"
 			launchctl print "gui/$(id -u)/$label" 2>/dev/null \
-				| grep -E '^\s+(state|pid)' | sed 's/^/    /' || true
+				| grep -E '^\s+(state|pid|last exit status)' | sed 's/^/    /' || true
 		else
 			echo "  $label: not loaded"
+		fi
+		# Show last few lines of stderr if the daemon has logged errors.
+		tag="${label#com.plan9port.mailfs.}"
+		errlog="$LOG_DIR/${label#com.plan9port.}.err.log"
+		# For mailfs daemons the log name uses just the tag (e.g. mailfs.gmail.err.log).
+		if [[ "$label" == com.plan9port.mailfs.* ]]; then
+			tag="${label#com.plan9port.mailfs.}"
+			errlog="$LOG_DIR/mailfs.${tag}.err.log"
+		fi
+		if [[ -s "$errlog" ]]; then
+			echo "    stderr (last 3 lines):"
+			tail -3 "$errlog" | sed 's/^/      /'
 		fi
 		echo ""
 	done
@@ -27,11 +57,8 @@ logs_tail() {
 		echo "No log dir yet: $LOG_DIR"
 		exit 1
 	fi
-	p="$LOG_DIR/*.log"
-	echo $p
-
 	for file in "$LOG_DIR"/*.log; do
-		tail -f "$file" &
+		[[ -f "$file" ]] && tail -f "$file" &
 	done
 	wait
 }
