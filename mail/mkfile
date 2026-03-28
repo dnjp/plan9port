@@ -14,7 +14,7 @@ SMTPSERVER=
 MAIL_TAG=
 MAIL_SRVNAME=
 
-all:V:
+all:Q:
 	echo 'mk deps           # chmod scripts, mkdir queue'
 	echo 'mk account        # deps + auth + daemon-load + daemon-reload'
 	echo 'mk auth           # load IMAP+SMTP creds into factotum'
@@ -32,20 +32,20 @@ all:V:
 	echo 'required account vars: ACCOUNT IMAPSERVER SMTPSERVER MAIL_TAG MAIL_SRVNAME'
 	echo 'hint: run ./SETUP with no args for guided setup of all accounts'
 
-deps:V:
+deps:Q:
 	mkdir -p $MAILDIR/queue
 	chmod +x $MAILDIR/pipefrom $MAILDIR/lib/qmail $MAILDIR/SETUP
 	if(test -f $MAILDIR/lib/remotemail) chmod +x $MAILDIR/lib/remotemail
 	echo 'dependencies ready'
 
-print:V:
+print:Q:
 	echo ACCOUNT=$ACCOUNT
 	echo IMAPSERVER=$IMAPSERVER
 	echo SMTPSERVER=$SMTPSERVER
 	echo MAIL_TAG=$MAIL_TAG
 	echo MAIL_SRVNAME=$MAIL_SRVNAME
 
-check-account-vars:V: print
+check-account-vars:Q: print
 	if(~ $#ACCOUNT 0) { echo 'missing ACCOUNT' >[1=2]; exit 1 }
 	if(~ $#IMAPSERVER 0) { echo 'missing IMAPSERVER' >[1=2]; exit 1 }
 	if(~ $#SMTPSERVER 0) { echo 'missing SMTPSERVER' >[1=2]; exit 1 }
@@ -53,13 +53,13 @@ check-account-vars:V: print
 	if(~ $#MAIL_SRVNAME 0) { echo 'missing MAIL_SRVNAME' >[1=2]; exit 1 }
 	echo account configuration is valid
 
-account:V: check-account-vars deps keys-if-missing auth daemon-load daemon-reload
+account:Q: check-account-vars deps keys-if-missing auth daemon-load daemon-reload
 	echo done
 
 # Run mk keys only if key persistence is not yet configured.
 # On macOS checks Keychain; elsewhere checks for the key file.
 # Having this as a prerequisite of account ensures ./SETUP works from a fresh state.
-keys-if-missing:V:
+keys-if-missing:Q:
 	os=`{uname}
 	have_keys=false
 	if(~ $os Darwin){
@@ -78,7 +78,7 @@ keys-if-missing:V:
 		mk -f $MAILDIR/mkfile keys
 	}
 
-auth:V: check-account-vars
+auth:Q: check-account-vars
 	echo Enter password for $ACCOUNT
 	# ifs=newline-only so spaces in the password survive as one element.
 	ifs='
@@ -128,16 +128,16 @@ auth:V: check-account-vars
 # start — run mailfs directly (backgrounds itself via 9pserve).
 # Works on any platform. On macOS, prefer daemon-load for automatic restart.
 # Prints the command so users can run it manually in future sessions.
-start:V: check-account-vars
+start:Q: check-account-vars
 	echo 'mailfs -s '$MAIL_SRVNAME' -t -u '$ACCOUNT' '$IMAPSERVER
 	mailfs -s $MAIL_SRVNAME -t -u $ACCOUNT $IMAPSERVER
 
 # stop — kill a running mailfs by service name.
-stop:V: check-account-vars
+stop:Q: check-account-vars
 	echo 'pkill -f mailfs.*'$MAIL_SRVNAME
 	pkill -f 'mailfs.*'^$MAIL_SRVNAME >[2]/dev/null || status=''
 
-daemon-load:V: check-account-vars
+daemon-load:Q: check-account-vars
 	os=`{uname}
 	if(~ $os Darwin){
 		cd $PLAN9/mac && mk mailfs-daemon MAIL_TAG=$MAIL_TAG MAIL_USER=$ACCOUNT MAIL_SERVER=$IMAPSERVER MAIL_SRVNAME=$MAIL_SRVNAME
@@ -147,7 +147,7 @@ daemon-load:V: check-account-vars
 		mk -f $MAILDIR/mkfile start ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
 	}
 
-daemon-reload:V: check-account-vars
+daemon-reload:Q: check-account-vars
 	os=`{uname}
 	if(~ $os Darwin){
 		cd $PLAN9/mac && mk mailfs-daemon-reload MAIL_TAG=$MAIL_TAG MAIL_USER=$ACCOUNT MAIL_SERVER=$IMAPSERVER MAIL_SRVNAME=$MAIL_SRVNAME
@@ -157,7 +157,7 @@ daemon-reload:V: check-account-vars
 		mk -f $MAILDIR/mkfile start ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
 	}
 
-daemon-unload:V: check-account-vars
+daemon-unload:Q: check-account-vars
 	os=`{uname}
 	if(~ $os Darwin){
 		cd $PLAN9/mac && mk mailfs-daemon-unload MAIL_TAG=$MAIL_TAG
@@ -165,7 +165,7 @@ daemon-unload:V: check-account-vars
 	if not
 		mk -f $MAILDIR/mkfile stop ACCOUNT=$ACCOUNT IMAPSERVER=$IMAPSERVER MAIL_TAG=$MAIL_TAG MAIL_SRVNAME=$MAIL_SRVNAME SMTPSERVER=$SMTPSERVER
 
-logs:V: check-account-vars
+logs:Q: check-account-vars
 	errlog=$HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.err.log
 	outlog=$HOME/.local/var/log/plan9port/mailfs.$MAIL_TAG.out.log
 	echo '=== '$MAIL_SRVNAME' stderr (last 50 lines) ==='
@@ -179,13 +179,13 @@ logs:V: check-account-vars
 	if not
 		echo '(no stdout log at '$outlog')'
 
-refresh:V: check-account-vars
+refresh:Q: check-account-vars
 	echo refresh | 9p write $MAIL_SRVNAME/mbox/ctl
 
-drainqueue:V:
+drainqueue:Q:
 	$PLAN9/bin/upas/runq -n 20 $MAILDIR/queue $MAILDIR/lib/remotemail
 
-remove:V: check-account-vars
+remove:Q: check-account-vars
 	os=`{uname}
 	if(~ $os Darwin){
 		cd $PLAN9/mac && mk mailfs-daemon-unload MAIL_TAG=$MAIL_TAG || status=''
@@ -207,7 +207,7 @@ remove:V: check-account-vars
 # On macOS, stores the passphrase in Keychain so load-factotum-keys.sh can
 # decrypt at daemon startup without user interaction.
 # After running this, use  mk keysedit  to add key specs.
-keys:V:
+keys:Q:
 	mkdir -p `{dirname $KEYFILE}
 	ifs='
 	'
@@ -238,5 +238,5 @@ keys:V:
 # ipso decrypts, opens the file in Acme, waits for Enter, then re-encrypts
 # and reloads factotum.  Works on any platform.
 # Key format: key proto=pass service=imap server=host user=you@host !password=secret
-keysedit:V:
+keysedit:Q:
 	ipso -a $KEYFILE
