@@ -260,3 +260,4 @@ first in `PATH`, `read` may resolve to macOS's `/bin/read`.
 - When acme is already running, the `acme` wrapper script creates a fresh namespace (`/tmp/ns.$USER.$RANDOM`) to avoid socket conflicts.
 - `shell/mkfile install` uses `cmp -s src dst || cp src dst` — macOS `cp` errors if source and destination are the same file.
 - **Acme `wincommit` (tag name)**: when comparing the parsed tag name to the file name, compare the **contracted** form of the parsed name to `w->body.file->name`. Otherwise typing a full path (e.g. `/Users/daniel`) causes winsetname → filesetname (contracts to `~`) → winsettag → wincommit → parsed tag still raw → comparison fails → infinite recursion and crash.
+- For `rc` tools and scripts, use plan9 naming style: lowercase one-word variable names (`checkmnt`, not `_check_mnt`), no leading underscores, and prefer command flags over custom env-var knobs for runtime configuration.
