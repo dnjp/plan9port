@@ -55,6 +55,7 @@ Channel	*ckill;		/* chan(Rune*) */
 Channel	*cxfidalloc;	/* chan(Xfid*) */
 Channel	*cxfidfree;	/* chan(Xfid*) */
 Channel	*cnewwindow;	/* chan(Channel*) */
+Channel *ctheme;    	/* chan(Channel*) */
 Channel	*mouseexit0;	/* chan(int) */
 Channel	*mouseexit1;	/* chan(int) */
 Channel	*cexit;		/* chan(int) */

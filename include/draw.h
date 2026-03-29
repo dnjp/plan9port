@@ -1,7 +1,7 @@
 #ifndef _DRAW_H_
 #define _DRAW_H_ 1
 #if defined(__cplusplus)
-extern "C" { 
+extern "C" {
 #endif
 
 AUTOLIB(draw)
@@ -110,7 +110,7 @@ typedef enum
 } Drawop;
 
 /*
- * image channel descriptors 
+ * image channel descriptors
  */
 enum {
 	CRed = 0,
@@ -205,7 +205,7 @@ struct Display
 	struct Mux	*mux;
 	int		srvfd;
 	int		dpi;
-	
+
 	Font	*firstfont;
 	Font	*lastfont;
 };
@@ -322,12 +322,12 @@ struct Font
 	Cachesubf	*subf;
 	Cachefont	**sub;	/* as read from file */
 	Image		*cacheimage;
-	
+
 	/* doubly linked list of fonts known to display */
 	int ondisplaylist;
 	Font *next;
 	Font *prev;
-	
+
 	/* on hi-dpi systems, one of these is set to f and the other is the other-dpi version of f */
 	Font	*lodpi;
 	Font	*hidpi;
@@ -504,7 +504,7 @@ extern void	loadhidpi(Font*);
 extern void	swapfont(Font*, Font**, Font**);
 
 /*
- * Predefined 
+ * Predefined
  */
 extern	Point		ZP;
 extern	Rectangle	ZR;
@@ -581,4 +581,43 @@ int		_displayresize(Display *d, Rectangle rect);
 #if defined(__cplusplus)
 }
 #endif
+
+/*
+ * Theme support — light and dark color palettes.
+ * The named D* constants above are the daytime originals;
+ * these structs extend that vocabulary to include dusk variants.
+ * See libdraw/theme.c for values and platform-specific detection.
+ */
+typedef struct Colors Colors;
+struct Colors {
+	/* tag/command pane (blue family) */
+	uint32_t tagback, taghi, tagbord, tagtext;
+
+	/* text/main pane (yellow family) */
+	uint32_t textback, texthi, textbord, texttext;
+
+	/* window chrome — 9term, rio */
+	uint32_t background;
+	uint32_t winback, winhi, winbord, wintext;
+	uint32_t titlecol, lighttitlecol;
+	uint32_t holdcol, lightholdcol, paleholdcol;
+	uint32_t paletextcol, sizecol;
+
+	/* acme buttons */
+	uint32_t modbutton, but2col, but3col;
+
+	/* sam */
+	uint32_t darkgrey;
+
+	/* 9term */
+	uint32_t termred, termgrey, termdarkgrey;
+};
+
+extern Colors lightcolors;	/* plan9 day palette */
+extern Colors darkcolors;	/* plan9 dusk palette */
+
+int	themeisdark(void);
+int	themewatchfd(void);
+
+#define THEME	(themeisdark() ? &darkcolors : &lightcolors)
 #endif

@@ -23,16 +23,20 @@ void	waitthread(void*);
 void	xfidallocthread(void*);
 void	newwindowthread(void*);
 void	plumbproc(void*);
+void	themeproc(void*);
+void	rowupdatecols(Row *r);
 int	timefmt(Fmt*);
 
 Reffont	**fontcache;
 int		nfontcache;
+int		themefd;
 char		wdir[512] = ".";
 Reffont	*reffonts[2];
 int		snarffd = -1;
 int		mainpid;
 int		swapscrollbuttons = FALSE;
 char		*mtpt;
+Colors		*curtheme;
 
 enum{
 	NSnarf = 1000	/* less than 1024, I/O buffer size */
@@ -232,7 +236,8 @@ threadmain(int argc, char *argv[])
 	cedit = chancreate(sizeof(int), 0);
 	cexit = chancreate(sizeof(int), 0);
 	cwarn = chancreate(sizeof(void*), 1);
-	if(cwait==nil || ccommand==nil || ckill==nil || cxfidalloc==nil || cxfidfree==nil || cerr==nil || cexit==nil || cwarn==nil){
+	ctheme = chancreate(sizeof(ulong), 1);
+	if(cwait==nil || ccommand==nil || ckill==nil || cxfidalloc==nil || cxfidfree==nil || cerr==nil || cexit==nil || cwarn==nil || ctheme==nil){
 		fprint(2, "acme: can't create initial channels: %r\n");
 		threadexitsall("channels");
 	}
@@ -245,6 +250,7 @@ threadmain(int argc, char *argv[])
 	chansetname(cedit, "cedit");
 	chansetname(cexit, "cexit");
 	chansetname(cwarn, "cwarn");
+	chansetname(ctheme, "ctheme");
 
 	mousectl = initmouse(nil, screen);
 	if(mousectl == nil){
@@ -305,6 +311,10 @@ threadmain(int argc, char *argv[])
 			}
 	}
 	flushimage(display, 1);
+
+	themefd = themewatchfd();
+	if(themefd >= 0)
+		proccreate(themeproc, nil, 4096);
 
 	acmeerrorinit();
 	threadcreate(keyboardthread, nil, STACK);
@@ -489,6 +499,15 @@ plumbproc(void *v)
 	}
 }
 */
+
+void themeproc(void *v) {
+	USED(v);
+	char buf[16];
+	for(;;) {
+		read(themefd, buf, sizeof buf);  /* blocks until OS flips */
+		sendul(ctheme, 1);
+	}
+}
 
 void
 keyboardthread(void *v)
@@ -750,12 +769,12 @@ waitthread(void *v)
 	Waitmsg *w;
 	Command *c, *lc;
 	uint pid;
-	int found, ncmd;
+	int found, ncmd, themeupdate;
 	Rune *cmd;
 	char *err;
 	Text *t;
 	Pid *pids, *p, *lastp;
-	enum { WErr, WKill, WWait, WCmd, NWALT };
+	enum { WErr, WKill, WWait, WCmd, WTheme, NWALT };
 	Alt alts[NWALT+1];
 
 	USED(v);
@@ -773,6 +792,9 @@ waitthread(void *v)
 	alts[WCmd].c = ccommand;
 	alts[WCmd].v = &c;
 	alts[WCmd].op = CHANRCV;
+	alts[WTheme].c = ctheme;
+	alts[WTheme].v = &themeupdate;
+	alts[WTheme].op = CHANRCV;
 	alts[NWALT].op = CHANEND;
 
 	command = nil;
@@ -836,6 +858,14 @@ waitthread(void *v)
 			}
 			qunlock(&row.lk);
 			free(w);
+		case WTheme:
+			qlock(&row.lk);
+			iconinit();
+			rowupdatecols(&row);
+			rowresize(&row, screen->r);
+			flushimage(display, 1);
+			qunlock(&row.lk);
+			break;
     Freecmd:
 			if(c){
 				if(c->iseditcmd)
@@ -1663,30 +1693,83 @@ Cursor2 boxcursor2 = {
 	 0x00, 0x00, 0x00, 0x00}
 };
 
+static void
+textupdatecols(Text *t, Image **cols)
+{
+	int i;
+	for(i = 0; i < NCOL; i++)
+		t->fr.cols[i] = cols[i];
+	frinittick(&t->fr);   /* rebuild the cursor bitmap from new cols */
+}
+
+void
+rowupdatecols(Row *r)
+{
+	Column *c;
+	Window *w;
+	int i, j;
+
+	textupdatecols(&r->tag, tagcols);
+	for(i = 0; i < r->ncol; i++){
+		c = r->col[i];
+		textupdatecols(&c->tag, tagcols);
+		for(j = 0; j < c->nw; j++){
+			w = c->w[j];
+			textupdatecols(&w->tag, tagcols);
+			textupdatecols(&w->body, textcols);
+		}
+	}
+}
+
 void
 iconinit(void)
 {
 	Rectangle r;
 	Image *tmp;
+	int i;
+	int changed;
 
-	if(tagcols[BACK] == nil) {
+	changed = 0;
+	if(curtheme != nil && curtheme != THEME)
+		changed = 1;
+	curtheme = THEME;
+
+	if(tagcols[BACK] != nil && changed == 1) {
+		/* TEXT and HTEXT are aliased — clear the alias before looping */
+		tagcols[HTEXT]  = nil;
+		textcols[HTEXT] = nil;
+		for(i = 0; i < NCOL; i++){
+			if(tagcols[i] && tagcols[i] != display->black && tagcols[i] != display->white){
+				freeimage(tagcols[i]);
+				tagcols[i] = nil;
+			}
+			if(textcols[i] && textcols[i] != display->black && textcols[i] != display->white){
+				freeimage(textcols[i]);
+				textcols[i] = nil;
+			}
+		}
+		if(but2col){ freeimage(but2col); but2col = nil; }
+		if(but3col){ freeimage(but3col); but3col = nil; }
+	}
+
+	if(tagcols[BACK] == nil || changed == 1){
 		/* Blue */
-		tagcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
-		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
-		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPurpleblue);
-		tagcols[TEXT] = display->black;
-		tagcols[HTEXT] = display->black;
+		tagcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagback);
+		tagcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->taghi);
+		tagcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagbord);
+		tagcols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagtext);
+		tagcols[HTEXT] = tagcols[TEXT];
 
 		/* Yellow */
-		textcols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
-		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
-		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DYellowgreen);
-		textcols[TEXT] = display->black;
-		textcols[HTEXT] = display->black;
+		textcols[BACK] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->textback);
+		textcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->texthi);
+		textcols[BORD] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->textbord);
+		textcols[TEXT] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->texttext);
+		textcols[HTEXT] = textcols[TEXT];
 	}
 
 	r = Rect(0, 0, Scrollwid, font->height+1);
-	if(button && eqrect(r, button->r))
+	if(changed == 0 && button && eqrect(r, button->r))
 		return;
 
 	if(button){
@@ -1704,15 +1787,15 @@ iconinit(void)
 	draw(modbutton, r, tagcols[BACK], nil, r.min);
 	border(modbutton, r, ButtonBorder, tagcols[BORD], ZP);
 	r = insetrect(r, ButtonBorder);
-	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DMedblue);
+	tmp = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->modbutton);
 	draw(modbutton, r, tmp, nil, ZP);
 	freeimage(tmp);
 
 	r = button->r;
-	colbutton = allocimage(display, r, screen->chan, 0, DPurpleblue);
+	colbutton = allocimage(display, r, screen->chan, 0, curtheme->tagbord);
 
-	but2col = allocimage(display, r, screen->chan, 1, 0xAA0000FF);
-	but3col = allocimage(display, r, screen->chan, 1, 0x006600FF);
+	but2col = allocimage(display, r, screen->chan, 1, curtheme->but2col);
+	but3col = allocimage(display, r, screen->chan, 1, curtheme->but3col);
 }
 
 /*
