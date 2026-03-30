@@ -206,6 +206,7 @@ void		wsnarf(Window*);
 void 		wscrsleep(Window*, uint);
 void		wsetcols(Window*);
 
+void		wupdatecols();
 void		deletetimeoutproc(void*);
 
 struct Timer

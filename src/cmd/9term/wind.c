@@ -35,6 +35,8 @@ static	Image	*holdcol;
 static	Image	*lightholdcol;
 static	Image	*paleholdcol;
 
+Colors *curtheme;
+
 static int
 wscale(Window *w, int n)
 {
@@ -43,27 +45,65 @@ wscale(Window *w, int n)
 	return scalesize(w->i->display, n);
 }
 
+void
+wupdatecols()
+{
+	int changed;
+
+	changed = 0;
+	if(curtheme != nil && curtheme != THEME)
+		changed = 1;
+	curtheme = THEME;
+
+	if(cols[0] != nil && changed == 1){
+		if(grey)         { freeimage(grey);         grey = nil; }
+		if(darkgrey)     { freeimage(darkgrey);     darkgrey = nil; }
+		if(titlecol)     { freeimage(titlecol);     titlecol = nil; }
+		if(lighttitlecol){ freeimage(lighttitlecol);lighttitlecol = nil; }
+		if(holdcol)      { freeimage(holdcol);      holdcol = nil; }
+		if(lightholdcol) { freeimage(lightholdcol); lightholdcol = nil; }
+		if(paleholdcol)  { freeimage(paleholdcol);  paleholdcol = nil; }
+		/* cols[BACK] was allocated; TEXT/HTEXT point to display->black — don't free */
+		if(cols[BACK] && cols[BACK] != display->white && cols[BACK] != display->black)
+			freeimage(cols[BACK]);
+		if(cols[HIGH])   { freeimage(cols[HIGH]);   cols[HIGH] = nil; }
+		if(cols[BORD])   { freeimage(cols[BORD]);   cols[BORD] = nil; }
+		cols[BACK] = cols[TEXT] = cols[HTEXT] = nil;
+	}
+
+	if(cols[0] == nil || changed == 1){
+		grey         = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->termgrey);
+		darkgrey     = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->termdarkgrey);
+		cols[BACK]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winback);
+		cols[HIGH]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winhi);
+		cols[BORD]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winbord);
+		cols[TEXT]   = display->black;
+		cols[HTEXT]  = display->black;
+		titlecol     = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->titlecol);
+		lighttitlecol= allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->lighttitlecol);
+		holdcol      = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->holdcol);
+		lightholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->lightholdcol);
+		paleholdcol  = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->paleholdcol);
+	}
+
+	int i;
+	Window *w;
+
+	for(i = 0; i < nwindow; i++){
+		w = window[i];
+		w->i->repl = 1;  /* force redraw */
+		memmove(w->f.cols, cols, sizeof cols);
+		frinittick(&w->f);
+	}
+}
+
 Window*
 wmk(Image *i, Mousectl *mc, Channel *ck, Channel *cctl, int scrolling)
 {
 	Window *w;
 	Rectangle r;
 
-	if(cols[0] == nil){
-		/* greys are multiples of 0x11111100+0xFF, 14* being palest */
-		grey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xEEEEEEFF);
-		darkgrey = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x666666FF);
-		cols[BACK] = display->white;
-		cols[HIGH] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xCCCCCCFF);
-		cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x999999FF);
-		cols[TEXT] = display->black;
-		cols[HTEXT] = display->black;
-		titlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreygreen);
-		lighttitlecol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreygreen);
-		holdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DMedblue);
-		lightholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DGreyblue);
-		paleholdcol = allocimage(display, Rect(0,0,1,1), CMAP8, 1, DPalegreyblue);
-	}
+	wupdatecols();
 	w = emalloc(sizeof(Window));
 	w->screenr = i->r;
 	r = insetrect(i->r, wscale(w, Selborder)+wscale(w, 1));

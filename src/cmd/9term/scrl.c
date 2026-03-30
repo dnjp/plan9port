@@ -18,10 +18,12 @@ scrtemps(void)
 {
 	int h;
 
-	if(scrtmp)
-		return;
+	if(scrtmp){
+		freeimage(scrtmp);
+		scrtmp = nil;
+	}
 	h = BIG*Dy(screen->r);
-	scrtmp = allocimage(display, Rect(0, 0, 32, h), screen->chan, 0, DWhite);
+	scrtmp = allocimage(display, Rect(0, 0, 32, h), screen->chan, 0, THEME->winback);
 	if(scrtmp == nil)
 		error("scrtemps");
 }

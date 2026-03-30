@@ -175,6 +175,9 @@ Cursor *corners[9] = {
 void
 iconinit(void)
 {
-	background = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0x777777FF);
-	red = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0xDD0000FF);
+	Colors *c = THEME;
+	if(background) freeimage(background);
+	if(red) freeimage(red);
+	background = allocimage(display, Rect(0,0,1,1), RGB24, 1, c->background);
+	red = allocimage(display, Rect(0,0,1,1), RGB24, 1, c->termred);
 }

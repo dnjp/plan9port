@@ -27,17 +27,24 @@ static
 void
 menucolors(void)
 {
-	/* Main tone is greenish, with negative selection */
-	back = allocimagemix(display, DPalegreen, DWhite);
-	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkgreen);	/* dark green */
-	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DMedgreen);	/* not as dark green */
+	Colors *c = THEME;
+
+	if(back != display->white){
+		freeimage(back);
+		freeimage(high);
+		freeimage(bord);
+	}
+
+	back = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winback);
+	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->titlecol);
+	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winbord);
 	if(back==nil || high==nil || bord==nil)
 		goto Error;
 	text = display->black;
-	htext = back;
+	htext = display->black;
 	return;
 
-    Error:
+Error:
 	freeimage(back);
 	freeimage(high);
 	freeimage(bord);
