@@ -102,6 +102,7 @@ Colors darkcolors = {
 
 #ifdef __APPLE__
 #include <sys/event.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 
@@ -125,12 +126,23 @@ themeisdark(void)
 static int wpipe[2] = {-1, -1};
 
 static void
+themewatchnotify(void)
+{
+	char b = 1;
+
+	if(write(wpipe[1], &b, 1) == 1)
+		return;
+	if(errno == EAGAIN)
+		return;
+}
+
+static void
 watchproc(void *v)
 {
 	USED(v);
 	char *home;
 	char path[512];
-	int kq, fd;
+	int kq, fd, last, now;
 	struct kevent ev, out;
 
 	home = getenv("HOME");
@@ -150,6 +162,8 @@ watchproc(void *v)
 		fprint(2, "theme: open %s: %r\n", path);
 		return;
 	}
+
+	last = themeisdark();
 
 	EV_SET(&ev, fd, EVFILT_VNODE,
 		EV_ADD|EV_ENABLE|EV_CLEAR,
@@ -173,9 +187,18 @@ watchproc(void *v)
 			kevent(kq, &ev, 1, nil, 0, nil);
 		}
 
-		/* notify acme's relay */
-		char b = 1;
-		write(wpipe[1], &b, 1);
+		/*
+		 * Any write to .GlobalPreferences.plist triggers NOTE_WRITE, not
+		 * only appearance changes. Relays (acme waitthread, samterm, 9term)
+		 * take row/window locks and resize the UI — spurious events can
+		 * stall the program (e.g. under concurrent pref churn). Only wake
+		 * clients when light/dark actually changed.
+		 */
+		now = themeisdark();
+		if(now == last)
+			continue;
+		last = now;
+		themewatchnotify();
 	}
 }
 
@@ -186,6 +209,8 @@ themewatchfd(void)
 		return wpipe[0];
 	if(pipe(wpipe) < 0)
 		return -1;
+	fcntl(wpipe[0], F_SETFD, FD_CLOEXEC);
+	fcntl(wpipe[1], F_SETFD, FD_CLOEXEC);
 	fcntl(wpipe[1], F_SETFL, O_NONBLOCK);
 	proccreate(watchproc, nil, 32*1024);
 	return wpipe[0];

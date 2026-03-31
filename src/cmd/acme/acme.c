@@ -822,6 +822,14 @@ waitthread(void *v)
 				warning(nil, "Kill: no process %S\n", cmd);
 			free(cmd);
 			break;
+		case WTheme:
+			qlock(&row.lk);
+			iconinit();
+			rowupdatecols(&row);
+			rowresize(&row, screen->r);
+			flushimage(display, 1);
+			qunlock(&row.lk);
+			break;
 		case WWait:
 			pid = w->pid;
 			lc = nil;
@@ -858,14 +866,6 @@ waitthread(void *v)
 			}
 			qunlock(&row.lk);
 			free(w);
-		case WTheme:
-			qlock(&row.lk);
-			iconinit();
-			rowupdatecols(&row);
-			rowresize(&row, screen->r);
-			flushimage(display, 1);
-			qunlock(&row.lk);
-			break;
     Freecmd:
 			if(c){
 				if(c->iseditcmd)
