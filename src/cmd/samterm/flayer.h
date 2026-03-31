@@ -39,6 +39,7 @@ void	flresize(Rectangle);
 int	flselect(Flayer*);
 void	flsetselect(Flayer*, long, long);
 void	flstart(Rectangle);
+void	flupdatecols(void);
 void	flupfront(Flayer*);
 Flayer	*flwhich(Point);
 int	flscale(Flayer*, int);

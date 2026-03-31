@@ -28,20 +28,82 @@ void
 flstart(Rectangle r)
 {
 	lDrect = r;
+	int changed;
 
-	/* Main text is yellowish */
-	maincols[BACK] = allocimagemix(display, DPaleyellow, DWhite);
-	maincols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DDarkyellow);
-	maincols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DYellowgreen);
-	maincols[TEXT] = display->black;
-	maincols[HTEXT] = display->black;
+	changed = 0;
+	if(curtheme != nil && curtheme != THEME)
+		changed = 1;
+	curtheme = THEME;
 
-	/* Command text is blueish */
-	cmdcols[BACK] = allocimagemix(display, DPalebluegreen, DWhite);
-	cmdcols[HIGH] = allocimage(display, Rect(0,0,1,1), screen->chan, 1, DPalegreygreen);
-	cmdcols[BORD] = allocimage(display, Rect(0,0,2,2), screen->chan, 1, DPurpleblue);
-	cmdcols[TEXT] = display->black;
+	/* free existing if reinitialising for theme change */
+	if(maincols[BACK] != nil && changed == 1){
+		maincols[HTEXT] = nil;
+		cmdcols[HTEXT]  = nil;
+		int i;
+		for(i = 0; i < NCOL; i++){
+			if(maincols[i] && maincols[i] != display->black && maincols[i] != display->white){
+				freeimage(maincols[i]);
+				maincols[i] = nil;
+			}
+			if(cmdcols[i] && cmdcols[i] != display->black && cmdcols[i] != display->white){
+				freeimage(cmdcols[i]);
+				cmdcols[i] = nil;
+			}
+		}
+	}
+
+	/* Main text (yellow/parchment) */
+	maincols[BACK]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->textback);
+	maincols[HIGH]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->texthi);
+	maincols[BORD]  = allocimage(display, Rect(0,0,2,2), screen->chan, 1, curtheme->textbord);
+	maincols[TEXT]   = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->texttext);
+	maincols[HTEXT]  = maincols[TEXT];
+
+	/* Command text (blue/tag) */
+	cmdcols[BACK]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagback);
+	cmdcols[HIGH]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->taghi);
+	cmdcols[BORD]  = allocimage(display, Rect(0,0,2,2), screen->chan, 1, curtheme->tagbord);
+	cmdcols[TEXT]  = display->black;
 	cmdcols[HTEXT] = display->black;
+	cmdcols[TEXT]   = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagtext);
+	cmdcols[HTEXT]  = cmdcols[TEXT];
+}
+
+void
+flupdatecols(void)
+{
+	int i;
+	Flayer *l;
+	Image **cols;
+
+	for(i = 0; i < nllist; i++){
+		l = llist[i];
+		cols = l->user0 ? cmdcols : maincols;
+		memmove(l->f.cols, cols, NCOL * sizeof(Image*));
+		frinittick(&l->f);
+
+		/*
+		 * Fully visible layers use screen as the frame buffer (f.b == screen).
+		 * Only freeing offscreen buffers left those layers unchanged on screen
+		 * while cols updated — incremental draws then used the new palette on
+		 * top of stale pixels. Clear frame state, drop the buffer pointer
+		 * without freeing the screen image, and flprepare below repaints
+		 * (same idea as flresize / newvisibilities).
+		 */
+		l->lastsr = ZR;
+		frclear(&l->f, 0);
+		if(l->f.b != nil && l->f.b != screen)
+			freeimage(l->f.b);
+		l->f.b = nil;
+	}
+
+	for(i = nllist-1; i >= 0; i--){
+		l = llist[i];
+		if(l->visible == None)
+			continue;
+		if(flprepare(l) && l->visible == Some)
+			flrefresh(l, l->entire, 0);
+	}
 }
 
 void

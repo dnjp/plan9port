@@ -36,6 +36,12 @@ Colors lightcolors = {
 	.but2col       = 0xAA0000FF,
 	.but3col       = 0x006600FF,
 
+	/* menu */
+	.menuback = 0xFFFFFFFF,
+	.menuhi = 0x448844FF,
+	.menubord = 0x88CC88FF,
+	.menutext = 0x000000FF,
+
 	/* sam */
 	.darkgrey      = 0x444444FF,
 
@@ -76,6 +82,12 @@ Colors darkcolors = {
 	.modbutton     = 0x00003AFF,
 	.but2col       = 0xAA0000FF,
 	.but3col       = 0x006600FF,
+
+	/* menu */
+	.menuback      = 0x111111FF,
+	.menuhi        = 0x4A6098FF,
+	.menubord      = 0x4A5888FF,
+	.menutext      = 0xFFFFFFFF,
 
 	/* sam */
 	.darkgrey      = 0x222222FF,

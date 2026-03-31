@@ -606,6 +606,9 @@ struct Colors {
 	/* acme buttons */
 	uint32_t modbutton, but2col, but3col;
 
+	/* menu */
+	uint32_t menuback, menuhi, menubord, menutext;
+
 	/* sam */
 	uint32_t darkgrey;
 

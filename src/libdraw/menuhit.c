@@ -37,11 +37,11 @@ menucolors(void)
 		if(htext != display->black && htext != back) freeimage(htext);
 	}
 
-	back  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winback);
-	high  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->titlecol);
-	bord  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winbord);
-	text  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->wintext);
-	htext = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->wintext);
+	back  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->menuback);
+	high  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->menuhi);
+	bord  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->menubord);
+	text  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->menutext);
+	htext = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->menutext);
 	if(back==nil || high==nil || bord==nil || text==nil || htext==nil)
 		goto Error;
 	return;
