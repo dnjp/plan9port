@@ -46,44 +46,44 @@ Colors lightcolors = {
 };
 
 Colors darkcolors = {
-	/* tag (candlelit blue-green) */
-	.tagback       = 0x999C8CFF,
-	.taghi         = 0x6F9383FF,
-	.tagbord       = 0x61597AFF,
-	.tagtext       = 0x000000FF,
+	/* tag (dungeon blue-indigo) */
+	.tagback       = 0x1A1E2EFF,
+	.taghi         = 0x4A6098FF,
+	.tagbord       = 0x4A5888FF,
+	.tagtext       = 0xFFFFFFFF,
 
-	/* text (candlelit parchment) */
-	.textback      = 0xA49E83FF,
-	.texthi        = 0x9B955DFF,
-	.textbord      = 0x6C6735FF,
-	.texttext      = 0x000000FF,
+	/* text (dungeon black) */
+	.textback      = 0x000000FF,
+	.texthi        = 0x555555FF,
+	.textbord      = 0x444444FF,
+	.texttext      = 0xFFFFFFFF,
 
 	/* chrome */
-	.background    = 0x555048FF,
-	.winback       = 0xA49E8DFF,
-	.winhi         = 0x887E70FF,
-	.winbord       = 0x6C6357FF,
-	.wintext       = 0x000000FF,
-	.titlecol      = 0x456E63FF,
-	.lighttitlecol = 0x6F9383FF,
-	.holdcol       = 0x000064FF,
-	.lightholdcol  = 0x004377FF,
-	.paleholdcol   = 0x38618AFF,
-	.paletextcol   = 0x4C4B40FF,
-	.sizecol       = 0xCC1818FF,
+	.background    = 0x080808FF,
+	.winback       = 0x111008FF,
+	.winhi         = 0x555555FF,
+	.winbord       = 0x404040FF,
+	.wintext       = 0xFFFFFFFF,
+	.titlecol      = 0x1E2E48FF,
+	.lighttitlecol = 0x2A3E5EFF,
+	.holdcol       = 0x6688CCFF,
+	.lightholdcol  = 0x2A4A7AFF,
+	.paleholdcol   = 0x6688CCFF,
+	.paletextcol   = 0x222222FF,
+	.sizecol       = 0xFF2020FF,
 
 	/* acme buttons */
-	.modbutton     = 0x000064FF,
-	.but2col       = 0x7A1212FF,
-	.but3col       = 0x1A4A1AFF,
+	.modbutton     = 0x00003AFF,
+	.but2col       = 0xAA0000FF,
+	.but3col       = 0x006600FF,
 
 	/* sam */
-	.darkgrey      = 0x39382EFF,
+	.darkgrey      = 0x222222FF,
 
 	/* 9term */
-	.termred       = 0xAA1818FF,
-	.termgrey      = 0x9B918BFF,
-	.termdarkgrey  = 0x4C4B40FF,
+	.termred       = 0xFF2020FF,
+	.termgrey      = 0x666666FF,
+	.termdarkgrey  = 0x999999FF,
 };
 
 

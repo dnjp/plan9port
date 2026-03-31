@@ -72,13 +72,13 @@ wupdatecols()
 	}
 
 	if(cols[0] == nil || changed == 1){
-		grey         = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->termgrey);
-		darkgrey     = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->termdarkgrey);
+		grey     = allocimage(display, Rect(0,0,1,1), RGB24, 1, curtheme->termgrey);
+		darkgrey = allocimage(display, Rect(0,0,1,1), RGB24, 1, curtheme->termdarkgrey);
 		cols[BACK]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winback);
 		cols[HIGH]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winhi);
 		cols[BORD]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->winbord);
-		cols[TEXT]   = display->black;
-		cols[HTEXT]  = display->black;
+		cols[TEXT]   = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->wintext);
+		cols[HTEXT]  = cols[TEXT];
 		titlecol     = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->titlecol);
 		lighttitlecol= allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->lighttitlecol);
 		holdcol      = allocimage(display, Rect(0,0,1,1), CMAP8, 1, curtheme->holdcol);
@@ -1119,7 +1119,7 @@ wsetcols(Window *w)
 			w->f.cols[TEXT] = w->f.cols[HTEXT] = lightholdcol;
 	else
 		if(w == input)
-			w->f.cols[TEXT] = w->f.cols[HTEXT] = display->black;
+			w->f.cols[TEXT] = w->f.cols[HTEXT] = cols[TEXT];
 		else
 			w->f.cols[TEXT] = w->f.cols[HTEXT] = darkgrey;
 }

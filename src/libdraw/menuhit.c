@@ -33,25 +33,29 @@ menucolors(void)
 		freeimage(back);
 		freeimage(high);
 		freeimage(bord);
+		if(text != display->black) freeimage(text);
+		if(htext != display->black && htext != back) freeimage(htext);
 	}
 
-	back = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winback);
-	high = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->titlecol);
-	bord = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winbord);
-	if(back==nil || high==nil || bord==nil)
+	back  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winback);
+	high  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->titlecol);
+	bord  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->winbord);
+	text  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->wintext);
+	htext = allocimage(display, Rect(0,0,1,1), screen->chan, 1, c->wintext);
+	if(back==nil || high==nil || bord==nil || text==nil || htext==nil)
 		goto Error;
-	text = display->black;
-	htext = display->black;
 	return;
 
 Error:
 	freeimage(back);
 	freeimage(high);
 	freeimage(bord);
-	back = display->white;
-	high = display->black;
-	bord = display->black;
-	text = display->black;
+	freeimage(text);
+	freeimage(htext);
+	back  = display->white;
+	high  = display->black;
+	bord  = display->black;
+	text  = display->black;
 	htext = display->white;
 }
 
