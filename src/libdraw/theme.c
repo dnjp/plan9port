@@ -52,10 +52,10 @@ Colors lightcolors = {
 };
 
 Colors darkcolors = {
-	/* tag (dungeon blue-indigo) */
-	.tagback       = 0x1A1E2EFF,
-	.taghi         = 0x4A6098FF,
-	.tagbord       = 0x4A5888FF,
+	/* tag (dungeon dark purple-blue) */
+	.tagback       = 0x18144AFF,
+	.taghi         = 0x3830A0FF,
+	.tagbord       = 0x4840C0FF,   /* brighter — creates clear panel separation */
 	.tagtext       = 0xFFFFFFFF,
 
 	/* text (dungeon black) */
@@ -70,8 +70,8 @@ Colors darkcolors = {
 	.winhi         = 0x555555FF,
 	.winbord       = 0x404040FF,
 	.wintext       = 0xFFFFFFFF,
-	.titlecol      = 0x1E2E48FF,
-	.lighttitlecol = 0x2A3E5EFF,
+	.titlecol      = 0x18144AFF,
+	.lighttitlecol = 0x242070FF,
 	.holdcol       = 0x6688CCFF,
 	.lightholdcol  = 0x2A4A7AFF,
 	.paleholdcol   = 0x6688CCFF,
@@ -79,14 +79,14 @@ Colors darkcolors = {
 	.sizecol       = 0xFF2020FF,
 
 	/* acme buttons */
-	.modbutton     = 0x00003AFF,
+	.modbutton     = 0x6688CCFF,
 	.but2col       = 0xAA0000FF,
 	.but3col       = 0x006600FF,
 
 	/* menu */
 	.menuback      = 0x111111FF,
-	.menuhi        = 0x4A6098FF,
-	.menubord      = 0x4A5888FF,
+	.menuhi        = 0x3830A0FF,   /* synced with taghi — readable with white text */
+	.menubord      = 0x4840C0FF,   /* synced with tagbord */
 	.menutext      = 0xFFFFFFFF,
 
 	/* sam */
