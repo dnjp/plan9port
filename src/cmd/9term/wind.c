@@ -63,12 +63,10 @@ wupdatecols()
 		if(holdcol)      { freeimage(holdcol);      holdcol = nil; }
 		if(lightholdcol) { freeimage(lightholdcol); lightholdcol = nil; }
 		if(paleholdcol)  { freeimage(paleholdcol);  paleholdcol = nil; }
-		/* cols[BACK] was allocated; TEXT/HTEXT point to display->black — don't free */
-		if(cols[BACK] && cols[BACK] != display->white && cols[BACK] != display->black)
-			freeimage(cols[BACK]);
-		if(cols[HIGH])   { freeimage(cols[HIGH]);   cols[HIGH] = nil; }
-		if(cols[BORD])   { freeimage(cols[BORD]);   cols[BORD] = nil; }
-		cols[BACK] = cols[TEXT] = cols[HTEXT] = nil;
+		freeimage(cols[BACK]);
+		freeimage(cols[HIGH]);
+		freeimage(cols[BORD]);
+		cols[BACK] = cols[HIGH] = cols[BORD] = cols[TEXT] = cols[HTEXT] = nil;
 	}
 
 	if(cols[0] == nil || changed == 1){

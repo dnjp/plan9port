@@ -338,6 +338,9 @@ struct Font
 
 /*
  * Image management
+ *
+ * allocimage: for repl and a 1×1 rectangle, val DBlack/DWhite returns
+ * display->black/white (do not freeimage); otherwise allocates as usual.
  */
 extern Image*	_allocimage(Image*, Display*, Rectangle, u32int, int, u32int, int, int);
 extern Image*	allocimage(Display*, Rectangle, u32int, int, u32int);
@@ -346,6 +349,7 @@ extern int	bytesperline(Rectangle, int);
 extern void	closedisplay(Display*);
 extern void	drawerror(Display*, char*);
 extern int	flushimage(Display*, int);
+/* Frees server image; no-op if i is display->black/white (see allocimage). */
 extern int	freeimage(Image*);
 extern int	_freeimage1(Image*);
 extern int	geninitdraw(char*, void(*)(Display*, char*), char*, char*, char*, int);

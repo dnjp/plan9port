@@ -2,9 +2,20 @@
 #include <libc.h>
 #include <draw.h>
 
+/*
+ * For a 1×1 replicated solid, opaque black and white (DBlack/DWhite) reuse
+ * the display's GREY1 images instead of allocating — same pointers as
+ * display->black / display->white; never freeimage them.
+ */
 Image*
 allocimage(Display *d, Rectangle r, u32int chan, int repl, u32int val)
 {
+	if(d != nil && repl && Dx(r) == 1 && Dy(r) == 1){
+		if(val == DBlack && d->black != nil)
+			return d->black;
+		if(val == DWhite && d->white != nil)
+			return d->white;
+	}
 	return _allocimage(nil, d, r, chan, repl, val, 0, 0);
 }
 
@@ -235,6 +246,12 @@ freeimage(Image *i)
 		return 0;
 	if(i == screen)
 		abort();
+	/*
+	 * allocimage may return display->black/white for DBlack/DWhite 1×1 repl;
+	 * those Image structs are owned by the Display (see closedisplay).
+	 */
+	if(i->display && (i == i->display->black || i == i->display->white))
+		return 0;
 	ret = _freeimage1(i);
 	free(i);
 	return ret;

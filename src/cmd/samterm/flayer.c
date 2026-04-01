@@ -41,11 +41,11 @@ flstart(Rectangle r)
 		cmdcols[HTEXT]  = nil;
 		int i;
 		for(i = 0; i < NCOL; i++){
-			if(maincols[i] && maincols[i] != display->black && maincols[i] != display->white){
+			if(maincols[i]){
 				freeimage(maincols[i]);
 				maincols[i] = nil;
 			}
-			if(cmdcols[i] && cmdcols[i] != display->black && cmdcols[i] != display->white){
+			if(cmdcols[i]){
 				freeimage(cmdcols[i]);
 				cmdcols[i] = nil;
 			}
@@ -63,8 +63,6 @@ flstart(Rectangle r)
 	cmdcols[BACK]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagback);
 	cmdcols[HIGH]  = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->taghi);
 	cmdcols[BORD]  = allocimage(display, Rect(0,0,2,2), screen->chan, 1, curtheme->tagbord);
-	cmdcols[TEXT]  = display->black;
-	cmdcols[HTEXT] = display->black;
 	cmdcols[TEXT]   = allocimage(display, Rect(0,0,1,1), screen->chan, 1, curtheme->tagtext);
 	cmdcols[HTEXT]  = cmdcols[TEXT];
 }

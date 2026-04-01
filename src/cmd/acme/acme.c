@@ -1739,11 +1739,11 @@ iconinit(void)
 		tagcols[HTEXT]  = nil;
 		textcols[HTEXT] = nil;
 		for(i = 0; i < NCOL; i++){
-			if(tagcols[i] && tagcols[i] != display->black && tagcols[i] != display->white){
+			if(tagcols[i]){
 				freeimage(tagcols[i]);
 				tagcols[i] = nil;
 			}
-			if(textcols[i] && textcols[i] != display->black && textcols[i] != display->white){
+			if(textcols[i]){
 				freeimage(textcols[i]);
 				textcols[i] = nil;
 			}
