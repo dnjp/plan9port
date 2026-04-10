@@ -108,7 +108,7 @@ static Rune LAplus[] = { 'A', '+', 0 };
 static Rune LAminus[] = { 'A', '-', 0 };
 static Rune LFplus[] = { 'F', '+', 0 };
 static Rune LFminus[] = { 'F', '-', 0 };
-static Rune defaultcomfmt[] = { '/', '/', ' ', '%', 's' };
+static Rune defaultcomfmt[] = { '/', '*', ' ', '%', 's', ' ', '*', '/' };
 #define ndefaultcomfmt (sizeof defaultcomfmt / sizeof defaultcomfmt[0])
 static Rune LUndo[] = { 'U', 'n', 'd', 'o', 0 };
 static Rune LZerox[] = { 'Z', 'e', 'r', 'o', 'x', 0 };
