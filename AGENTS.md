@@ -419,6 +419,14 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 
 ## Common debugging
 
+## rc script style conventions
+
+For `rc` utilities in this repo (for example `bin/9m`), prefer classic plan9 style:
+- Local/top-level script variables are lowercase single words (no `snake_case`, no leading `_`).
+- Environment variables, when used, stay uppercase by convention.
+- Prefer command-line flags over custom environment-variable configuration for CLI behavior.
+- Keep trivial one-line helpers on one line: `fn name { body }`.
+
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | `plumber: ruleset has more than one client or start action` | Two `plumb to` lines in one ruleset | Move extra `plumb to` to top-level declarations block |
@@ -460,6 +468,13 @@ Always use `9 read` in rc scripts that need plan9port's `read`.
 | Window close crashes even after `self.win = nil` in `windowWillClose:` | `rpc_clientgone`'s `__bridge_transfer` ran while AppKit's autorelease pool still held a pending release on the window | Ensure `viewRegistry_remove` + `__bridge_transfer` happen inside a `dispatch_async` block on the main thread wrapped in `@autoreleasepool`, never on the RPC thread |
 | plumber / `editinacme` can't find acme when launched from Acme.app | `bin/acme` was creating a random `$NAMESPACE` (`/tmp/ns.$USER.$$`) for every devdraw-managed window, so acme's 9P service never landed in the shared namespace | `newWindow:` in `mac-screen.m` now assigns `NAMESPACE`: cid=0 gets the shared namespace (`:0`), cid>0 gets a predictable derived namespace (`:1`, `:2`, …). `bin/acme` no longer overrides `$NAMESPACE` when `$wsysid` is set |
 | `9p stat acme` fails even though Acme.app is running | acme posted its 9P service in a random namespace, not the shared one | See above — first window always uses the shared namespace |
+| `9pfs` works manually but mount-manager status says "unmounted" on macOS | `/tmp` resolves to `/private/tmp` in `mount` output, so naive mountpoint string matching misses active mounts | Canonicalize mountpoints with `realpath` before checking `u mount`; `bin/9m` does this in `ismounted` |
+| Need a quick health probe for 9P mounts/services | Manual `9p stat`, socket checks, and mount checks are repetitive and error-prone | `bin/9m check [service ...]` reports service/socket/mount state and exits non-zero when a service is down; `9m status` also prints active mounts under the configured root (`-r`) |
+| `9m mount` reports success but mounted directory is empty moments later | On some macOS/macFUSE combinations, a 9P mount can appear briefly and then disappear; relying on process exit status alone produces false positives | `bin/9m` validates post-mount usability (`acme` requires `mtpt/acme`, others require non-empty root) after a settle delay, and can auto-fallback from `9pfs` to `9pfuse` (`-f`, `-n`) before declaring failure |
+| 9P mounts under `/tmp` flap or disappear rapidly on macOS | macFUSE-backed mounts may be unstable under `/tmp` on this host/config | `bin/9m` defaults mount root to `$home/n` (falls back to `/tmp/n` only if `$home` is unset) and warns when root is under `/tmp` |
+| Need to harden mount root against Spotlight/crawlers on macOS | Spotlight behavior for subdirectories varies by macOS version/config | `bin/9m protect` enforces mount-root perms (`chmod 700`) and applies macOS protection behind a Darwin check by attempting `mdutil -i off` as the primary control (with warnings when unavailable/unsupported); it removes legacy `.metadata_never_index` marker files |
+| Need one-step 9P mount bootstrap and crawler diagnostics | Running protect + mount + ad-hoc monitoring manually is easy to forget | `bin/9m init [service ...]` runs `protect` then mounts targets (defaults to configured services). `bin/9m monitor` (Darwin-gated) samples `fs_usage` for `-t` seconds and prints accesses under `-r` |
+| Need automatic mount/unmount as services come and go | Manually remounting every time 9P services are posted/closed is tedious | `bin/9m daemon start|stop|status|run [service ...]` manages services and removes stale mountpoint directories when services vanish. `bin/9m agent ...` installs/controls a LaunchAgent so `9m` acts as a client/controller for launchd-managed daemon mode |
 | acme "Illegal instruction: 4" when typing a path like `/Users/daniel` in the tag | Infinite recursion: `wincommit` parses tag (raw path), calls `winsetname` → `filesetname` contracts name (e.g. to `~`) → `winsettag` → `winsettag1` → `wincommit` again; tag buffer still has raw path so comparison with `file->name` (`~`) fails and we loop until stack/malloc blows up | In `wincommit`, compare **contracted** parsed tag name to `w->body.file->name`; if equal, return without calling `winsetname`/`winsettag` so the cycle is broken |
 | Get after renaming tag still loads old directory | In promote path, file name was used before tag; so tag path was ignored when file had a name | In `getname`, when promote and n<=0, use **tag path first** if tag has a non-empty left part; only fall back to file->ename/file->name when tag is empty |
 | `win` in acme: tag doesn't update when shell runs `awd` (e.g. on `cd` via p9p-session) | `winsettag1` preserves the tag's left part when it doesn't match `file->name` (to avoid overwriting user typing). After a ctl "name" write from win/awd, the tag still showed the previous path, so we preserved that instead of the new one | When both the current tag and `file->name` look like win directory labels (path/-sysname), treat as awd update and use `file->name` in the tag. Added `runehasdirlabel()` (true if string contains "/-") and use it in `winsettag1` so ctl "name" updates from win take effect |

@@ -1,0 +1,952 @@
+#!/usr/local/plan9/bin/rc
+
+# 9m: 9P mount manager for plan9port services.
+
+# LaunchAgents often have a minimal PATH; prepend common binary roots.
+path=(/usr/local/bin /opt/homebrew/bin /usr/local/plan9/bin $path)
+
+mounter=9pfs
+aname=''
+debug=0
+services=(acme font sources)
+autoninefs=(sources)
+
+if(~ $#home 0)
+	mountroot=/tmp/n
+if not
+	mountroot=$home/n
+
+mountretries=3
+retrysleep=1
+waitretries=8
+waitsleep=1
+settlesleep=2
+autofallback=1
+fallbackmounter=9pfuse
+monitorseconds=20
+daemoninterval=2
+
+fn usage {
+	echo 'usage: 9m [-d] [-m mounter] [-a aname] [-r root] [-i seconds] [-t seconds] [-f fallback] [-n]' >[1=2]
+	echo '          mount|unmount|status|check|remount|protect|monitor|init|logs [service ...]' >[1=2]
+	echo '          daemon start|stop|status|run [service ...]' >[1=2]
+	echo '          agent install|uninstall|start|stop|status [service ...]' >[1=2]
+	echo 'flags:   -m mounter(9pfs|9pfuse)  -a aname  -r mountroot' >[1=2]
+	echo '         -i daemon interval seconds  -t monitor seconds' >[1=2]
+	echo '         -f fallback mounter  -n disable fallback  -d debug' >[1=2]
+	exit usage
+}
+
+fn ok { u test 1 = 1 }
+fn fail { u test 1 = 0 }
+fn log { echo '[9m]' $* }
+fn warn { echo '[9m] warning:' $* >[1=2] }
+fn err { echo '[9m] error:' $* >[1=2] }
+fn add1 { echo $1+1 | hoc }
+fn mtptfor { echo $mountroot/^$1 }
+fn addrfor { echo `{namespace}/^$1 }
+fn pidfile { echo /tmp/9m.daemon.pid }
+fn logfile { echo /tmp/9m.daemon.log }
+fn logdir { echo $home/.local/var/log/plan9port }
+fn outlog { echo `{logdir}/9m.out.log }
+fn errlog { echo `{logdir}/9m.err.log }
+fn agentlabel { echo com.plan9port.9m }
+fn agentplist {
+	label=`{agentlabel}
+	echo $home/Library/LaunchAgents/$label.plist
+}
+fn launchdomain { echo gui/^`{id -u} }
+
+fn maybewarntmp {
+	if(~ $mountroot /tmp*){
+		warn 'mount root is under /tmp; this host may drop macFUSE mounts there'
+		if(! ~ $#home 0)
+			warn 'prefer -r '^$home^'/n'
+	}
+}
+
+fn ismounted {
+	checkmnt=$1
+	realmnt=`{u realpath $checkmnt >[2]/dev/null}
+	if(! ~ $#realmnt 0)
+		checkmnt=$realmnt
+	u mount | 9 grep -s ' on '^$checkmnt^' '
+}
+
+fn hasentries {
+	probemnt=$1
+	probelist=`{ls $probemnt >[2]/dev/null}
+	if(~ $#probelist 0)
+		fail
+	if not
+		ok
+}
+
+fn mountusable {
+	svc=$1
+	mnt=$2
+	switch($svc){
+	case acme
+		if(u test -e $mnt/acme)
+			ok
+		if not
+			fail
+	case *
+		hasentries $mnt
+	}
+}
+
+fn ensureservice {
+	svc=$1
+	if(9p stat $svc >[2]/dev/null >/dev/null)
+		ok
+	if not{
+		if(~ $svc $autoninefs){
+			log 'starting service via 9fs:' $svc
+			9fs $svc >[2]/dev/null
+		}
+
+		i=1
+		ready=0
+		while(~ $ready 0){
+			if(9p stat $svc >[2]/dev/null >/dev/null)
+				ready=1
+			if not{
+				if(~ $i $waitretries)
+					ready=-1
+				if not{
+					sleep $waitsleep
+					i=`{add1 $i}
+				}
+			}
+		}
+
+		if(~ $ready 1)
+			ok
+		if not{
+			warn 'service not ready:' $svc
+			fail
+		}
+	}
+}
+
+fn runmounter {
+	chosen=$1
+	addr=$2
+	mnt=$3
+	switch($chosen){
+	case 9pfs
+		cmd=(9pfs)
+		if(~ $debug 1)
+			cmd=($cmd -d)
+		if(! ~ $aname '')
+			cmd=($cmd -A $aname)
+		if(u test -S $addr)
+			cmd=($cmd -U)
+		$cmd $addr $mnt
+	case 9pfuse
+		cmd=(9pfuse)
+		if(~ $debug 1)
+			cmd=($cmd -D)
+		if(! ~ $aname '')
+			cmd=($cmd -a $aname)
+		$cmd $addr $mnt
+	case *
+		err 'unsupported mounter:' $chosen
+		fail
+	}
+}
+
+fn rmmountdir {
+	svc=$1
+	mnt=`{mtptfor $svc}
+	if(u test -d $mnt){
+		if(rmdir $mnt >[2]/dev/null)
+			ok
+		if not
+			fail
+	}
+	if not
+		ok
+}
+
+fn mountservice {
+	svc=$1
+	mnt=`{mtptfor $svc}
+	addr=`{addrfor $svc}
+	trymounter=$mounter
+
+	if(ismounted $mnt){
+		if(mountusable $svc $mnt){
+			log $svc 'already mounted at' $mnt
+			ok
+		}
+	}
+
+	if(! mkdir -p $mnt >[2]/dev/null){
+		err 'cannot create mountpoint:' $mnt
+		fail
+	}
+	if(! ensureservice $svc)
+		fail
+
+	i=1
+	done=0
+	fallbackused=0
+	while(~ $done 0){
+		log 'mounting' $svc 'at' $mnt 'using' $trymounter '(try' $i 'of' $mountretries')'
+		if(runmounter $trymounter $addr $mnt){
+			sleep $settlesleep
+			if(mountusable $svc $mnt)
+				done=1
+			if not
+				warn 'mount command returned but mount is not usable for' $svc
+		}
+		if not
+			warn 'mount command failed for' $svc
+
+		if(~ $done 0){
+			if(~ $autofallback 1){
+				if(~ $trymounter 9pfs){
+					if(! ~ $fallbackmounter $trymounter){
+						if(u which $fallbackmounter >[2]/dev/null >/dev/null){
+							if(~ $fallbackused 0){
+								warn 'falling back from 9pfs to '^$fallbackmounter^' for '^$svc
+								trymounter=$fallbackmounter
+								fallbackused=1
+								9 unmount $mnt >[2]/dev/null >/dev/null
+								sleep $retrysleep
+								continue
+							}
+						}
+					}
+				}
+			}
+
+			if(~ $i $mountretries)
+				done=-1
+			if not{
+				9 unmount $mnt >[2]/dev/null >/dev/null
+				sleep $retrysleep
+				i=`{add1 $i}
+			}
+		}
+	}
+
+	if(~ $done 1){
+		log 'mounted' $svc 'at' $mnt
+		ok
+	}
+	if not{
+		err 'giving up on' $svc
+		rmmountdir $svc
+		fail
+	}
+}
+
+fn unmountservice {
+	svc=$1
+	mnt=`{mtptfor $svc}
+
+	if(ismounted $mnt){
+		log 'unmounting' $svc 'from' $mnt
+		if(! 9 unmount $mnt >[2]/dev/null >/dev/null){
+			warn '9 unmount failed; trying system umount for' $mnt
+			u umount $mnt >[2]/dev/null >/dev/null
+		}
+		if(ismounted $mnt){
+			err 'failed to unmount' $svc 'from' $mnt
+			fail
+		}
+	}
+
+	rmmountdir $svc
+	ok
+}
+
+fn statusservice {
+	svc=$1
+	mnt=`{mtptfor $svc}
+	if(9p stat $svc >[2]/dev/null >/dev/null)
+		srv=up
+	if not
+		srv=down
+
+	if(ismounted $mnt){
+		if(mountusable $svc $mnt)
+			mntstate=mounted
+		if not
+			mntstate=broken
+	}
+	if not
+		mntstate=unmounted
+
+	if(u test -d $mnt)
+		dir=present
+	if not
+		dir=absent
+
+	state=ok
+	if(~ $srv up && ~ $mntstate unmounted && ~ $dir present)
+		state=stale
+
+	echo $svc 'service='^$srv 'mount='^$mntstate 'dir='^$dir 'state='^$state 'mtpt='^$mnt
+}
+
+fn printactive {
+	root=$mountroot
+	rootreal=`{u realpath $root >[2]/dev/null}
+	if(! ~ $#rootreal 0)
+		root=$rootreal
+	echo 'active_mounts root='^$root
+	if(u mount | 9 grep -s ' on '^$root^'/')
+		u mount | 9 grep ' on '^$root^'/'
+	if not
+		echo '(none)'
+}
+
+fn checkservice {
+	svc=$1
+	mnt=`{mtptfor $svc}
+	addr=`{addrfor $svc}
+
+	if(9p stat $svc >[2]/dev/null >/dev/null)
+		srv=up
+	if not
+		srv=down
+	if(u test -S $addr)
+		sock=present
+	if not
+		sock=missing
+
+	if(ismounted $mnt)
+		mntstate=mounted
+	if not
+		mntstate=unmounted
+
+	echo $svc 'service='^$srv 'socket='^$sock 'mount='^$mntstate 'addr='^$addr 'mtpt='^$mnt
+	if(~ $srv up)
+		ok
+	if not
+		fail
+}
+
+fn protectroot {
+	if(! mkdir -p $mountroot >[2]/dev/null){
+		err 'unable to create mount root:' $mountroot
+		fail
+	}
+	if(! chmod 700 $mountroot >[2]/dev/null)
+		warn 'could not set mode 700 on' $mountroot
+	if(u test -e $mountroot/.metadata_never_index){
+		rm -f $mountroot/.metadata_never_index >[2]/dev/null
+		log 'removed legacy marker:' $mountroot/.metadata_never_index
+	}
+	log 'mount root protected:' $mountroot '(mode 700 preferred)'
+
+	switch(`{uname}){
+	case Darwin
+		mdstate=missing
+		if(u which mdutil >[2]/dev/null >/dev/null){
+			mdstate=present
+			if(mdutil -i off $mountroot >[2]/dev/null >/dev/null){
+				mdstate=disabled
+				log 'mdutil indexing disabled for' $mountroot
+			}
+		}
+		switch($mdstate){
+		case missing
+			warn 'mdutil not found; use Spotlight Privacy list for' $mountroot
+		case present
+			warn 'mdutil could not disable indexing for' $mountroot '(this can be normal for some paths)'
+		case disabled
+		}
+	case *
+		log 'non-darwin system: skipped macOS-specific protection steps'
+	}
+	ok
+}
+
+fn monitorroot {
+	root=$mountroot
+	rootreal=`{u realpath $root >[2]/dev/null}
+	if(! ~ $#rootreal 0)
+		root=$rootreal
+
+	switch(`{uname}){
+	case Darwin
+		if(! u which fs_usage >[2]/dev/null >/dev/null){
+			warn 'fs_usage not found; cannot monitor mount root activity'
+			fail
+		}
+		if(! u test -d $root){
+			err 'mount root does not exist:' $root
+			fail
+		}
+		monlog=/tmp/9m.monitor.$pid
+		log 'monitoring filesystem accesses under' $root 'for' $monitorseconds 'seconds'
+		usesudo=0
+		if(sudo -n true >[2]/dev/null >/dev/null)
+			usesudo=1
+		switch($usesudo){
+		case 1
+			sudo -n fs_usage -w -f filesys >$monlog >[2]/dev/null &
+		case *
+			fs_usage -w -f filesys >$monlog >[2]/dev/null &
+		}
+		monpid=$apid
+		sleep $monitorseconds
+		u kill $monpid >[2]/dev/null
+		sleep 1
+		echo 'monitor_results root='^$root
+		seen=0
+		if(9 grep -s $root $monlog)
+			seen=1
+		if(~ $seen 1)
+			9 grep $root $monlog
+		if(~ $seen 0)
+			echo '(no accesses seen during monitor window)'
+		rm -f $monlog
+		ok
+	case *
+		warn 'monitor is optimized for Darwin (fs_usage); skipping on this OS'
+		ok
+	}
+}
+
+fn daemonrunning {
+	pf=`{pidfile}
+	if(! u test -f $pf)
+		fail
+	if not{
+		dpid=`{cat $pf}
+		if(~ $#dpid 0)
+			fail
+		if not{
+			if(u kill -0 $dpid >[2]/dev/null)
+				ok
+			if not
+				fail
+		}
+	}
+}
+
+fn postedservices {
+	ns=`{namespace}
+	if(! u test -d $ns)
+		echo
+	if not{
+		svcs=()
+		for(s in `{ls $ns >[2]/dev/null}){
+			if(u test -S $ns/$s)
+				svcs=($svcs $s)
+		}
+		echo $svcs
+	}
+}
+
+fn statustargets {
+	base=($services `{postedservices})
+	uniq=()
+	for(svc in $base){
+		if(! ~ $svc $uniq)
+			uniq=($uniq $svc)
+	}
+	echo $uniq
+}
+
+fn is9pservice {
+	svc=$1
+	if(9p stat $svc >[2]/dev/null >/dev/null)
+		ok
+	if not
+		fail
+}
+
+fn daemonrun {
+	filter=$*
+	log 'daemon running with interval='^$daemoninterval 'root='^$mountroot
+	if(! ~ $#filter 0)
+		log 'daemon service filter:' $filter
+	prevposted=()
+
+	while(~ 1 1){
+		posted=`{postedservices}
+		targets=$filter
+		if(~ $#targets 0)
+			targets=$posted
+
+		for(svc in $targets){
+			if(9p stat $svc >[2]/dev/null >/dev/null){
+				mnt=`{mtptfor $svc}
+				if(! ismounted $mnt)
+					mountservice $svc
+			}
+		}
+
+		candidates=$filter
+		if(~ $#candidates 0)
+			candidates=$prevposted
+		for(svc in $candidates){
+			if(! ~ $svc $posted){
+				mnt=`{mtptfor $svc}
+				if(ismounted $mnt)
+					unmountservice $svc
+				if not{
+					if(rmmountdir $svc)
+						log 'removed stale mountpoint' $mnt
+				}
+			}
+		}
+		prevposted=$posted
+
+		sleep $daemoninterval
+	}
+}
+
+fn daemonstart {
+	filter=$*
+	pf=`{pidfile}
+	lf=`{logfile}
+	if(agentinstalled){
+		warn 'launch agent is installed; using launchctl-managed daemon'
+		if(! ~ $#filter 0)
+			warn 'service filter unchanged by `daemon start`; use `9m agent install ...` to change it'
+		agentstart
+	}
+	if not{
+		if(daemonrunning){
+			dpid=`{cat $pf}
+			warn 'daemon already running (pid '^$dpid^')'
+			ok
+		}
+		if not{
+			cmd=($0 -m $mounter -r $mountroot -i $daemoninterval -t $monitorseconds -f $fallbackmounter)
+			if(~ $debug 1)
+				cmd=($cmd -d)
+			if(~ $autofallback 0)
+				cmd=($cmd -n)
+			if(! ~ $aname '')
+				cmd=($cmd -a $aname)
+			cmd=($cmd daemon run $filter)
+			$cmd >$lf >[2=1] &
+			dpid=$apid
+			echo $dpid >$pf
+			log 'daemon started pid='^$dpid 'log='^$lf
+			ok
+		}
+	}
+}
+
+fn daemonstop {
+	pf=`{pidfile}
+	if(agentinstalled){
+		warn 'launch agent is installed; stopping via launchctl'
+		agentstop
+	}
+	if not{
+		if(daemonrunning){
+			dpid=`{cat $pf}
+			u kill $dpid >[2]/dev/null
+			rm -f $pf
+			log 'daemon stopped pid='^$dpid
+			ok
+		}
+		if not{
+			warn 'daemon is not running'
+			rm -f $pf >[2]/dev/null
+			ok
+		}
+	}
+}
+
+fn daemonstatus {
+	pf=`{pidfile}
+	lf=`{logfile}
+	if(agentinstalled){
+		agentstatus
+	}
+	if not{
+		if(daemonrunning){
+			dpid=`{cat $pf}
+			echo 'daemon status=running pid='^$dpid 'log='^$lf
+		}
+		if not
+			echo 'daemon status=stopped'
+	}
+	ok
+}
+
+fn showlogs {
+	follow=0
+	if(! ~ $#* 0){
+		if(~ $1 -f)
+			follow=1
+		if not
+			usage
+		if(! ~ $#* 1)
+			usage
+	}
+	if(~ $#home 0){
+		err 'home not set; cannot locate log files'
+		fail
+	}
+	ld=`{logdir}
+	ol=`{outlog}
+	el=`{errlog}
+	mkdir -p $ld >[2]/dev/null
+	if(! u test -f $ol)
+		touch $ol >[2]/dev/null
+	if(! u test -f $el)
+		touch $el >[2]/dev/null
+	if(~ $follow 1){
+		log 'following logs (ctrl-c to stop):' $ol $el
+		u tail -n 40 -f $ol $el
+	}
+	if not{
+		echo '--- 9m.out.log ---'
+		u tail -n 80 $ol
+		echo '--- 9m.err.log ---'
+		u tail -n 80 $el
+	}
+	ok
+}
+
+fn agentinstalled {
+	plist=`{agentplist}
+	if(u test -f $plist)
+		ok
+	if not
+		fail
+}
+
+fn writeagentplist {
+	filter=()
+	if(! ~ $#* 0)
+		filter=$*
+	if(~ $#home 0){
+		err 'home not set; cannot install launch agent'
+		fail
+	}
+	plist=`{agentplist}
+	label=`{agentlabel}
+	logdir=$home/.local/var/log/plan9port
+	if(! mkdir -p $home/Library/LaunchAgents $logdir >[2]/dev/null){
+		err 'cannot create LaunchAgents or log directories'
+		fail
+	}
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+		echo '<plist version="1.0">'
+		echo '<dict>'
+		echo '  <key>Label</key>'
+		echo '  <string>'$label'</string>'
+		echo '  <key>ProgramArguments</key>'
+		echo '  <array>'
+		echo '    <string>'$0'</string>'
+		echo '    <string>-m</string>'
+		echo '    <string>'$mounter'</string>'
+		echo '    <string>-r</string>'
+		echo '    <string>'$mountroot'</string>'
+		echo '    <string>-i</string>'
+		echo '    <string>'$daemoninterval'</string>'
+		echo '    <string>-t</string>'
+		echo '    <string>'$monitorseconds'</string>'
+		echo '    <string>-f</string>'
+		echo '    <string>'$fallbackmounter'</string>'
+		if(~ $autofallback 0){
+			echo '    <string>-n</string>'
+		}
+		if(~ $debug 1){
+			echo '    <string>-d</string>'
+		}
+		if(! ~ $aname ''){
+			echo '    <string>-a</string>'
+			echo '    <string>'$aname'</string>'
+		}
+		echo '    <string>daemon</string>'
+		echo '    <string>run</string>'
+		for(svc in $filter)
+			echo '    <string>'$svc'</string>'
+		echo '  </array>'
+		echo '  <key>RunAtLoad</key>'
+		echo '  <true/>'
+		echo '  <key>KeepAlive</key>'
+		echo '  <true/>'
+		echo '  <key>LimitLoadToSessionType</key>'
+		echo '  <string>Aqua</string>'
+		echo '  <key>StandardOutPath</key>'
+		echo '  <string>'$logdir'/9m.out.log</string>'
+		echo '  <key>StandardErrorPath</key>'
+		echo '  <string>'$logdir'/9m.err.log</string>'
+		echo '</dict>'
+		echo '</plist>'
+	} >$plist
+	log 'wrote launch agent plist:' $plist
+	ok
+}
+
+fn agentstart {
+	plist=`{agentplist}
+	label=`{agentlabel}
+	domain=`{launchdomain}
+	if(! u test -f $plist){
+		err 'launch agent plist not found:' $plist
+		fail
+	}
+	launchctl bootout $domain/$label >[2]/dev/null
+	if(launchctl bootstrap $domain $plist >[2]/dev/null){
+		log 'launch agent started:' $label
+		ok
+	}
+	if not{
+		if(launchctl print $domain/$label >[2]/dev/null >/dev/null){
+			warn 'launchctl bootstrap reported failure but agent is loaded:' $label
+			ok
+		}
+		if not{
+			err 'launchctl bootstrap failed for' $label
+			fail
+		}
+	}
+}
+
+fn agentstop {
+	label=`{agentlabel}
+	domain=`{launchdomain}
+	launchctl bootout $domain/$label >[2]/dev/null
+	if(~ $status ''){
+		log 'launch agent stopped:' $label
+		ok
+	}
+	if not{
+		warn 'launch agent not loaded:' $label
+		ok
+	}
+}
+
+fn agentstatus {
+	label=`{agentlabel}
+	domain=`{launchdomain}
+	plist=`{agentplist}
+	installed=no
+	if(u test -f $plist)
+		installed=yes
+	loaded=no
+	if(launchctl print $domain/$label >[2]/dev/null >/dev/null)
+		loaded=yes
+	echo 'agent label='^$label 'installed='^$installed 'loaded='^$loaded 'plist='^$plist
+	ok
+}
+
+fn agentinstall {
+	filter=()
+	if(! ~ $#* 0)
+		filter=$*
+	if(! protectroot)
+		fail
+	if(! writeagentplist $filter)
+		fail
+	agentstart
+}
+
+fn agentuninstall {
+	plist=`{agentplist}
+	agentstop >[2]/dev/null >/dev/null
+	if(u test -f $plist){
+		rm -f $plist
+		log 'launch agent plist removed:' $plist
+	}
+	ok
+}
+
+parsedone=0
+while(~ $parsedone 0){
+	if(~ $#* 0)
+		parsedone=1
+	if not{
+		if(! ~ $1 -*)
+			parsedone=1
+		if not{
+			switch($1){
+			case --
+				shift
+				parsedone=1
+			case -m
+				if(~ $#* 1)
+					usage
+				shift
+				mounter=$1
+			case -a
+				if(~ $#* 1)
+					usage
+				shift
+				aname=$1
+			case -r
+				if(~ $#* 1)
+					usage
+				shift
+				mountroot=$1
+			case -i
+				if(~ $#* 1)
+					usage
+				shift
+				daemoninterval=$1
+			case -t
+				if(~ $#* 1)
+					usage
+				shift
+				monitorseconds=$1
+			case -f
+				if(~ $#* 1)
+					usage
+				shift
+				fallbackmounter=$1
+			case -n
+				autofallback=0
+			case -d
+				debug=1
+			case *
+				usage
+			}
+			if(~ $parsedone 0)
+				shift
+		}
+	}
+}
+
+if(~ $#* 0)
+	usage
+
+action=$1
+shift
+
+targets=$*
+if(~ $#targets 0){
+	switch($action){
+	case protect monitor daemon agent logs
+		targets=()
+	case status check
+		targets=`{statustargets}
+	case *
+		targets=$services
+	}
+}
+
+if(! u which $mounter >[2]/dev/null >/dev/null){
+	err 'mounter binary not found in PATH:' $mounter
+	exit nomounter
+}
+
+maybewarntmp
+
+bad=()
+switch($action){
+case mount
+	for(svc in $targets)
+		if(! mountservice $svc)
+			bad=($bad $svc)
+case unmount
+	for(svc in $targets)
+		if(! unmountservice $svc)
+			bad=($bad $svc)
+case remount
+	for(svc in $targets){
+		unmountservice $svc
+		if(! mountservice $svc)
+			bad=($bad $svc)
+	}
+case status
+	for(svc in $targets)
+		statusservice $svc
+	printactive
+case check
+	echo 'check mounter='^$mounter 'mountroot='^$mountroot
+	for(svc in $targets)
+		if(! checkservice $svc)
+			bad=($bad $svc)
+	printactive
+case protect
+	if(! ~ $#targets 0)
+		warn 'protect ignores service arguments'
+	if(! protectroot)
+		bad=($bad protect)
+case monitor
+	if(! ~ $#targets 0)
+		warn 'monitor ignores service arguments'
+	if(! monitorroot)
+		bad=($bad monitor)
+case init
+	if(! protectroot)
+		bad=($bad protect)
+	for(svc in $targets)
+		if(! mountservice $svc)
+			bad=($bad $svc)
+case logs
+	if(! showlogs $targets)
+		bad=($bad logs)
+case daemon
+	if(~ $#targets 0)
+		usage
+	daction=$targets(1)
+	dtargets=()
+	if(! ~ $#targets 1)
+		dtargets=$targets(2-)
+	if(~ $#dtargets 0)
+		dtargets=()
+	switch($daction){
+	case start
+		if(! protectroot)
+			bad=($bad protect)
+		if(! daemonstart $dtargets)
+			bad=($bad daemon-start)
+	case run
+		if(! protectroot)
+			exit failed
+		daemonrun $dtargets
+	case stop
+		if(! daemonstop)
+			bad=($bad daemon-stop)
+	case status
+		if(! daemonstatus)
+			bad=($bad daemon-status)
+	case *
+		usage
+	}
+case agent
+	if(~ $#targets 0)
+		usage
+	aaction=$targets(1)
+	atargets=()
+	if(! ~ $#targets 1)
+		atargets=$targets(2-)
+	switch($aaction){
+	case install
+		if(! agentinstall $atargets)
+			bad=($bad agent-install)
+	case uninstall
+		if(! agentuninstall)
+			bad=($bad agent-uninstall)
+	case start
+		if(! agentstart)
+			bad=($bad agent-start)
+	case stop
+		if(! agentstop)
+			bad=($bad agent-stop)
+	case status
+		if(! agentstatus)
+			bad=($bad agent-status)
+	case *
+		usage
+	}
+case *
+	usage
+}
+
+if(! ~ $#bad 0){
+	err 'operation failed for:' $bad
+	exit failed
+}
+
+exit ''
