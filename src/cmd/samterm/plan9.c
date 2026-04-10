@@ -143,6 +143,28 @@ if(0) fprint(2, "ext %d\n", n);
 	}
 }
 
+void themeproc(void *v) {
+	USED(v);
+	char buf[16];
+
+	for(;;) {
+		read(themefd, buf, sizeof buf);
+		flstart(screen->r);
+		flupdatecols();
+		iconinit();
+		// reshape(screen->clipr);
+		flushimage(display, 1);
+	}
+}
+
+void
+themestart(void)
+{
+	themefd = themewatchfd();
+	if(themefd >= 0)
+		proccreate(themeproc, nil, 4096);
+}
+
 void
 extstart(void)
 {

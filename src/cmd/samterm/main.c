@@ -13,6 +13,7 @@ Text	cmd;
 Rune	*scratch;
 long	nscralloc;
 Cursor	*cursor;
+Colors *curtheme;
 Flayer	*which = 0;
 Flayer	*work = 0;
 long	snarflen;
@@ -61,6 +62,8 @@ threadmain(int argc, char *argv[])
 		open("/dev/null", OWRITE);
 
 	notify(notifyf);
+
+	curtheme = THEME;
 
 	if(protodebug) print("getscreen\n");
 	getscreen(argc, argv);

@@ -60,6 +60,7 @@ OFILES=\
 	writesubfont.$O\
 	wsys.$O\
 	unix.$O\
+	theme.$O\
 
 HFILES=\
 	$PLAN9/include/draw.h\

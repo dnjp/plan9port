@@ -317,10 +317,15 @@ closedisplay(Display *disp)
 
 	free(disp->devdir);
 	free(disp->windir);
-	if(disp->white)
-		freeimage(disp->white);
-	if(disp->black)
-		freeimage(disp->black);
+	/* bypass freeimage: it no-ops on display black/white */
+	if(disp->white){
+		_freeimage1(disp->white);
+		free(disp->white);
+	}
+	if(disp->black){
+		_freeimage1(disp->black);
+		free(disp->black);
+	}
 	if(disp->srvfd >= 0)
 		close(disp->srvfd);
 	free(disp);

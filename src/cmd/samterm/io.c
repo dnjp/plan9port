@@ -12,6 +12,7 @@
 int	protodebug;
 int	cursorfd;
 int	plumbfd = -1;
+int	themefd = -1;
 int	input;
 int	got;
 int	block;
@@ -33,6 +34,8 @@ void
 initio(void)
 {
 	threadsetname("main");
+	if(protodebug) print("theme\n");
+	themestart();
 	if(protodebug) print("mouse\n");
 	mousectl = initmouse(nil, display->image);
 	if(mousectl == nil){

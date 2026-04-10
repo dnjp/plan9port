@@ -24,6 +24,7 @@ int plumbfd;
 int rcpid;
 int rcfd;
 int sfd;
+int themefd;
 Window *w;
 char *fontname;
 char *varfontname;	/* proportional font for menus (-F flag) */
@@ -39,6 +40,7 @@ void	rcinputproc(void*);
 void hangupnote(void*, char*);
 void resizethread(void*);
 void	servedevtext(void);
+void themeproc(void *v);
 
 int errorshouldabort = 0;
 int cooked;
@@ -291,6 +293,11 @@ new(Image *i, int hideit, int scrollit, int pid, char *dir, char *cmd, char **ar
 
 	if(i == nil)
 		return nil;
+
+	themefd = themewatchfd();
+	if(themefd >= 0)
+		proccreate(themeproc, nil, 4096);
+
 	cm = chancreate(sizeof(Mouse), 0);
 	ck = chancreate(sizeof(Rune*), 0);
 	cctl = chancreate(sizeof(Wctlmesg), 4);
@@ -664,6 +671,19 @@ servedevtext(void)
 	proccreate(listenproc, nil, STACK);
 	strcpy(thesocket, buf+5);
 	atexit(removethesocket);
+}
+
+void themeproc(void *v) {
+	USED(v);
+	char buf[16];
+	for(;;) {
+		read(themefd, buf, sizeof buf);  /* blocks until OS flips */
+		/* update */
+		iconinit();
+		wupdatecols();
+		wresize(w, screen, 0);
+		flushimage(display, 1);
+	}
 }
 
 void

@@ -585,6 +585,7 @@ extern Channel	*ckill;		/* chan(Rune*) */
 extern Channel	*cxfidalloc;	/* chan(Xfid*) */
 extern Channel	*cxfidfree;	/* chan(Xfid*) */
 extern Channel	*cnewwindow;	/* chan(Channel*) */
+extern Channel	*ctheme;		/* chan(Channel*) */
 extern Channel	*mouseexit0;	/* chan(int) */
 extern Channel	*mouseexit1;	/* chan(int) */
 extern Channel	*cexit;		/* chan(int) */
