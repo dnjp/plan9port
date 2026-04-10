@@ -85,11 +85,3 @@ rule set font fix
 rule set comfmt '// %s'
 rule set tabstop 8
 rule set tabexpand off
-
-# Default
-client is acme
-event is open
-query matches '.*'
-rule set comfmt '# %s'
-rule set tabstop 8
-rule set tabexpand off
