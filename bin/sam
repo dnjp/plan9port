@@ -36,6 +36,9 @@ fi
 : "${font:=$fixfont}"
 export font
 
+# autoindent
+ARGS+=(-a)
+
 # Select the native architecture on Apple Silicon so we don't run under Rosetta.
 arch=x86_64
 if arch -arch arm64 true >/dev/null 2>&1; then
@@ -45,4 +48,4 @@ fi
 # exec -a sam ensures argv[0] is "sam" so the macOS menu bar and pgrep see
 # the process as "sam" rather than the full binary path.
 exec arch -arch "$arch" \
-	/bin/bash -c 'exec -a sam "$@"' -- "$PLAN9/bin/sam.bin" "$@"
+	/bin/bash -c 'exec -a sam "$@"' -- "$PLAN9/bin/sam.bin" "${ARGS[@]}" "$@"
