@@ -71,6 +71,7 @@ bin/factor
 bin/factotum
 bin/file
 bin/fmt
+bin/fontsel
 bin/fontsrv
 bin/fortune
 bin/fossil/conf
