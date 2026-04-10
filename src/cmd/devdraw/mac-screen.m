@@ -803,16 +803,16 @@ rpc_setlabel(Client *client, char *label)
 	if(self.win == nil)
 		return;
 
-	if([appName isEqualToString:@"9term"]){
+	if([appName isEqualToString:@"acme"]){
+		@autoreleasepool{
+			[self.win setTitle:appName];
+		}
+	} else {
 		@autoreleasepool{
 			NSString *s = [[NSString alloc] initWithUTF8String:label];
 			[self.win setTitle:s];
 			if(client0)
 				[[NSApp dockTile] setBadgeLabel:s];
-		}
-	} else {
-		@autoreleasepool{
-			[self.win setTitle:appName];
 		}
 	}
 }
