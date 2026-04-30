@@ -70,8 +70,6 @@ static	int	headerline(char**, String*);
 static	void	initheaders(void);
 static void	parseattachments(Message*, Mailbox*);
 
-int		debug;
-
 char *Enotme = "path not served by this file server";
 
 enum

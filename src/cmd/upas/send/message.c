@@ -11,8 +11,6 @@ static Reprog *fprog;
 #define VMLIMIT (64*1024)
 #define MSGLIMIT (128*1024*1024)
 
-int received;	/* from rfc822.y */
-
 static String*	getstring(Node *p);
 static String*	getaddr(Node *p);
 
