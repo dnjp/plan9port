@@ -5,7 +5,8 @@ SHELL=${fshell:-$SHELL}
 PLAN9=${PLAN9:-/usr/local/plan9}
 
 export INSIDE_P9P=true
-export INSIDE_9TERM=true
+export INSIDE_ACME=true
+export tabstop=8
 
 cd $HOME
 
@@ -13,12 +14,13 @@ arch=x86_64
 if arch -arch arm64 date >/dev/null 2>&1; then
 	arch=arm64
 fi
+
 case "$SHELL" in
 */rc)
 	echo '
 		if(! ~ $PLAN9/bin $path)
 			path=($path $PLAN9/bin)
-		arch -arch '$arch' $PLAN9/bin/9term -l -W600x800 &
+		arch -arch '$arch' $PLAN9/bin/sam &
 	' | $SHELL -l
 	exit 0
 	;;
@@ -30,20 +32,16 @@ case "$SHELL" in
 	;;
 esac
 
+ARGS=(-a)
+if [ ! -z "$fixfont" ]; then
+	export font=$fixfont
+fi
+
 if ! [[ :$PATH: =~ :$PLAN9/bin: ]]
 then
 	PATH=$PATH:$PLAN9/bin
 fi
 
-ARGS=(-s)
-ARGS+=(-l -W600x800)
-if [ ! -z "$fixfont" ]; then
-	ARGS+=(-f "$fixfont")
-fi
-
-plumber &
-fontsrv &
-
-arch -arch $arch /bin/bash -c 'exec -a 9term "$@"' -- "$PLAN9/bin/9term" "${ARGS[@]}" "$@"
+exec arch -arch "$arch" \
+	/bin/bash -c 'exec -a sam "$@"' -- "$PLAN9/bin/sam" "${ARGS[@]}" "$@"
 exit 0
-
