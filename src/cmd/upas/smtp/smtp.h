@@ -38,6 +38,7 @@ extern Node	*udate;
 extern int	originator;
 extern int	destination;
 extern int	date;
+extern int	received;
 extern int	messageid;
 
 Node*	anonymous(Node*);
