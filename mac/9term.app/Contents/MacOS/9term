@@ -6,6 +6,7 @@ PLAN9=${PLAN9:-/usr/local/plan9}
 
 export INSIDE_P9P=true
 export INSIDE_9TERM=true
+export DEVDRAW="$(dirname "$0")/devdraw"
 
 cd $HOME
 

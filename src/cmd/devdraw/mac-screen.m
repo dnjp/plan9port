@@ -5,6 +5,7 @@
 #import <Cocoa/Cocoa.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <spawn.h>
 
 #undef Cursor
 #undef Point
@@ -91,24 +92,42 @@ rpc_shutdown(void)
 - (void)applicationDidFinishLaunching:(id)arg
 {
 	NSMenu *m, *sm;
-	NSData *d;
 	NSImage *i;
+	NSData *d;
+	NSBundle *bundle;
+	NSString *appName;
 
 	LOG(@"applicationDidFinishLaunching");
 
+	bundle = [NSBundle mainBundle];
+	appName = [bundle objectForInfoDictionaryKey:@"CFBundleName"];
+	if(appName == nil || [appName isEqualToString:@"devdraw"])
+		appName = @"devdraw";
+
 	sm = [NSMenu new];
+
+	if(![appName isEqualToString:@"devdraw"]){
+		NSMenuItem *newWin = [[NSMenuItem alloc]
+			initWithTitle:@"New Window"
+			action:@selector(newWindow:)
+			keyEquivalent:@"n"];
+		[newWin setTarget:self];
+		[sm addItem:newWin];
+	}
 	[sm addItemWithTitle:@"Toggle Full Screen" action:@selector(toggleFullScreen:) keyEquivalent:@"f"];
 	[sm addItemWithTitle:@"Hide" action:@selector(hide:) keyEquivalent:@"h"];
 	[sm addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
 	m = [NSMenu new];
-	[m addItemWithTitle:@"DEVDRAW" action:NULL keyEquivalent:@""];
-	[m setSubmenu:sm forItem:[m itemWithTitle:@"DEVDRAW"]];
+	[m addItemWithTitle:appName action:NULL keyEquivalent:@""];
+	[m setSubmenu:sm forItem:[m itemAtIndex:0]];
 	[NSApp setMainMenu:m];
 
-	d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
-	i = [[NSImage alloc] initWithData:d];
-	[NSApp setApplicationIconImage:i];
-	[[NSApp dockTile] display];
+	if([bundle objectForInfoDictionaryKey:@"CFBundleIconFile"] == nil){
+		d = [[NSData alloc] initWithBytes:glenda_png length:(sizeof glenda_png)];
+		i = [[NSImage alloc] initWithData:d];
+		[NSApp setApplicationIconImage:i];
+		[[NSApp dockTile] display];
+	}
 
 	gfx_started();
 }
@@ -116,6 +135,25 @@ rpc_shutdown(void)
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication {
 	return client0 != nil;
 }
+
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+	return YES;
+}
+
+- (void)newWindow:(id)sender {
+	NSBundle *bundle = [NSBundle mainBundle];
+	NSString *exe = [bundle objectForInfoDictionaryKey:@"CFBundleExecutable"];
+	if(exe == nil)
+		return;
+
+	const char *bundlePath = [[[NSBundle mainBundle] bundlePath] UTF8String];
+	char *argv[] = {"/usr/bin/open", "-n", (char*)bundlePath, nil};
+	pid_t pid;
+	int err = posix_spawn(&pid, "/usr/bin/open", nil, nil, argv, nil);
+	if(err != 0)
+		fprint(2, "devdraw: newWindow: %s\n", strerror(err));
+}
+
 @end
 
 @interface DrawLayer : CAMetalLayer
