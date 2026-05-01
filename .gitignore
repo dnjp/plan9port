@@ -117,6 +117,7 @@ bin/listen1
 bin/look
 bin/ls
 bin/macargv
+bin/mailfs
 bin/mapd
 bin/mc
 bin/md5sum
@@ -215,6 +216,18 @@ bin/units
 bin/unutf
 bin/unvac
 bin/unzip
+bin/upas/aliasmail
+bin/upas/filter
+bin/upas/fs
+bin/upas/marshal
+bin/upas/nedmail
+bin/upas/qer
+bin/upas/runq
+bin/upas/send
+bin/upas/smtp
+bin/upas/smtpd
+bin/upas/unvf
+bin/upas/vf
 bin/usage
 bin/vac
 bin/vacfs
