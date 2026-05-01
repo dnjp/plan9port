@@ -38,6 +38,7 @@ void	delcol(Text*, Text*, Text*, int, int, Rune*, int);
 void	dotfiles(Text*, Text*, Text*, int, int, Rune*, int);
 void	dump(Text*, Text*, Text*, int, int, Rune*, int);
 void	edit(Text*, Text*, Text*, int, int, Rune*, int);
+void	expandtab(Text*, Text*, Text*, int, int, Rune*, int);
 void	xexit(Text*, Text*, Text*, int, int, Rune*, int);
 void	fontx(Text*, Text*, Text*, int, int, Rune*, int);
 void	get(Text*, Text*, Text*, int, int, Rune*, int);
@@ -93,6 +94,7 @@ static Rune LSend[] = { 'S', 'e', 'n', 'd', 0 };
 static Rune LSnarf[] = { 'S', 'n', 'a', 'r', 'f', 0 };
 static Rune LSort[] = { 'S', 'o', 'r', 't', 0 };
 static Rune LTab[] = { 'T', 'a', 'b', 0 };
+static Rune LTabexpand[] = { 'T', 'a', 'b', 'e', 'x', 'p', 'a', 'n', 'd', 0 };
 static Rune LUndo[] = { 'U', 'n', 'd', 'o', 0 };
 static Rune LZerox[] = { 'Z', 'e', 'r', 'o', 'x', 0 };
 
@@ -124,6 +126,7 @@ Exectab exectab[] = {
 	{ LSnarf,		cut,		FALSE,	TRUE,	FALSE	},
 	{ LSort,		sort,		FALSE,	XXX,		XXX		},
 	{ LTab,		tab,		FALSE,	XXX,		XXX		},
+	{ LTabexpand,	expandtab,	FALSE,	XXX,		XXX		},
 	{ LUndo,		undo,	FALSE,	TRUE,	XXX		},
 	{ LZerox,		zeroxx,	FALSE,	XXX,		XXX		},
 	{ nil, 			0,		0,		0,		0		}
@@ -1488,6 +1491,29 @@ tab(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *arg, int narg)
 		}
 	}else
 		warning(nil, "%.*S: Tab %d\n", w->body.file->nname, w->body.file->name, w->body.tabstop);
+}
+
+void
+expandtab(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *_arg, int _narg)
+{
+	Window *w;
+
+	USED(_0);
+	USED(_1);
+	USED(_2);
+	USED(_arg);
+	USED(_narg);
+
+	if(et==nil || et->w==nil)
+		return;
+	w = et->w;
+	if(w->body.tabexpand){
+		w->body.tabexpand = FALSE;
+		warning(nil, "%.*S: Tab %d, Tabexpand OFF\n", w->body.file->nname, w->body.file->name, w->body.tabstop);
+	} else {
+		w->body.tabexpand = TRUE;
+		warning(nil, "%.*S: Tab %d, Tabexpand ON\n", w->body.file->nname, w->body.file->name, w->body.tabstop);
+	}
 }
 
 void

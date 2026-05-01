@@ -140,10 +140,14 @@ threadmain(int argc, char *argv[])
 	p = getenv("tabstop");
 	if(p != nil){
 		maxtab = strtoul(p, nil, 0);
-		free(p);
 	}
 	if(maxtab == 0)
 		maxtab = 4;
+	p = getenv("tabexpand");
+	if(p != nil){
+		tabexpand = atoi(p);
+		free(p);
+	}
 	if(loadfile)
 		rowloadfonts(loadfile);
 	putenv("font", fontnames[0]);

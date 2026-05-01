@@ -34,6 +34,7 @@ textinit(Text *t, File *f, Rectangle r, Reffont *rf, Image *cols[NCOL])
 	t->ncache = 0;
 	t->reffont = rf;
 	t->tabstop = maxtab;
+	t->tabexpand = tabexpand;
 	memmove(t->fr.cols, cols, sizeof t->fr.cols);
 	textredraw(t, r, rf->f, screen, -1);
 }
@@ -745,6 +746,14 @@ texttype(Text *t, Rune r)
 		} else
 			textshow(t, t->file->b.nc, t->file->b.nc, FALSE);
 		return;
+	case 0x09:	/* ^I: tab character */
+		if(t->w->body.tabexpand){
+			for(i=0; i<t->w->body.tabstop; i++){
+				texttype(t, ' ');
+			}
+			return;
+		}
+		break;
 	case 0x01:	/* ^A: beginning of line */
 		typecommit(t);
 		/* go to where ^U would erase, if not already at BOL */
