@@ -77,6 +77,16 @@ mxdial(char *addr, char *ddomain, char *gdomain)
 	addr = netmkaddr(addr, 0, "smtp");
 	dial_string_parse(addr, &ds);
 
+	/* quick and dirty fix to skip mx lookup for non-smtp ports */
+	if(ds.service && cistrcmp(ds.service, "smtp") != 0){
+		if(debug)
+			fprint(2, "mxdial: explicit service %s, dialing %s directly\n",
+				ds.service, ds.host);
+		strncpy(ddomain, ds.host, 1023);
+		ddomain[1023] = '\0';
+		return smtpdial(ds.host);
+	}
+
 	/* try connecting to destination or any of it's mail routers */
 	fd = callmx(&ds, addr, ddomain);
 
