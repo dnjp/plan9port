@@ -1509,10 +1509,8 @@ expandtab(Text *et, Text *_0, Text *argt, int _1, int _2, Rune *_arg, int _narg)
 	w = et->w;
 	if(w->body.tabexpand){
 		w->body.tabexpand = FALSE;
-		warning(nil, "%.*S: Tab %d, Tabexpand OFF\n", w->body.file->nname, w->body.file->name, w->body.tabstop);
 	} else {
 		w->body.tabexpand = TRUE;
-		warning(nil, "%.*S: Tab %d, Tabexpand ON\n", w->body.file->nname, w->body.file->name, w->body.tabstop);
 	}
 }
 
