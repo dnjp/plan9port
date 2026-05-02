@@ -21,7 +21,12 @@ case "$SHELL" in
 	echo '
 		if(! ~ $PLAN9/bin $path)
 			path=($path $PLAN9/bin)
-		arch -arch '$arch' $PLAN9/bin/acme &
+		args=(-a)
+		if(! ~ $#fixfont 0)
+			args=($args -F $fixfont)
+		if(! ~ $#varfont 0)
+			args=($args -f $varfont)
+		arch -arch '$arch' $PLAN9/bin/acme $args &
 	' | $SHELL -l
 	exit 0
 	;;
