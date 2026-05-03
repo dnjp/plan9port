@@ -28,7 +28,7 @@
 #undef INFINITY	/* Darwin declares this as HUGE_VAL */
 #define	INFINITY	0x7FFFFFFFL
 #define	INCR		25
-#define	STRSIZE		(2*BLOCKSIZE)
+#define	STRSIZE		(512<<20)
 
 typedef long		Posn;		/* file position or address */
 typedef	ushort		Mod;		/* modification number */
@@ -252,7 +252,7 @@ File	*current(File*);
 void	delete(File*);
 void	delfile(File*);
 void	dellist(List*, int);
-void	doubleclick(File*, Posn);
+void	stretchsel(File*, Posn, int);
 void	dprint(char*, ...);
 void	edit(File*, int);
 void	*emalloc(ulong);
@@ -328,7 +328,7 @@ String	*tmprstr(Rune*, int);
 void	freetmpstr(String*);
 void	termcommand(void);
 void	termwrite(char*);
-File	*tofile(String*);
+File	*tofile(String*, int);
 void	trytoclose(File*);
 void	trytoquit(void);
 int	undo(int);
@@ -371,6 +371,8 @@ extern int	quitok;
 extern Address	addr;
 extern Buffer	snarfbuf;
 extern Buffer	plan9buf;
+extern Buffer	cmdbuf;
+extern int	cmdbufpos;
 extern List	file;
 extern List	tempfile;
 extern File	*cmd;
@@ -408,3 +410,5 @@ void	outTsl(Hmesg, int, long);
 void	outTsv(Hmesg, int, vlong);
 void	outflush(void);
 int needoutflush(void);
+
+Posn	nlcount(File *f, Posn p0, Posn p1);

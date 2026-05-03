@@ -24,6 +24,8 @@ void		lldelete(Flayer*);
 Image	*maincols[NCOL];
 Image	*cmdcols[NCOL];
 
+ulong	sel;
+
 void
 flstart(Rectangle r)
 {
@@ -80,6 +82,7 @@ flinit(Flayer *l, Rectangle r, Font *ft, Image **cols)
 	l->origin = l->p0 = l->p1 = 0;
 	l->f.display = display; // for FLMARGIN
 	frinit(&l->f, insetrect(flrect(l, r), FLMARGIN(l)), ft, screen, cols);
+	l->f.scroll = frscroll;
 	l->f.maxtab = maxtab*stringwidth(ft, "0");
 	newvisibilities(1);
 	draw(screen, l->entire, l->f.cols[BACK], nil, ZP);
@@ -254,21 +257,28 @@ fldelete(Flayer *l, long p0, long p1)
 int
 flselect(Flayer *l)
 {
-	int ret;
+	static int clickcount;
+	static Point clickpt = {-10, -10};
+	int dt, dx, dy;
+
 	if(l->visible!=All)
 		flupfront(l);
+	dt = mousep->msec - l->click;
+	dx = abs(mousep->xy.x - clickpt.x);
+	dy = abs(mousep->xy.y - clickpt.y);
+	sel = frcharofpt(&l->f, mousep->xy) + l->origin;
+
+	l->click = mousep->msec;
+	clickpt = mousep->xy;
+
+	if(dx < 3 && dy < 3 && dt < Clicktime && clickcount < 3)
+		return ++clickcount;
+	clickcount = 0;
+
 	frselect(&l->f, mousectl);
-	ret = 0;
-	if(l->f.p0==l->f.p1){
-		if(mousep->msec-l->click<Clicktime && l->f.p0+l->origin==l->p0){
-			ret = 1;
-			l->click = 0;
-		}else
-			l->click = mousep->msec;
-	}else
-		l->click = 0;
-	l->p0 = l->f.p0+l->origin, l->p1 = l->f.p1+l->origin;
-	return ret;
+	l->p0 = sel < l->origin? sel: l->origin + l->f.p0;
+	l->p1 = sel > l->origin+l->f.nchars? sel: l->origin + l->f.p1;
+	return 0;
 }
 
 void
@@ -277,8 +287,9 @@ flsetselect(Flayer *l, long p0, long p1)
 	ulong fp0, fp1;
 	int ticked;
 
-	l->click = 0;
-	if(l->visible==None || !flprepare(l)){
+	if(sel != l->p0 && sel != l->p1)
+		sel = p0;
+	if(!flprepare(l)){
 		l->p0 = p0, l->p1 = p1;
 		return;
 	}

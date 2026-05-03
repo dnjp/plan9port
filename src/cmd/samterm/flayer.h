@@ -5,7 +5,7 @@ typedef enum Vis{
 }Vis;
 
 enum{
-	Clicktime=1000		/* one second */
+	Clicktime=500,		/* milliseconds */
 };
 
 typedef struct Flayer Flayer;
@@ -49,3 +49,5 @@ int	flscale(Flayer*, int);
 
 extern	Image	*maincols[NCOL];
 extern	Image	*cmdcols[NCOL];
+
+extern	ulong	sel;
