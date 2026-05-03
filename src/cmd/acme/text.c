@@ -532,6 +532,27 @@ textreadc(Text *t, uint q)
 	return r;
 }
 
+static int
+spacesindentbswidth(Text *t)
+{
+	uint q, col;
+	Rune r;
+
+	col = textbswidth(t, 0x15);
+	q = t->q0;
+	while(q > 0){
+		r = textreadc(t, q-1);
+		if(r != ' ')
+			break;
+		q--;
+		if(--col % t->tabstop == 0)
+			break;
+	}
+	if(t->q0 == q)
+		return 1;
+	return t->q0-q;
+}
+
 int
 textbswidth(Text *t, Rune c)
 {
@@ -540,8 +561,11 @@ textbswidth(Text *t, Rune c)
 	int skipping;
 
 	/* there is known to be at least one character to erase */
-	if(c == 0x08)	/* ^H: erase character */
+	if(c == 0x08){	/* ^H: erase character */
+		if(t->what == Body && t->w->indent[SPACESINDENT])
+			return spacesindentbswidth(t);
 		return 1;
+	}
 	q = t->q0;
 	skipping = TRUE;
 	while(q > 0){
@@ -887,8 +911,19 @@ texttype(Text *t, Rune r)
 			textfill(t->file->text[i]);
 		t->iq1 = t->q0;
 		return;
+	case '\t':
+		if(t->what == Body && t->w->indent[SPACESINDENT]){
+			nnb = textbswidth(t, 0x15);
+			if(nnb == 1 && textreadc(t, t->q0-1) == '\n')
+				nnb = 0;
+			nnb = t->tabstop - nnb % t->tabstop;
+			rp = runemalloc(nnb);
+			for(nr = 0; nr < nnb; nr++)
+				rp[nr] = ' ';
+		}
+		break;
 	case '\n':
-		if(t->w->autoindent){
+		if(t->what == Body && t->w->indent[AUTOINDENT]){
 			/* find beginning of previous line using backspace code */
 			nnb = textbswidth(t, 0x15); /* ^U case */
 			rp = runemalloc(nnb + 1);
@@ -956,6 +991,8 @@ textcommit(Text *t, int tofile)
 
 static	Text	*clicktext;
 static	uint	clickmsec;
+static	int	clickcount;
+static	Point	clickpt;
 static	Text	*selecttext;
 static	uint	selectq;
 
@@ -995,6 +1032,7 @@ textframescroll(Text *t, int dl)
 			textsetselect(t, selectq, t->org+t->fr.p1);
 	}
 	textsetorigin(t, q0, TRUE);
+	flushimage(display, 1);
 }
 
 
@@ -1002,7 +1040,7 @@ void
 textselect(Text *t)
 {
 	uint q0, q1;
-	int b, x, y;
+	int b, x, y, dx, dy;
 	int state;
 	enum { None, Cut, Paste };
 
@@ -1014,25 +1052,36 @@ textselect(Text *t)
 	b = mouse->buttons;
 	q0 = t->q0;
 	q1 = t->q1;
+	dx = abs(clickpt.x - mouse->xy.x);
+	dy = abs(clickpt.y - mouse->xy.y);
+	clickpt = mouse->xy;
 	selectq = t->org+frcharofpt(&t->fr, mouse->xy);
-	if(clicktext==t && mouse->msec-clickmsec<500)
-	if(q0==q1 && selectq==q0){
-		textdoubleclick(t, &q0, &q1);
+	clickcount++;
+	if(mouse->msec-clickmsec >= 500 || selecttext != t || clickcount > 3 || dx > 3 || dy > 3)
+		clickcount = 0;
+	if(clickcount >= 1 && selecttext==t && mouse->msec-clickmsec < 500){
+		textstretchsel(t, &q0, &q1, clickcount);
 		textsetselect(t, q0, q1);
 		flushimage(display, 1);
 		x = mouse->xy.x;
 		y = mouse->xy.y;
 		/* stay here until something interesting happens */
-		do
+		while(1){
 			readmouse(mousectl);
-		while(mouse->buttons==b && abs(mouse->xy.x-x)<3 && abs(mouse->xy.y-y)<3);
+			dx = abs(mouse->xy.x - x);
+			dy = abs(mouse->xy.y - y);
+			if(mouse->buttons != b || dx >= 3 || dy >= 3)
+				break;
+			clickcount++;
+			clickmsec = mouse->msec;
+		}
 		mouse->xy.x = x;	/* in case we're calling frselect */
 		mouse->xy.y = y;
 		q0 = t->q0;	/* may have changed */
 		q1 = t->q1;
-		selectq = q0;
+		selectq = t->org+frcharofpt(&t->fr, mouse->xy);
 	}
-	if(mouse->buttons == b){
+	if(mouse->buttons == b && clickcount == 0){
 		t->fr.scroll = framescroll;
 		frselect(&t->fr, mousectl);
 		/* horrible botch: while asleep, may have lost selection altogether */
@@ -1049,13 +1098,11 @@ textselect(Text *t)
 			q1 = t->org+t->fr.p1;
 	}
 	if(q0 == q1){
-		if(q0==t->q0 && clicktext==t && mouse->msec-clickmsec<500){
-			textdoubleclick(t, &q0, &q1);
-			clicktext = nil;
-		}else{
+		if(q0==t->q0 && mouse->msec-clickmsec<500)
+			textstretchsel(t, &q0, &q1, clickcount);
+		else
 			clicktext = t;
-			clickmsec = mouse->msec;
-		}
+		clickmsec = mouse->msec;
 	}else
 		clicktext = nil;
 	textsetselect(t, q0, q1);
@@ -1072,7 +1119,7 @@ textselect(Text *t)
 			if(b & 2){
 				if(state==Paste && t->what==Body){
 					winundo(t->w, TRUE);
-					textsetselect(t, q0, t->q1);
+					textsetselect(t, q0, t->q0);
 					state = None;
 				}else if(state != Cut){
 					cut(t, t, nil, TRUE, TRUE, nil, 0);
@@ -1094,7 +1141,8 @@ textselect(Text *t)
 		flushimage(display, 1);
 		while(mouse->buttons == b)
 			readmouse(mousectl);
-		clicktext = nil;
+		if(mouse->msec-clickmsec >= 500)
+			clicktext = nil;
 	}
 }
 
@@ -1403,15 +1451,39 @@ Rune *right[] = {
 	nil
 };
 
-void
-textdoubleclick(Text *t, uint *q0, uint *q1)
+static int
+inmode(Rune r, int mode)
 {
-	int c, i;
-	Rune *r, *l, *p;
+	return (mode == 1) ? isalnum(r) : r && !isspacerune(r);
+}
+
+void
+textstretchsel(Text *t, uint *q0, uint *q1, int mode)
+{
+	int c, i, lc, rc;
+	Rune *r, *l, *p, *x;
 	uint q;
+
+	*q0 = t->q0;
+	*q1 = t->q1;
 
 	if(textclickhtmlmatch(t, q0, q1))
 		return;
+
+	if(mode){
+		lc = *q0 > 0    	? textreadc(t, *q0-1) : '\n';
+		rc = *q1 < t->file->b.nc	? textreadc(t, *q1) : '\n';
+		for(i=0; left[i]!=nil; i++){
+			l = left[i];
+			r = right[i];
+			x = runestrchr(l, lc);
+			if(x && r[x-l] == rc){
+				*q0 -= *q0 > 0 && lc != '\n';
+				*q1 += *q1 < t->file->b.nc;
+				return;
+			}
+		}
+	}
 
 	for(i=0; left[i]!=nil; i++){
 		q = *q0;
@@ -1444,12 +1516,11 @@ textdoubleclick(Text *t, uint *q0, uint *q1)
 			return;
 		}
 	}
-
 	/* try filling out word to right */
-	while(*q1<t->file->b.nc && isalnum(textreadc(t, *q1)))
+	while(*q1<t->file->b.nc && inmode(textreadc(t, *q1), mode))
 		(*q1)++;
 	/* try filling out word to left */
-	while(*q0>0 && isalnum(textreadc(t, *q0-1)))
+	while(*q0>0 && inmode(textreadc(t, *q0-1), mode))
 		(*q0)--;
 }
 

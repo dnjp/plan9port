@@ -21,7 +21,7 @@ wininit(Window *w, Window *clone, Rectangle r)
 	File *f;
 	Reffont *rf;
 	Rune *rp;
-	int nc;
+	int nc, i;
 
 	w->tag.w = w;
 	w->taglines = 1;
@@ -80,10 +80,12 @@ wininit(Window *w, Window *clone, Rectangle r)
 	draw(screen, br, button, nil, button->r.min);
 	w->filemenu = TRUE;
 	w->maxlines = w->body.fr.maxlines;
-	w->autoindent = globalautoindent;
+	for(i=0; i<NINDENT; i++)
+		w->indent[i] = globalindent[i];
 	if(clone){
 		w->dirty = clone->dirty;
-		w->autoindent = clone->autoindent;
+		for(i=0; i<NINDENT; i++)
+			w->indent[i] = clone->indent[i];
 		textsetselect(&w->body, clone->body.q0, clone->body.q1);
 		winsettag(w);
 	}
@@ -108,17 +110,27 @@ windrawbutton(Window *w)
 }
 
 int
-delrunepos(Window *w)
+tagrunepos(Window *w, Rune *s)
 {
-	Rune *r;
-	int i;
+	int n;
+	Rune *r, *rr;
 
-	r = parsetag(w, 0, &i);
-	free(r);
-	i += 2;
-	if(i >= w->tag.file->b.nc)
+	if(s == nil)
 		return -1;
-	return i;
+
+	n = w->tag.file->b.nc;
+	r = runemalloc(n+1);
+	bufread(&w->tag.file->b, 0, r, n);
+	r[n] = L'\0';
+
+	rr = runestrstr(r, s);
+	if(rr == nil || rr == r){
+		free(r);
+		return -1;
+	}
+	n = rr - r;
+	free(r);
+	return n;
 }
 
 void
@@ -126,7 +138,9 @@ movetodel(Window *w)
 {
 	int n;
 
-	n = delrunepos(w);
+	n = tagrunepos(w, delcmd);
+	free(delcmd);
+	delcmd = nil;
 	if(n < 0)
 		return;
 	moveto(mousectl, addpt(frptofchar(&w->tag.fr, n), Pt(4, w->tag.fr.font->height-4)));
@@ -153,7 +167,7 @@ wintaglines(Window *w, Rectangle r)
 
 	if(!w->tagexpand) {
 		/* use just as many lines as needed to show the Del */
-		n = delrunepos(w);
+		n = tagrunepos(w, delcmd);
 		if(n < 0)
 			return 1;
 		p = subpt(frptofchar(&w->tag.fr, n), w->tag.fr.r.min);
@@ -198,6 +212,8 @@ winresize(Window *w, Rectangle r, int safe, int keepextra)
 		w->taglines = wintaglines(w, r);
 		r1.max.y = min(r.max.y, r1.min.y + w->taglines*font->height);
 	}
+	if(Dy(r1) < font->height)
+		r1.max.y = r1.min.y+font->height;
 
 	/* If needed, resize & redraw tag. */
 	y = r1.max.y;
@@ -403,6 +419,8 @@ wintype(Window *w, Text *t, Rune r)
 	int i;
 
 	texttype(t, r);
+	if(t->what == Tag)
+		w->tagsafe = FALSE;
 	if(t->what == Body)
 		for(i=0; i<t->file->ntext; i++)
 			textscrdraw(t->file->text[i]);
@@ -492,6 +510,7 @@ winsettag1(Window *w)
 		old = runemalloc(w->tag.file->b.nc+1);
 		bufread(&w->tag.file->b, 0, old, w->tag.file->b.nc);
 		old[w->tag.file->b.nc] = '\0';
+		w->tagsafe = FALSE;
 	}
 
 	/* compute the text for the whole tag, replacing current only if it differs */
@@ -559,6 +578,7 @@ winsettag1(Window *w)
 				w->tag.q1 = q1+bar;
 			}
 		}
+		w->tagsafe = FALSE;
 	}
 	free(old);
 	free(new);
@@ -570,10 +590,8 @@ winsettag1(Window *w)
 		w->tag.q1 = n;
 	textsetselect(&w->tag, w->tag.q0, w->tag.q1);
 	windrawbutton(w);
-	if(resize){
-		w->tagsafe = 0;
+	if(w->tagsafe == FALSE)
 		winresize(w, w->r, TRUE, TRUE);
-	}
 }
 
 void
@@ -640,13 +658,14 @@ winaddincl(Window *w, Rune *r, int n)
 		r = runerealloc(r, n+1);
 		r[n] = 0;
 	}
-	free(a);
 	if((d->qid.type&QTDIR) == 0){
 		free(d);
 		warning(nil, "%s: not a directory\n", a);
 		free(r);
+		free(a);
 		return;
 	}
+	free(a);
 	free(d);
 	w->nincl++;
 	w->incl = realloc(w->incl, w->nincl*sizeof(Rune*));
