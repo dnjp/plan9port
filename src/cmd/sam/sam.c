@@ -5,7 +5,6 @@ int	io;
 int	panicking;
 int	rescuing;
 String	genstr;
-String	rhs;
 String	curwd;
 String	cmdstr;
 Rune	empty[] = { 0 };
@@ -71,10 +70,17 @@ main(int _argc, char **_argv)
 	/* options for samterm */
 	case 'a':
 		*ap++ = "-a";
+		if(ap >= termargs+nelem(termargs))
+			usage();
 		break;
 	case 'W':
 		*ap++ = "-W";
 		*ap++ = EARGF(usage());
+		break;
+	case 'i':
+		*ap++ = "-i";
+		if(ap >= termargs+nelem(termargs))
+			usage();
 		break;
 	}ARGEND
 	*ap = nil;
@@ -83,7 +89,6 @@ main(int _argc, char **_argv)
 	Strinit0(&lastpat);
 	Strinit0(&lastregexp);
 	Strinit0(&genstr);
-	Strinit0(&rhs);
 	Strinit0(&curwd);
 	Strinit0(&plan9cmd);
 	home = getenv(HOME);
@@ -523,7 +528,7 @@ cd(String *str)
 	if(chdir(s))
 		syserror("chdir");
 	fd = open("/dev/wdir", OWRITE);
-	if(fd > 0)
+	if(fd >= 0)
 		write(fd, s, strlen(s));
 	dprint("!\n");
 	Strinit(&owd);
@@ -554,20 +559,20 @@ cd(String *str)
 }
 
 int
-loadflist(String *s)
+loadflist(String *s, int blank)
 {
 	int c, i;
 
 	c = s->s[0];
-	for(i = 0; s->s[i]==' ' || s->s[i]=='\t'; i++)
+	for(i = 0; i < s->n && (s->s[i]==' ' || s->s[i]=='\t'); i++)
 		;
-	if((c==' ' || c=='\t') && s->s[i]!='\n'){
+	if(blank == 0 || ((c==' ' || c=='\t') && s->s[i]!='\n')){
 		if(s->s[i]=='<'){
 			Strdelete(s, 0L, (long)i+1);
 			readcmd(s);
 		}else{
 			Strzero(&genstr);
-			while((c = s->s[i++]) && c!='\n')
+			while(i < s->n && (c = s->s[i++]) && c!='\n')
 				Straddc(&genstr, c);
 			Straddc(&genstr, '\0');
 		}
@@ -620,13 +625,13 @@ readflist(int readall, int delete)
 }
 
 File *
-tofile(String *s)
+tofile(String *s, int blank)
 {
 	File *f;
 
-	if(s->s[0] != ' ')
+	if(blank && s->s[0] != ' ')
 		error(Eblank);
-	if(loadflist(s) == 0){
+	if(loadflist(s, blank) == 0){
 		f = lookfile(&genstr);	/* empty string ==> nameless file */
 		if(f == 0)
 			error_s(Emenu, genc);
@@ -640,7 +645,7 @@ getfile(String *s)
 {
 	File *f;
 
-	if(loadflist(s) == 0)
+	if(loadflist(s, 1) == 0)
 		logsetname(f = newfile(), &genstr);
 	else if((f=readflist(TRUE, FALSE)) == 0)
 		error(Eblank);
@@ -658,7 +663,7 @@ closefiles(File *f, String *s)
 	}
 	if(s->s[0] != ' ')
 		error(Eblank);
-	if(loadflist(s) == 0)
+	if(loadflist(s, 1) == 0)
 		error(Enewline);
 	readflist(FALSE, TRUE);
 }
@@ -704,11 +709,27 @@ nlcount(File *f, Posn p0, Posn p1)
 }
 
 void
-printposn(File *f, int charsonly)
+printposn(File *f, int chars)
 {
 	Posn l1, l2;
+	char *s;
 
-	if(!charsonly){
+	if(f->name.s[0]){
+		if(f->name.s[0]!='/'){
+			getcurwd();
+			s = Strtoc(&curwd);
+			dprint("%s", s);
+			free(s);
+		}
+		s = Strtoc(&f->name);
+		dprint("%s:", s);
+		free(s);
+	}
+	if(chars){
+		dprint("#%lud", addr.r.p1);
+		if(addr.r.p2 != addr.r.p1)
+			dprint(",#%lud", addr.r.p2);
+	}else{
 		l1 = 1+nlcount(f, (Posn)0, addr.r.p1);
 		l2 = l1+nlcount(f, addr.r.p1, addr.r.p2);
 		/* check if addr ends with '\n' */
@@ -717,11 +738,7 @@ printposn(File *f, int charsonly)
 		dprint("%lud", l1);
 		if(l2 != l1)
 			dprint(",%lud", l2);
-		dprint("; ");
 	}
-	dprint("#%lud", addr.r.p1);
-	if(addr.r.p2 != addr.r.p1)
-		dprint(",#%lud", addr.r.p2);
 	dprint("\n");
 }
 

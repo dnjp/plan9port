@@ -9,7 +9,7 @@ typedef struct Inst Inst;
 
 struct Inst
 {
-	long	type;	/* < OPERATOR ==> literal, otherwise action */
+	long	type;	/* <= Runemax ==> literal, otherwise action */
 	union {
 		int rsid;
 		int rsubid;
@@ -46,37 +46,38 @@ struct Ilist
 
 #define	NLIST	127
 
-Ilist	*tl, *nl;	/* This list, next list */
+Ilist	*tl, *nl;		/* This list, next list */
 Ilist	list[2][NLIST+1];	/* +1 for trailing null */
 static	Rangeset sempty;
 
 /*
  * Actions and Tokens
  *
- *	0x10000xx are operators, value == precedence
- *	0x20000xx are tokens, i.e. operands for operators
+ *	0x100xx are operators, value == precedence
+ *	0x200xx are tokens, i.e. operands for operators
  */
-#define	OPERATOR	0x1000000	/* Bit set in all operators */
-#define	START		(OPERATOR+0)	/* Start, used for marker on stack */
-#define	RBRA		(OPERATOR+1)	/* Right bracket, ) */
-#define	LBRA		(OPERATOR+2)	/* Left bracket, ( */
-#define	OR		(OPERATOR+3)	/* Alternation, | */
-#define	CAT		(OPERATOR+4)	/* Concatentation, implicit operator */
-#define	STAR		(OPERATOR+5)	/* Closure, * */
-#define	PLUS		(OPERATOR+6)	/* a+ == aa* */
-#define	QUEST		(OPERATOR+7)	/* a? == a|nothing, i.e. 0 or 1 a's */
-#define	ANY		0x2000000	/* Any character but newline, . */
-#define	NOP		(ANY+1)	/* No operation, internal use only */
-#define	BOL		(ANY+2)	/* Beginning of line, ^ */
-#define	EOL		(ANY+3)	/* End of line, $ */
-#define	CCLASS		(ANY+4)	/* Character class, [] */
-#define	NCCLASS		(ANY+5)	/* Negated character class, [^] */
-#define	END		(ANY+0x77)	/* Terminate: match found */
+enum {
+	OPERATOR = Runemax+1,	/* Bitmask of all operators */
+	START	= OPERATOR,	/* Start, used for marker on stack */
+	RBRA,			/* Right bracket, ) */
+	LBRA,			/* Left bracket, ( */
+	OR,			/* Alternation, | */
+	CAT,			/* Concatentation, implicit operator */
+	STAR,			/* Closure, * */
+	PLUS,			/* a+ == aa* */
+	QUEST,			/* a? == a|nothing, i.e. 0 or 1 a's */
 
-#define	ISATOR		OPERATOR
-#define	ISAND		ANY
+	ANY	= OPERATOR<<1,	/* Any character but newline, . */
+	NOP,			/* No operation, internal use only */
+	BOL,			/* Beginning of line, ^ */
+	EOL,			/* End of line, $ */
+	CCLASS,			/* Character class, [] */
+	NCCLASS,		/* Negated character class, [^] */
+	END,			/* Terminate: match found */
 
-#define	QUOTED	0x4000000	/* Bit set for \-ed lex characters */
+	ISATOR	= OPERATOR,
+	ISAND	= OPERATOR<<1,
+};
 
 /*
  * Parser Information
@@ -461,7 +462,7 @@ nextrec(void){
 			exprp++;
 			return '\n';
 		}
-		return *exprp++|QUOTED;
+		return *exprp++|(Runemax+1);
 	}
 	return *exprp++;
 }
@@ -497,11 +498,11 @@ bldcclass(void)
 			if((c2 = nextrec()) == ']')
 				goto Error;
 			classp[n+0] = Runemax;
-			classp[n+1] = c1;
-			classp[n+2] = c2;
+			classp[n+1] = c1 & Runemax;
+			classp[n+2] = c2 & Runemax;
 			n += 3;
 		}else
-			classp[n++] = c1 & ~QUOTED;
+			classp[n++] = c1 & Runemax;
 	}
 	classp[n] = 0;
 	if(nclass == Nclass){
@@ -648,7 +649,7 @@ execute(File *f, Posn startp, Posn eof)
 				break;
 			case OR:
 				/* evaluate right choice later */
-				if(addinst(tl, inst->right, &tlp->se))
+				if(addinst(tlp, inst->right, &tlp->se))
 				if(++ntl >= NLIST)
 					goto Overflow;
 				/* efficiency: advance and re-evaluate */
@@ -700,11 +701,11 @@ bexecute(File *f, Posn startp)
 				break;
 			case 1:		/* expired; wrap to end */
 				if(sel.p[0].p1>=0)
+			case 3:
 					goto Return;
 				list[0][0].inst = list[1][0].inst = 0;
 				p = f->b.nc;
 				goto doloop;
-			case 3:
 			default:
 				goto Return;
 			}
@@ -774,7 +775,7 @@ bexecute(File *f, Posn startp)
 				break;
 			case OR:
 				/* evaluate right choice later */
-				if(addinst(tlp, inst->right, &tlp->se))
+				if(addinst(tl, inst->right, &tlp->se))
 				if(++ntl >= NLIST)
 					goto Overflow;
 				/* efficiency: advance and re-evaluate */

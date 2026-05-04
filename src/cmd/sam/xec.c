@@ -3,6 +3,7 @@
 
 int	Glooping;
 int	nest;
+int	newcur;
 
 int	append(File*, Cmd*, Posn);
 int	display(File*);
@@ -26,7 +27,7 @@ cmdexec(File *f, Cmd *cp)
 	if(f && f->unread)
 		load(f);
 	if(f==0 && (cp->addr==0 || cp->addr->type!='"') &&
-	    !utfrune("bBnqUXY!", cp->cmdc) &&
+	    !utfrune("bBnqUXY!^M", cp->cmdc) &&
 	    cp->cmdc!=('c'|0x100) && !(cp->cmdc=='D' && cp->ctext))
 		error(Enofile);
 	i = lookup(cp->cmdc);
@@ -77,11 +78,21 @@ a_cmd(File *f, Cmd *cp)
 int
 b_cmd(File *f, Cmd *cp)
 {
+	String *s;
 	USED(f);
-	f = cp->cmdc=='b'? tofile(cp->ctext) : getfile(cp->ctext);
+	s = cp->ctext;
+	if(nest > 0 && s->s[0] == 0){
+		if(f == nil)
+			return TRUE;
+		tofile(&f->name, 0);
+		current(f);
+		newcur = 1;
+	}else{
+		f = cp->cmdc=='b'? tofile(s, 1) : getfile(s);
+	}
 	if(f->unread)
 		load(f);
-	else if(nest == 0)
+	else if(nest == 0 || newcur)
 		filename(f);
 	return TRUE;
 }
@@ -163,6 +174,17 @@ m_cmd(File *f, Cmd *cp)
 		move(f, addr2);
 	else
 		copy(f, addr2);
+	return TRUE;
+}
+
+int
+M_cmd(File *f, Cmd *cp)
+{
+	USED(f);
+	if(downloaded)
+		outTS(Hmenucmd, cp->ctext);
+	else
+		dprint("not downloaded\n");
 	return TRUE;
 }
 
@@ -277,6 +299,7 @@ u_cmd(File *f, Cmd *cp)
 	else
 		while(n++ && undo(FALSE))
 			;
+	moveto(f, f->dot.r);
 	return TRUE;
 }
 
@@ -494,6 +517,7 @@ filelooper(Cmd *cp, int XY)
 	nest++;
 	settempfile();
 	cur = curfile;
+	newcur = 0;
 	for(i = 0; i<tempfile.nused; i++){
 		f = tempfile.filepptr[i];
 		if(f==cmd)
@@ -501,7 +525,7 @@ filelooper(Cmd *cp, int XY)
 		if(cp->re==0 || filematch(f, cp->re)==XY)
 			cmdexec(f, cp->ccmd);
 	}
-	if(cur && whichmenu(cur)>=0)	/* check that cur is still a file */
+	if(newcur == 0 && cur && whichmenu(cur)>=0)	/* check that cur is still a file */
 		current(cur);
 	--Glooping;
 	--nest;

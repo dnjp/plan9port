@@ -10,7 +10,6 @@
 #include "samterm.h"
 
 static Image *scrtmp;
-static Image *scrback;
 
 void
 scrtemps(void)
@@ -22,8 +21,7 @@ scrtemps(void)
 	if(screensize(0, &h) == 0)
 		h = 2048;
 	scrtmp = allocimage(display, Rect(0, 0, 32, h), screen->chan, 0, 0);
-	scrback = allocimage(display, Rect(0, 0, 32, h), screen->chan, 0, 0);
-	if(scrtmp==0 || scrback==0)
+	if(scrtmp==0)
 		panic("scrtemps");
 }
 
@@ -50,21 +48,6 @@ scrpos(Rectangle r, long p0, long p1, long tot)
 			q.min.y = q.max.y-2;
 	}
 	return q;
-}
-
-void
-scrmark(Flayer *l, Rectangle r)
-{
-	r.max.x--;
-	if(rectclip(&r, l->scroll))
-		draw(l->f.b, r, l->f.cols[HIGH], nil, ZP);
-}
-
-void
-scrunmark(Flayer *l, Rectangle r)
-{
-	if(rectclip(&r, l->scroll))
-		draw(l->f.b, r, scrback, nil, Pt(0, r.min.y-l->scroll.min.y));
 }
 
 void
@@ -100,70 +83,57 @@ scrdraw(Flayer *l, long tot)
 void
 scroll(Flayer *l, int but)
 {
-	int in = 0, oin;
-	long tot = scrtotal(l);
-	Rectangle scr, r, s, rt;
-	int x, y, my, oy, h;
-	long p0;
+	Rectangle s;
+	int my, n;
+	long o, tot;
+	int once;
+	ulong lastmsec, delay;
 
+	if(l->visible==None)
+		return;
+
+	once = 0;
+	lastmsec = mousep->msec;
 	s = l->scroll;
-	x = s.min.x+FLSCROLLWID(l)/2;
-	scr = scrpos(l->scroll, l->origin, l->origin+l->f.nchars, tot);
-	r = scr;
-	y = scr.min.y;
-	my = mousep->xy.y;
-	draw(scrback, Rect(0,0,Dx(l->scroll), Dy(l->scroll)), l->f.b, nil, l->scroll.min);
+	tot = scrtotal(l);
 	do{
-		oin = in;
-		in = abs(x-mousep->xy.x)<=FLSCROLLWID(l)/2;
-		if(oin && !in)
-			scrunmark(l, r);
-		if(in){
-			scrmark(l, r);
-			oy = y;
-			my = mousep->xy.y;
-			if(my < s.min.y)
-				my = s.min.y;
-			if(my >= s.max.y)
-				my = s.max.y;
-			if(!eqpt(mousep->xy, Pt(x, my)))
-				moveto(mousectl, Pt(x, my));
-			if(but == 1){
-				p0 = l->origin-frcharofpt(&l->f, Pt(s.max.x, my));
-				rt = scrpos(l->scroll, p0, p0+l->f.nchars, tot);
-				y = rt.min.y;
-			}else if(but == 2){
-				y = my;
-				if(y > s.max.y-2)
-					y = s.max.y-2;
-			}else if(but == 3){
-				p0 = l->origin+frcharofpt(&l->f, Pt(s.max.x, my));
-				rt = scrpos(l->scroll, p0, p0+l->f.nchars, tot);
-				y = rt.min.y;
-			}
-			if(y != oy){
-				scrunmark(l, r);
-				r = rectaddpt(scr, Pt(0, y-scr.min.y));
-				scrmark(l, r);
-			}
+		my = mousep->xy.y;
+		if(my < s.min.y)
+			my = s.min.y;
+		if(my > s.max.y)
+			my = s.max.y;
+		my -= s.min.y;
+		if(but == 2){
+			o = (tot / (s.max.y - s.min.y)) * my;
+			n = 0;
+			forcenter(l, o, n);
+			if(readmouse(mousectl) < 0)
+				panic("mouse");
+			continue;
 		}
-	}while(button(but));
-	if(in){
-		h = s.max.y-s.min.y;
-		scrunmark(l, r);
-		p0 = 0;
-		if(but == 1)
-			p0 = (long)(my-s.min.y)/l->f.font->height+1;
-		else if(but == 2){
-			if(tot > 1024L*1024L)
-				p0 = ((tot>>10)*(y-s.min.y)/h)<<10;
-			else
-				p0 = tot*(y-s.min.y)/h;
-		}else if(but == 3){
-			p0 = l->origin+frcharofpt(&l->f, Pt(s.max.x, my));
-			if(p0 > tot)
-				p0 = tot;
-		}
-		scrorigin(l, but, p0);
-	}
+		o = l->origin;
+		n = my/l->f.font->height;
+		if(n == 0)
+			n++;
+		if(but == 1 || but == 4)
+			n = -n;
+		forcenter(l, o, n);
+		if(!once){
+			flushdisplay();
+			if(but == 4 || but == 5)
+				return;
+			if(nbrecv(mousectl->c, mousep) < 0)
+				panic("mouse");
+			delay = 200;
+			once++;
+		}else
+			delay = 100;
+		if(mousep->msec - lastmsec < delay)
+			sleep(delay - mousep->msec + lastmsec);
+		lastmsec = mousep->msec;
+		if(nbrecv(mousectl->c, mousep) < 0)
+			panic("mouse");
+	}while(mousep->buttons & (1 << (but-1)));
+	while(mousep->buttons)
+		readmouse(mousectl);
 }

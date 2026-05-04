@@ -7,7 +7,14 @@
 
 enum{
 	Up,
-	Down
+	Down,
+
+	Kbel=	0x07,
+	Ksoh=	0x01,
+	Kstx=	0x02,
+	Kenq=	0x05,
+	Knack=	0x15,
+	Ketb=	0x17,
 };
 
 typedef struct Text	Text;
@@ -89,6 +96,8 @@ extern int	plumbfd;
 extern int	hostfd[2];
 extern int	exiting;
 extern int	autoindent;
+extern int	spacesindent;
+extern int	shifted;
 
 #define gettext sam_gettext	/* stupid gcc built-in functions */
 Rune	*gettext(Flayer*, long, ulong*);
@@ -101,26 +110,26 @@ void	setlock(void);
 void	outcmd(void);
 void	rinit(Rasp*);
 void	startnewfile(int, Text*);
-void	getmouse(void);
 void	mouseunblock(void);
 void	kbdblock(void);
-void	extstart(void);
 void	hoststart(void);
 int	plumbstart(void);
-int	button(int but);
 int	load(char*, int);
 int	waitforio(void);
 int	rcvchar(void);
+void	forcenter(Flayer*, ulong, int);
+void	frscroll(Frame*, int);
 int	getch(void);
 int	kbdchar(void);
 int	qpeekc(void);
 void	cut(Text*, int, int, int);
 void	paste(Text*, int);
 void	snarf(Text*, int);
-int	center(Flayer*, long);
+void	center(Flayer*, long, int);
 int	xmenuhit(int, Menu*);
 void	buttons(int);
 int	getr(Rectangle*);
+void	extendsel(Flayer*);
 void	current(Flayer*);
 void	duplicate(Flayer*, Rectangle, Font*, int);
 void	startfile(Text*);
@@ -146,24 +155,23 @@ int	hdatarune(int, long, Rune*, int);
 Rune	*rload(Rasp*, ulong, ulong, ulong*);
 void	menuins(int, uchar*, Text*, int, int);
 void	menudel(int);
+void	setmenuhit(int);
 Text	*sweeptext(int, int);
 void	setpat(char*);
+void	menucmd(char*);
 void	scrdraw(Flayer*, long tot);
 int	rcontig(Rasp*, ulong, ulong, int);
 int	rmissing(Rasp*, ulong, ulong);
 void	rresize(Rasp *, long, long, long);
 void	rdata(Rasp*, long, long, Rune*);
 void	rclean(Rasp*);
-void	scrorigin(Flayer*, int, long);
 long	scrtotal(Flayer*);
 void	flnewlyvisible(Flayer*);
 char	*rcvstring(void);
-void	Strcpy(Rune*, Rune*);
-void	Strncpy(Rune*, Rune*, long);
 void	flushtyping(int);
 void	dumperrmsg(int, int, int, int);
 int	screensize(int*,int*);
-void	getmouse(void);
+void	flushdisplay(void);
 
 #include "mesg.h"
 
