@@ -9,6 +9,8 @@
 #include "flayer.h"
 #include "samterm.h"
 
+int	mainstacksize = 16*1024;
+
 Text	cmd;
 Rune	*scratch;
 long	nscralloc;
@@ -23,10 +25,8 @@ long	modified = 0;		/* strange lookahead for menus */
 char	hostlock = 1;
 char	hasunlocked = 0;
 int	maxtab = 8;
-int	chord;
 int	autoindent;
-
-#define chording 0	/* code here for reference but it causes deadlocks */
+int	spacesindent;
 
 void
 notifyf(void *a, char *msg)
@@ -39,7 +39,7 @@ notifyf(void *a, char *msg)
 void
 threadmain(int argc, char *argv[])
 {
-	int i, got, scr, w;
+	int i, got, nclick, scr, chord, noTt;
 	Text *t;
 	Rectangle r;
 	Flayer *nwhich;
@@ -83,8 +83,10 @@ threadmain(int argc, char *argv[])
 	outTs(Tversion, VERSION);
 	startnewfile(Tstartcmdfile, &cmd);
 
+	noTt = 0;
 	got = 0;
 	if(protodebug) print("loop\n");
+	chord = 0;
 	for(;;got = waitforio()){
 		if(hasunlocked && RESIZED())
 			resize();
@@ -108,23 +110,49 @@ threadmain(int argc, char *argv[])
 				continue;
 			}
 			nwhich = flwhich(mousep->xy);
-			scr = which && ptinrect(mousep->xy, which->scroll);
+			scr = which && (ptinrect(mousep->xy, which->scroll) ||
+				mousep->buttons&(8|16));
 			if(mousep->buttons)
 				flushtyping(1);
-			if(chording && chord==1 && !mousep->buttons)
+			if((mousep->buttons&1)==0)
 				chord = 0;
-			if(chording && chord)
+			if(chord && which && which==nwhich){
 				chord |= mousep->buttons;
-			else if(mousep->buttons&1){
-				if(nwhich){
-					if(nwhich!=which)
-						current(nwhich);
-					else if(scr)
-						scroll(which, 1);
+				t = (Text *)which->user1;
+				if(!t->lock){
+					int w = which-t->l;
+					/* fire doubleclick timer */
+					if(chord&6)
+						noTt = 1;
+					if(chord&2){
+						cut(t, w, 1, 1);
+						chord &= ~2;
+					}
+					if(chord&4){
+						paste(t, w);
+						chord &= ~4;
+					}
+				}
+			}else if(mousep->buttons&(1|8)){
+				if(scr)
+					scroll(which, (mousep->buttons&8) ? 4 : 1);
+				else if(nwhich && nwhich!=which)
+					current(nwhich);
+				else if(nwhich && ptinrect(mousep->xy, which->f.r)){
+					if(shifted)
+						extendsel(which);
 					else{
-						t=(Text *)which->user1;
-						if(flselect(which)){
-							outTsl(Tdclick, t->tag, which->p0);
+						t = which->user1;
+						if(noTt == 1){
+							which->click -= Clicktime;
+							noTt =0;
+						}
+						nclick = flselect(which);
+						if(nclick > 0){
+							if(nclick > 1)
+								outTsl(Ttclick, t->tag, sel);
+							else
+								outTsl(Tdclick, t->tag, sel);
 							t->lock++;
 						}else if(t!=&cmd)
 							outcmd();
@@ -137,28 +165,30 @@ threadmain(int argc, char *argv[])
 					scroll(which, 2);
 				else
 					menu2hit();
-			}else if((mousep->buttons&4)){
+			}else if(mousep->buttons&(4|16)){
 				if(scr)
-					scroll(which, 3);
+					scroll(which, (mousep->buttons&16) ? 5 : 3);
 				else
 					menu3hit();
 			}
 			mouseunblock();
 		}
-		if(chording && chord){
-			t = (Text*)which->user1;
-			if(!t->lock && !hostlock){
-				w = which-t->l;
-				if(chord&2){
-					cut(t, w, 1, 1);
-					chord &= ~2;
-				}else if(chord&4){
-					paste(t, w);
-					chord &= ~4;
-				}
-			}
-		}
 	}
+}
+
+void
+extendsel(Flayer *l)
+{
+	ulong p;
+	do{
+		p = l->origin+frcharofpt(&l->f, mousep->xy);
+		if(p < sel)
+			flsetselect(l, p, sel);
+		else
+			flsetselect(l, sel, p);
+		if(readmouse(mousectl) < 0)
+			panic("mouse");
+	}while(mousep->buttons & (1|8));
 }
 
 void
@@ -263,7 +293,8 @@ void
 buttons(int updown)
 {
 	while(((mousep->buttons&7)!=0) != updown)
-		getmouse();
+		if(readmouse(mousectl) < 0)
+			panic("mouse");
 }
 
 int
@@ -336,38 +367,10 @@ paste(Text *t, int w)
 	}
 }
 
-void
-scrorigin(Flayer *l, int but, long p0)
-{
-	Text *t=(Text *)l->user1;
-
-	switch(but){
-	case 1:
-		outTsll(Torigin, t->tag, l->origin, p0);
-		break;
-	case 2:
-		outTsll(Torigin, t->tag, p0, 1L);
-		break;
-	case 3:
-		horigin(t->tag,p0);
-	}
-}
-
 int
 alnum(int c)
 {
-	/*
-	 * Hard to get absolutely right.  Use what we know about ASCII
-	 * and assume anything above the Latin control characters is
-	 * potentially an alphanumeric.
-	 */
-	if(c<=' ')
-		return 0;
-	if(0x7F<=c && c<=0xA0)
-		return 0;
-	if(utfrune("!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~", c))
-		return 0;
-	return 1;
+	return isalpharune(c) || (c >= '0' && c <= '9');
 }
 
 int
@@ -378,6 +381,33 @@ raspc(Rasp *r, long p)
 	if(n)
 		return scratch[0];
 	return 0;
+}
+
+int
+getcol(Rasp *r, long p)
+{
+	int col;
+
+	for(col = 0; p > 0 && raspc(r, p-1)!='\n'; p--, col++)
+		;
+	return col;
+}
+
+long
+del(Rasp *r, long o, long p)
+{
+	int i, col, n;
+
+	if(--p < o)
+		return o;
+	if(!spacesindent || raspc(r, p)!=' ')
+		return p;
+	col = getcol(r, p) + 1;
+	if((n = col % maxtab) == 0)
+		n = maxtab;
+	for(i = 0; p-1>=o && raspc(r, p-1)==' ' && i<n-1; --p, i++)
+		;
+	return p>=o? p : o;
 }
 
 long
@@ -409,52 +439,25 @@ ctlu(Rasp *r, long o, long p)
 	return p>=o? p : o;
 }
 
-int
-center(Flayer *l, long a)
+void
+center(Flayer *l, long a, int n)
 {
 	Text *t;
 
 	t = l->user1;
-	if(!t->lock && (a<l->origin || l->origin+l->f.nchars<a)){
-		if(a > t->rasp.nrunes)
-			a = t->rasp.nrunes;
-		outTsll(Torigin, t->tag, a, 2L);
-		return 1;
-	}
-	return 0;
-}
+	if(t->lock || t->tag == Untagged)
+		return;
 
-int
-thirds(Flayer *l, long a, int n)
-{
-	Text *t;
-	Rectangle s;
-	long lines;
+	if(n > 0)
+		a += frcharofpt(&l->f, Pt(l->scroll.max.x, l->scroll.min.y + n * l->f.font->height));
+	if(a > t->rasp.nrunes)
+		a = t->rasp.nrunes;
 
-	t = l->user1;
-	if(!t->lock && (a<l->origin || l->origin+l->f.nchars<a)){
-		if(a > t->rasp.nrunes)
-			a = t->rasp.nrunes;
-		s = insetrect(l->scroll, 1);
-		lines = (n*(s.max.y-s.min.y)/l->f.font->height+1)/3;
-		if (lines < 2)
-			lines = 2;
-		outTsll(Torigin, t->tag, a, lines);
-		return 1;
-	}
-	return 0;
-}
-
-int
-onethird(Flayer *l, long a)
-{
-	return thirds(l, a, 1);
-}
-
-int
-twothirds(Flayer *l, long a)
-{
-	return thirds(l, a, 2);
+	if(n > 0)
+		/* we can center locally */
+		horigin(t->tag, a);
+	else
+		outTsll(Torigin, t->tag, a, -n+1);
 }
 
 void
@@ -483,17 +486,6 @@ flushtyping(int clearesc)
 	typeend = -1;
 }
 
-#define	BACKSCROLLKEY	Kup
-#define	ENDKEY	Kend
-#define	ESC		0x1B
-#define	HOMEKEY	Khome
-#define	LEFTARROW	Kleft
-#define	LINEEND	0x05
-#define	LINESTART	0x01
-#define	PAGEDOWN	Kpgdown
-#define	PAGEUP	Kpgup
-#define	RIGHTARROW	Kright
-#define	SCROLLKEY	Kdown
 #define	CUT	(Kcmd+'x')
 #define	COPY	(Kcmd+'c')
 #define	PASTE	(Kcmd+'v')
@@ -502,19 +494,25 @@ int
 nontypingkey(int c)
 {
 	switch(c){
-	case BACKSCROLLKEY:
-	case ENDKEY:
-	case HOMEKEY:
-	case LEFTARROW:
-	case LINEEND:
-	case LINESTART:
-	case PAGEDOWN:
-	case PAGEUP:
-	case RIGHTARROW:
-	case SCROLLKEY:
+	case Kalt:
+	case Kctl:
+	case Kshift:
+	case Kup:
+	case Kdown:
+	case Khome:
+	case Kend:
+	case Kpgdown:
+	case Kpgup:
+	case Kleft:
+	case Kright:
+	case Ksoh:
+	case Kenq:
+	case Kstx:
+	case Kbel:
 	case CUT:
 	case COPY:
 	case PASTE:
+	case -1:
 		return 1;
 	}
 	return 0;
@@ -527,7 +525,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 	Rune buf[100];
 	Rune *p = buf;
 	int c, backspacing;
-	long a, a0;
+	long a;
 	int scrollkey;
 
 	scrollkey = 0;
@@ -547,17 +545,23 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 	backspacing = 0;
 	while((c = kbdchar())>0){
 		if(res == RKeyboard){
-			if(nontypingkey(c) || c==ESC)
+			if(nontypingkey(c) || c==Kesc)
 				break;
 			/* backspace, ctrl-u, ctrl-w, del */
-			if(c=='\b' || c==0x15 || c==0x17 || c==0x7F){
+			if(c==Kbs || c==Knack || c==Ketb || c==Kdel){
 				backspacing = 1;
 				break;
 			}
 		}
-		*p++ = c;
-		if(autoindent)
-		if(c == '\n'){
+		if(spacesindent && c == '\t'){
+			int i, col, n;
+			col = getcol(&t->rasp, a);
+			n = maxtab - col % maxtab;
+			for(i = 0; i < n && p < buf+nelem(buf); i++)
+				*p++ = ' ';
+		} else
+			*p++ = c;
+		if(c == '\n' && autoindent && t != &cmd){
 			/* autoindent */
 			int cursor, ch;
 			cursor = ctlu(&t->rasp, 0, a+(p-buf)-1);
@@ -586,40 +590,49 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		typeend = a;
 		if(c=='\n' || typeend-typestart>100)
 			flushtyping(0);
-		onethird(l, a);
+		if(a < l->origin || a > l->origin+l->f.nchars)
+			center(l, a, -(l->f.maxlines/3));
 	}
-	if(c==SCROLLKEY || c==PAGEDOWN){
+	if(c==Kdown){
 		flushtyping(0);
-		center(l, l->origin+l->f.nchars+1);
-	}else if(c==BACKSCROLLKEY || c==PAGEUP){
+		center(l, l->origin, shifted? 1: l->f.maxlines/3);
+	}else if(c==Kpgdown){
 		flushtyping(0);
-		a0 = l->origin-l->f.nchars;
-		if(a0 < 0)
-			a0 = 0;
-		center(l, a0);
-	}else if(c == RIGHTARROW){
+		center(l, l->origin, l->f.maxlines);
+		/* backspacing immediately after outcmd(): sorry */
+	}else if(c==Kup){
 		flushtyping(0);
-		a0 = l->p0;
-		if(a0 < t->rasp.nrunes)
-			a0++;
-		flsetselect(l, a0, a0);
-		center(l, a0);
-	}else if(c == LEFTARROW){
+		center(l, l->origin, shifted? -1: -(l->f.maxlines/3));
+	}else if(c==Kpgup){
 		flushtyping(0);
-		a0 = l->p0;
-		if(a0 > 0)
-			a0--;
-		flsetselect(l, a0, a0);
-		center(l, a0);
-	}else if(c == HOMEKEY){
+		center(l, l->origin, -l->f.maxlines);
+	}else if(c == Kleft){
 		flushtyping(0);
-		center(l, 0);
-	}else if(c == ENDKEY){
+		if(l->p0 > 0){
+			l->p0--;
+			flsetselect(l, l->p0, l->p0);
+			if(l->p0 < l->origin || l->p0 > l->origin+l->f.nchars)
+				center(l, l->p0, 0);
+		}
+	}else if(c == Kright){
 		flushtyping(0);
-		center(l, t->rasp.nrunes);
-	}else if(c == LINESTART || c == LINEEND){
+		if(l->p1 < t->rasp.nrunes){
+			l->p1++;
+			if(l->p1 == l->origin+l->f.nchars && l->p1 != t->rasp.nrunes)
+				center(l, l->origin, 1);
+			else if(l->p1 < l->origin || l->p1 > l->origin+l->f.nchars)
+				center(l, l->p1, 0);
+			flsetselect(l, l->p1, l->p1);
+		}
+	}else if(c == Khome){
+		flushtyping(0);
+		center(l, 0, 0);
+	}else if(c == Kend){
+		flushtyping(0);
+		center(l, t->rasp.nrunes, -(l->f.maxlines/3));
+	}else if(c == Ksoh || c == Kenq){
 		flushtyping(1);
-		if(c == LINESTART)
+		if(c == Ksoh)
 			while(a > 0 && raspc(&t->rasp, a-1)!='\n')
 				a--;
 		else
@@ -633,14 +646,14 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 		/* backspacing immediately after outcmd(): sorry */
 		if(l->f.p0>0 && a>0){
 			switch(c){
-			case '\b':
-			case 0x7F:	/* del */
-				l->p0 = a-1;
+			case Kbs:
+			case Kdel:	/* del */
+				l->p0 = del(&t->rasp, l->origin, a);
 				break;
-			case 0x15:	/* ctrl-u */
+			case Knack:	/* ctrl-u */
 				l->p0 = ctlu(&t->rasp, l->origin, a);
 				break;
-			case 0x17:	/* ctrl-w */
+			case Ketb:	/* ctrl-w */
 				l->p0 = ctlw(&t->rasp, l->origin, a);
 				break;
 			}
@@ -670,8 +683,33 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 				}
 			}
 		}
+	}else if(c == Kstx){
+		t = &cmd;
+		for(l=t->l; l->textfn==0; l++)
+			;
+		current(l);
+		flushtyping(0);
+		a = t->rasp.nrunes;
+		flsetselect(l, a, a);
+		center(l, a, 0);
+	}else if(c == Kbel){
+		int i;
+		if(work == nil)
+			return;
+		if(which != work){
+			current(work);
+			return;
+		}
+		t = (Text*)work->user1;
+		l = &t->l[t->front];
+		for(i=t->front; t->nwin>1 && (i = (i+1)%NL) != t->front; )
+			if(t->l[i].textfn != 0){
+				l = &t->l[i];
+				break;
+			}
+		current(l);
 	}else{
-		if(c==ESC && typeesc>=0){
+		if(c==Kesc && typeesc>=0){
 			l->p0 = typeesc;
 			l->p1 = a;
 			flushtyping(1);

@@ -61,7 +61,7 @@ lookorigin(File *f, Posn p0, Posn ls)
 }
 
 int
-alnum(int c)
+samalnum(int c)
 {
 	/*
 	 * Hard to get absolutely right.  Use what we know about ASCII
@@ -75,6 +75,19 @@ alnum(int c)
 	if(utfrune("!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~", c))
 		return 0;
 	return 1;
+}
+
+int
+samspace(Rune c)
+{
+	return c == 0 || c == ' ' || c == '\t' ||
+		c == '\n' || c == '\r' || c == '\v';
+}
+
+int
+inmode(Rune r, int mode)
+{
+	return (mode == 0) ? samalnum(r) : r && !samspace(r);
 }
 
 int
@@ -119,15 +132,37 @@ strrune(Rune *s, Rune c)
 	return 0;
 }
 
+/*
+ * Stretches a selection out over current text,
+ * selecting matching range if possible.
+ * If there's no matching range, mode 0 selects
+ * a single alphanumeric region. Mode 1 selects
+ * a non-whitespace region.
+ */
 void
-doubleclick(File *f, Posn p1)
+stretchsel(File *f, Posn p1, int mode)
 {
-	int c, i;
-	Rune *r, *l;
+	int c, i, lc, rc;
+	Rune *r, *l, *x;
 	Posn p;
 
 	if(p1 > f->b.nc)
 		return;
+	if(mode){
+		lc = f->dot.r.p1 > 0     ? filereadc(f, f->dot.r.p1-1) : '\n';
+		rc = f->dot.r.p2 < f->b.nc ? filereadc(f, f->dot.r.p2)   : '\n';
+		for(i=0; left[i]; i++){
+			l = left[i];
+			r = right[i];
+			x = strrune(l, lc);
+			if(x && r[x-l] == rc){
+				f->dot.r.p1 -= f->dot.r.p1 > 0 && lc != '\n';
+				f->dot.r.p2 += f->dot.r.p2 < f->b.nc;
+				return;
+			}
+		}
+	}
+
 	f->dot.r.p1 = f->dot.r.p2 = p1;
 	for(i=0; left[i]; i++){
 		l = left[i];
@@ -163,10 +198,10 @@ doubleclick(File *f, Posn p1)
 	}
 	/* try filling out word to right */
 	p = p1;
-	while(p < f->b.nc && alnum(filereadc(f, p++)))
+	while(p < f->b.nc && inmode(filereadc(f, p++), mode))
 		f->dot.r.p2++;
 	/* try filling out word to left */
 	p = p1;
-	while(--p >= 0 && alnum(filereadc(f, p)))
+	while(--p >= 0 && inmode(filereadc(f, p), mode))
 		f->dot.r.p1--;
 }

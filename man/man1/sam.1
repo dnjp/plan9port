@@ -47,6 +47,15 @@ in the terminal interface,
 .I samterm
 copies leading white space on the current line to the new line.
 .TP
+.B -i
+Indent with spaces.
+In this mode, when a tab character is typed
+in the terminal interface,
+.I samterm
+will insert spaces until the next tabstop.
+Backspace will delete spaces until the previous tabstop
+or another character is encountered.
+.TP
 .B -d
 Do not `download' the terminal part of
 .IR sam .
@@ -398,10 +407,10 @@ Print the text in the range.
 Set dot.
 .TP
 .B =
-Print the line address and character address of the range.
+Print the file name and line address of the range.
 .TP
 .B =#
-Print just the character address of the range.
+Print the file name and character address of the range.
 .PD
 .SS File commands
 .PD 0
@@ -488,10 +497,19 @@ Plan 9 command.
 Send the range to the standard input of the
 Plan 9 command.
 .TP
+.BI \*a^ " Plan 9-command
+Send the standard output of the Plan 9 command
+to the command window.
+.TP
 .BI | " Plan 9-command
 Send the range to the standard input, and replace it by
 the standard output, of the
 Plan 9 command.
+.TP
+.BI _ " Plan 9-command
+Send the range to the standard input, and send the
+standard output of the Plan 9 command to the command
+window.
 .TP
 .BI \*a! " Plan 9-command
 Run the
@@ -507,6 +525,8 @@ is used.
 In any of
 .BR < ,
 .BR > ,
+.BR ^ ,
+.BR _ ,
 .B |
 or
 .BR ! ,
@@ -535,6 +555,12 @@ and
 for all) is placed in
 .B /tmp/sam.err
 and the first few lines are printed.
+.PP
+Sam sets two environmental variables depending on the current file.
+.I $%
+is set to the file name.
+.I $%dot
+is set to a list consisting of three values that define the dot.
 .SS Loops and Conditionals
 .PD 0
 .TP
@@ -608,7 +634,7 @@ and
 do not have defaults.
 .PD
 .SS Miscellany
-.TF (empty)
+.TF M_command
 .TP
 .B k
 Set the current file's mark to the range.  Does not set dot.
@@ -631,6 +657,7 @@ Successive
 move further back in time.
 The only commands for which u is ineffective are
 .BR cd ,
+.BR M ,
 .BR u ,
 .BR q ,
 .B w
@@ -641,6 +668,10 @@ If
 is negative,
 .B u
 `redoes,' undoing the undo, going forwards in time again.
+.TP
+.BI \*aM " command
+Toggle the appearance of a menu entry for the command in the button 2 menu.
+Selecting the entry with button 2 will run the command.
 .TP
 (empty)
 If the range is explicit, set dot to the range.
@@ -701,6 +732,12 @@ Text may be typed and edited as in
 .MR rio 1 ;
 also the escape key (ESC) selects (sets dot to) text typed
 since the last mouse button hit.
+.PP
+Ctrl+b switches to the command window and moves to the end
+of the text.
+Ctrl+g switches to the last focused window.
+If the focused window is a text window, ctrl+g switches
+to the next zeroxed instance of that window.
 .PP
 The button 3 menu controls window operations.
 The top of the menu

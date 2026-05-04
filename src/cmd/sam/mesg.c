@@ -53,7 +53,8 @@ char *hname[] = {
 	[Hsnarflen]	"Hsnarflen",
 	[Hack]		"Hack",
 	[Hexit]		"Hexit",
-	[Hplumb]		"Hplumb"
+	[Hplumb]	"Hplumb",
+	[Hmenucmd]	"Hmenucmd",
 };
 
 char *tname[] = {
@@ -75,21 +76,25 @@ char *tname[] = {
 	[Tsearch]	"Tsearch",
 	[Tsend]		"Tsend",
 	[Tdclick]	"Tdclick",
+	[Ttclick]	"Ttclick",
 	[Tstartsnarf]	"Tstartsnarf",
 	[Tsetsnarf]	"Tsetsnarf",
 	[Tack]		"Tack",
 	[Texit]		"Texit",
-	[Tplumb]		"Tplumb"
+	[Tplumb]	"Tplumb",
+	[Tmenucmd]	"Tmenucmd",
+	[Tmenucmdsend]	"Tmenucmdsend",
 };
 
 void
 journal(int out, char *s)
 {
-	static int fd = 0;
+	static int fd = -1;
 
-	if(fd <= 0)
+	if(fd < 0)
 		fd = create("/tmp/sam.out", 1, 0666L);
-	fprint(fd, "%s%s\n", out? "out: " : "in:  ", s);
+	if(fd >= 0)
+		fprint(fd, "%s%s\n", out? "out: " : "in:  ", s);
 }
 
 void
@@ -113,6 +118,7 @@ journalv(int out, vlong v)
 #else
 #define	journal(a, b)
 #define journaln(a, b)
+#define journalv(a, b)
 #endif
 
 int
@@ -223,7 +229,7 @@ inmesg(Tmesg type)
 
 	case Tstartcmdfile:
 		v = invlong();		/* for 64-bit pointers */
-		journaln(0, v);
+		journalv(0, v);
 		Strdupl(&genstr, samname);
 		cmd = newfile();
 		cmd->unread = 0;
@@ -456,9 +462,10 @@ inmesg(Tmesg type)
 		break;
 
 	case Tdclick:
+	case Ttclick:
 		f = whichfile(inshort());
 		p1 = inlong();
-		doubleclick(f, p1);
+		stretchsel(f, p1, type == Ttclick);
 		f->tdot.p1 = f->tdot.p2 = p1;
 		telldot(f);
 		outTs(Hunlockfile, f->tag);
@@ -562,6 +569,22 @@ inmesg(Tmesg type)
 			free(c);
 		}
 		plumbfree(pm);
+		break;
+
+	case Tmenucmd:
+		dprint((char*)inp);
+		break;
+
+	case Tmenucmdsend:
+		termlocked++;
+		str = tmpcstr((char*)inp);
+		Straddc(str, '\n');
+		loginsert(cmd, cmd->b.nc, str->s, str->n);
+		freetmpstr(str);
+		fileupdate(cmd, FALSE, TRUE);
+		cmd->dot.r.p1 = cmd->dot.r.p2 = cmd->b.nc;
+		telldot(cmd);
+		termcommand();
 		break;
 
 	case Texit:
@@ -755,7 +778,7 @@ outTsv(Hmesg type, int s, vlong v)
 	outstart(type);
 	outshort(s);
 	outvlong(v);
-	journaln(1, v);
+	journalv(1, v);
 	outsend();
 }
 
