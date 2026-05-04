@@ -33,7 +33,6 @@ enum
 	Infinity = 		0x7FFFFFFF	/* huge value for regexp address */
 };
 
-#define Buffer AcmeBuffer
 typedef	struct	Block Block;
 typedef	struct	Buffer Buffer;
 typedef	struct	Command Command;
@@ -208,7 +207,7 @@ void		textcolumnate(Text*, Dirlist**, int);
 void		textcommit(Text*, int);
 void		textconstrain(Text*, uint, uint, uint*, uint*);
 void		textdelete(Text*, uint, uint, int);
-void		textdoubleclick(Text*, uint*, uint*);
+void		textstretchsel(Text*, uint*, uint*, int);
 void		textfill(Text*);
 void		textframescroll(Text*, int);
 void		textinit(Text*, File*, Rectangle, Reffont*, Image**);
@@ -229,6 +228,13 @@ void		textsetselect(Text*, uint, uint);
 void		textshow(Text*, uint, uint, int);
 void		texttype(Text*, Rune);
 
+enum
+{
+	SPACESINDENT	= 0,
+	AUTOINDENT,
+	NINDENT,
+};
+
 struct Window
 {
 	QLock	lk;
@@ -238,9 +244,10 @@ struct Window
 	Rectangle	r;
 	uchar	isdir;
 	uchar	isscratch;
+	uchar	noscroll;
 	uchar	filemenu;
 	uchar	dirty;
-	uchar	autoindent;
+	uchar	indent[NINDENT];
 	uchar	showdel;
 	int		id;
 	Range	addr;
@@ -553,7 +560,8 @@ extern char		wdir[]; /* must use extern because no dimension given */
 extern int			editing;
 extern int			erroutfd;
 extern int			messagesize;		/* negotiated in 9P version setup */
-extern int			globalautoindent;
+extern int			globalindent[NINDENT];
+extern Rune			*delcmd;		/* command that ran, for movetodel (Del, Delmesg, ...) */
 extern int			dodollarsigns;
 extern char*		mtpt;
 

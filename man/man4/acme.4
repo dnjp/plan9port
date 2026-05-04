@@ -4,13 +4,24 @@ acme \- control files for text windows
 .SH SYNOPSIS
 .B acme
 [
+.B -ab
+]
+[
+.B -c
+.I ncol
+]
+[
 .B -f
 .I varfont
-] [
+]
+[
 .B -F
 .I fixfont
 ]
 [
+.B -l
+.I file
+|
 .I file
 \&... ]
 .SH DESCRIPTION
@@ -113,9 +124,10 @@ The reported operations are
 (window creation via zerox),
 .LR get ,
 .LR put ,
-and
-.LR del
-(window deletion).
+.L del
+(window deletion), and
+.L focus
+(window focus change).
 The window name can be the empty string; in particular it is empty in
 .L new
 log entries corresponding to windows created by external programs.
@@ -156,18 +168,20 @@ file.
 When read, it returns the value of the address that would next be read
 or written through the
 .B data
-file, in the format
-.BI # m ,# n
-where
+file, formatted as 2 decimal numbers
 .I m
 and
-.I n
-are character (not byte) offsets.  If
-.I m
+.IR n ,
+each formatted in 11 characters plus a blank.
+.I M
 and
 .I n
-are identical, the format is just
-.BI # m\f1.
+are the character (not byte) offsets of the
+beginning and end of the address,
+which would be expressed in
+.I acme 's
+input language as
+.BI # m ,# n \fR.
 Thus a regular expression may be evaluated by writing it to
 .B addr
 and reading it back.
@@ -257,6 +271,15 @@ Cancel
 returning the window to the usual state wherein each modification to the
 body must be undone individually.
 .TP
+.B menu
+Maintain
+.BR Undo ,
+.BR Redo ,
+and
+.B Put
+in the left half of the tag.
+(This is the default for file windows.)
+.TP
 .BI name " name
 Set the name of the window to
 .IR name .
@@ -267,10 +290,33 @@ may be undone in a single
 .B Undo
 interactive command.
 .TP
+.B nomenu
+Do not maintain
+.BR Undo ,
+.BR Redo ,
+and
+.B Put
+in the left half of the tag.
+(This is the default for directory and error windows.)
+.TP
+.B noscroll
+Turn off automatic `scrolling' of the window to show text written to the body.
+.TP
 .B put
 Equivalent to the
 .B Put
 interactive command with no arguments; accepts no arguments.
+.TP
+.B scratch
+Turn off tracking the `dirty' status, the window stays clean.
+.TP
+.B scroll
+Cancel a
+.B noscroll
+message, returning the window to the default state wherein each write
+to the
+.B body
+file causes the window to `scroll' to display the new text.
 .TP
 .B show
 Guarantee at least some of the selected text is visible on the display.
@@ -431,6 +477,15 @@ holds contents of the window tag.  It may be read at any byte offset.
 Text written to
 .B tag
 is always appended; the file offset is ignored.
+.TP
+.B rdsel
+holds the contents of the current selection. It may be read at any byte offset.
+.TP
+.B wrsel
+writing to the
+.B wrsel
+file modifies the text in the selection. Text written always
+replaces the text selected; the file offset is ignored.
 .TP
 .B xdata
 The

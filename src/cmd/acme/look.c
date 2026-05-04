@@ -7,7 +7,6 @@
 #include <keyboard.h>
 #include <frame.h>
 #include <fcall.h>
-#include <regexp.h>
 #include <9pclient.h>
 #include <plumb.h>
 #include <libsec.h>
@@ -869,9 +868,11 @@ openfile(Text *t, Expand *e)
 				runemove(rp, ow->incl[i], n);
 				winaddincl(w, rp, n);
 			}
-			w->autoindent = ow->autoindent;
+			for(i=0; i < NINDENT; i++)
+				w->indent[i] = ow->indent[i];
 		}else
-			w->autoindent = globalautoindent;
+			for(i=0; i < NINDENT; i++)
+				w->indent[i] = globalindent[i];
 		xfidlog(w, "new");
 	}
 	if(e->a1 == e->a0)

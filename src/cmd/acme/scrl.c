@@ -47,7 +47,7 @@ void
 scrlresize(void)
 {
 	freeimage(scrtmp);
-	scrtmp = allocimage(display, Rect(0, 0, 32, screen->r.max.y), screen->chan, 0, DNofill);
+	scrtmp = allocimage(display, Rect(0, 0, 32, 3*Dy(screen->r)), screen->chan, 0, DNofill);
 	if(scrtmp == nil)
 		error("scroll alloc");
 }
@@ -70,6 +70,9 @@ textscrdraw(Text *t)
 	r2 = scrpos(r1, t->org, t->org+t->fr.nchars, t->file->b.nc);
 	if(!eqrect(r2, t->lastsr)){
 		t->lastsr = r2;
+		/* move r1, r2 to (0,0) to avoid clipping */
+		r2 = rectsubpt(r2, r1.min);
+		r1 = rectsubpt(r1, r1.min);
 		draw(b, r1, t->fr.cols[BORD], nil, ZP);
 		draw(b, r2, t->fr.cols[BACK], nil, ZP);
 		r2.min.x = r2.max.x-1;
