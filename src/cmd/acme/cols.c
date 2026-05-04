@@ -126,6 +126,7 @@ coladd(Column *c, Window *w, Window *clone, int y)
 	}
 	if(w == nil){
 		w = emalloc(sizeof(Window));
+		w->rdselfd = -1;
 		w->col = c;
 		draw(screen, r, textcols[BACK], nil, ZP);
 		wininit(w, clone, r);
@@ -255,11 +256,10 @@ colresize(Column *c, Rectangle r)
 		w->maxlines = 0;
 		if(i == c->nw-1)
 			r1.max.y = r.max.y;
-		else{
+		else {
 			r1.max.y = r1.min.y;
-			if(new > 0 && old > 0 && Dy(w->r) > Border+font->height){
+			if(new > 0 && old > 0 && Dy(w->r) > Border+font->height)
 				r1.max.y += (Dy(w->r)-Border-font->height)*new/old + Border + font->height;
-			}
 		}
 		r1.max.y = max(r1.max.y, r1.min.y + Border+font->height);
 		r2 = r1;

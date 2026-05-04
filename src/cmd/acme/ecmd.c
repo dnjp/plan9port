@@ -133,11 +133,11 @@ edittext(Window *w, int q, Rune *r, int nr)
 {
 	File *f;
 
-	f = w->body.file;
 	switch(editing){
 	case Inactive:
 		return "permission denied";
 	case Inserting:
+		f = w->body.file;
 		eloginsert(f, q, r, nr);
 		return nil;
 	case Collecting:
@@ -158,11 +158,13 @@ filelist(Text *t, Rune *r, int nr)
 	if(nr == 0)
 		return nil;
 	r = skipbl(r, nr, &nr);
-	if(r[0] != '<')
-		return runestrdup(r);
-	/* use < command to collect text */
 	clearcollection();
-	runpipe(t, '<', r+1, nr-1, Collecting);
+	if(r[0] != '<'){
+		if((collection = runestrdup(r)) != nil)
+			ncollection += runestrlen(r);
+	}else
+		/* use < command to collect text */
+		runpipe(t, '<', r+1, nr-1, Collecting);
 	return collection;
 }
 
@@ -545,7 +547,7 @@ u_cmd(Text *t, Cmd *cp)
 		flag = FALSE;
 	}
 	oseq = -1;
-	while(n-->0 && t->file->seq!=oseq){
+	while(n-->0 && t->file->seq!=0 && t->file->seq!=oseq){
 		oseq = t->file->seq;
 		undo(t, nil, nil, flag, 0, nil, 0);
 	}
@@ -1002,14 +1004,14 @@ filelooper(Text *t, Cmd *cp, int XY)
 	 */
 	allwindows(alllocker, (void*)1);
 	globalincref = 1;
-	
+
 	/*
 	 * Unlock the window running the X command.
 	 * We'll need to lock and unlock each target window in turn.
 	 */
 	if(t && t->w)
 		winunlock(t->w);
-	
+
 	for(i=0; i<loopstruct.nw; i++) {
 		targ = &loopstruct.w[i]->body;
 		if(targ && targ->w)
