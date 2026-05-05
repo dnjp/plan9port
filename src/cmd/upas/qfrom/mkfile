@@ -1,0 +1,8 @@
+<$PLAN9/src/mkhdr
+
+TARG=qfrom
+OFILES=qfrom.$O\
+
+BIN=$PLAN9/bin/upas
+
+<$PLAN9/src/mkone

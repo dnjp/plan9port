@@ -12,13 +12,17 @@ OFILES=\
 	$UOFILES\
 	../smtp/rfc822.tab.$O\
 
-SMOBJ=main.$O\
-	bind.$O\
-	rewrite.$O\
-	local.$O\
-	translate.$O\
+SOBJ=\
 	authorize.$O\
+	bind.$O\
+	cat_mail.$O\
 	gateway.$O\
+	local.$O\
+	main.$O\
+	rewrite.$O\
+	translate.$O\
+
+FOBJ=\
 	cat_mail.$O\
 
 HFILES=send.h\
@@ -27,16 +31,16 @@ HFILES=send.h\
 
 LIB=../common/libcommon.a
 
-BIN=$BIN/upas
+BIN=$PLAN9/bin/upas
 <$PLAN9/src/mkmany
 CFLAGS=$CFLAGS -I../common
 
-$O.send: $SMOBJ $OFILES
+$O.send: $SOBJ $OFILES
 	$LD $LDFLAGS -o $target $prereq $LIB
 
-message.$O:	../smtp/y.tab.h
+$O.filter: $FOBJ
 
-../smtp/y.tab.h ../smtp/rfc822.tab.$O: ../smtp/rfc822.y
-	cd ../smtp
-	mk rfc822.tab.$O
+message.$O:	../smtp/rfc822.tab.h
 
+../smtp/rfc822.tab.h ../smtp/rfc822.tab.$O: ../smtp/rfc822.y
+	cd ../smtp && mk rfc822.tab.$O

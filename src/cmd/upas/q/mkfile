@@ -12,11 +12,5 @@ LIB=../common/libcommon.a\
 
 BIN=$PLAN9/bin/upas
 
-UPDATE=\
-	mkfile\
-	$HFILES\
-	${OFILES:%.$O=%.c}\
-	${TARG:%=%.c}\
-
 <$PLAN9/src/mkmany
 CFLAGS=$CFLAGS -I../common

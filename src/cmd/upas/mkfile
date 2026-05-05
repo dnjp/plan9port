@@ -1,8 +1,7 @@
 <$PLAN9/src/mkhdr
 
 LIBS=common
-#PROGS=smtp alias fs ned misc q send scanmail pop3 ml marshal vf filterkit unesc
-PROGS=smtp alias fs ned q send marshal vf misc
+PROGS=smtp alias fs ned misc q send marshal vf filterkit ml scanmail pop3 unesc qfrom
 #libs must be made first
 DIRS=$LIBS $PROGS
 

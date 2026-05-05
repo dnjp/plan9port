@@ -3,27 +3,29 @@
 TARG=	fs\
 
 OFILES=\
+	bos.$O\
+	cache.$O\
 	fs.$O\
-	imap4.$O\
+	header.$O\
+	idx.$O\
+	imap.$O\
 	mbox.$O\
+	mdir.$O\
+	mtree.$O\
 	plan9.$O\
 	pop3.$O\
+	ref.$O\
+	remove.$O\
+	rename.$O\
 	strtotm.$O\
 
 LIB=../common/libcommon.a\
-#	/usr/local/plan9/lib/libthread.a
+	/usr/local/plan9/lib/libthread.a
 
 HFILES= ../common/common.h\
 	dat.h
 
 BIN=$PLAN9/bin/upas
 
-UPDATE=\
-	mkfile\
-	$HFILES\
-	${TARG:%=%.c}\
-	${OFILES:%.$O=%.c}\
-
 <$PLAN9/src/mkone
 CFLAGS=$CFLAGS  -I../common
-# CFLAGS=$CFLAGS -I/sys/include -I../common

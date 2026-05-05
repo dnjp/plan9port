@@ -50,7 +50,7 @@ onwhitelist(void)
 	parseip(ip, nci->rsys);
 	wl = Bopen(whitelist, OREAD);
 	if (wl == nil)
-		return 1;
+		return 0;
 	while ((line = Brdline(wl, '\n')) != nil) {
 		if (line[0] == '#' || line[0] == '\n')
 			continue;

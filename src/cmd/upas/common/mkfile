@@ -3,16 +3,18 @@
 LIB=libcommon.a
 
 OFILES=\
-	appendfiletombox.$O\
 	auxx.$O\
+	become.$O\
 	config.$O\
+	folder.$O\
+	flags.$O\
+	fmt.$O\
 	libsys.$O\
-	mail.$O\
 	process.$O\
+	totm.$O\
 
 HFILES=\
 	common.h\
 	sys.h\
 
 <$PLAN9/src/mklib
-

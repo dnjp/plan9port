@@ -978,6 +978,8 @@ tokenconvert(String *t)
 	if(cistrncmp(token, "b?", 2) == 0){
 		token += 2;
 		len = dec64((uchar*)decoded, sizeof(decoded), token, e-token);
+		if(len == -1)
+			goto err;
 		decoded[len] = 0;
 	} else if(cistrncmp(token, "q?", 2) == 0){
 		token += 2;

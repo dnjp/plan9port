@@ -1,17 +1,21 @@
 #include "common.h"
 #include "dat.h"
 
+String *from;
+String *sender;
+int na;
+Addr *al;
+
 String*
 getaddr(Node *p)
 {
-	for(; p; p = p->next){
+	for(; p; p = p->next)
 		if(p->s && p->addr)
 			return p->s;
-	}
 	return nil;
 }
 
-/* send messae adding our own reply-to and precedence */
+/* send message adding our own reply-to and precedence */
 void
 getaddrs(void)
 {
@@ -42,14 +46,15 @@ writeaddr(char *file, char *addr, int rem, char *listname)
 		dirwstat(file, &nd);
 	} else
 		seek(fd, 0, 2);
-	if(rem)
-		fprint(fd, "!%s\n", addr);
-	else
-		fprint(fd, "%s\n", addr);
-	close(fd);
-
-	if(*addr != '#')
+	if(rem){
 		sendnotification(addr, listname, rem);
+		fprint(fd, "!%s\n", addr);
+	}else{
+		fprint(fd, "%s\n", addr);
+		if(*addr != '#')
+			sendnotification(addr, listname, rem);
+	}
+	close(fd);
 }
 
 void
@@ -75,10 +80,9 @@ addaddr(char *addr)
 	Addr **l;
 	Addr *a;
 
-	for(l = &al; *l; l = &(*l)->next){
+	for(l = &al; *l; l = &(*l)->next)
 		if(strcmp(addr, (*l)->addr) == 0)
 			return 0;
-	}
 	na++;
 	*l = a = malloc(sizeof(*a)+strlen(addr)+1);
 	if(a == nil)
@@ -113,16 +117,25 @@ readaddrs(char *file)
 	Bterm(b);
 }
 
+static void
+setsender(char *name)
+{
+	char *s;
+
+	s = smprint("%s-bounces", name);
+	putenv("upasname", s);
+	free(s);
+}
+
 /* start a mailer sending to all the receivers */
 int
 startmailer(char *name)
 {
-	int pfd[2];
 	char **av;
-	int ac;
+	int pfd[2], ac;
 	Addr *a;
 
-	putenv("upasname", "/dev/null");
+	setsender(name);
 	if(pipe(pfd) < 0)
 		sysfatal("creating pipe: %r");
 	switch(fork()){
@@ -160,7 +173,7 @@ sendnotification(char *addr, char *listname, int rem)
 	int pfd[2];
 	Waitmsg *w;
 
-	putenv("upasname", "/dev/null");
+	setsender(listname);
 	if(pipe(pfd) < 0)
 		sysfatal("creating pipe: %r");
 	switch(fork()){
@@ -177,7 +190,7 @@ sendnotification(char *addr, char *listname, int rem)
 		close(pfd[0]);
 		fprint(pfd[1], "From: %s-owner\n\n", listname);
 		if(rem)
-			fprint(pfd[1], "You have removed from the %s mailing list\n", listname);
+			fprint(pfd[1], "You have been removed from the %s mailing list\n", listname);
 		else{
 			fprint(pfd[1], "You have been added to the %s mailing list\n", listname);
 			fprint(pfd[1], "To be removed, send an email to %s-owner containing\n",
@@ -185,7 +198,7 @@ sendnotification(char *addr, char *listname, int rem)
 			fprint(pfd[1], "the word 'remove' in the subject or body.\n");
 		}
 		close(pfd[1]);
-
+	
 		/* wait for mailer to end */
 		while(w = wait()){
 			if(w->msg != nil && w->msg[0])

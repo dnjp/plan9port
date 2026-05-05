@@ -1,42 +1,5 @@
 #include "common.h"
 
-/* expand a path relative to some `.' */
-extern String *
-abspath(char *path, char *dot, String *to)
-{
-	if (*path == '/') {
-		to = s_append(to, path);
-	} else {
-		to = s_append(to, dot);
-		to = s_append(to, "/");
-		to = s_append(to, path);
-	}
-	return to;
-}
-
-/* return a pointer to the base component of a pathname */
-extern char *
-basename(char *path)
-{
-	char *cp;
-
-	cp = strrchr(path, '/');
-	return cp==0 ? path : cp+1;
-}
-
-/* append a sub-expression match onto a String */
-extern void
-append_match(Resub *subexp, String *sp, int se)
-{
-	char *cp, *ep;
-
-	cp = subexp[se].s.sp;
-	ep = subexp[se].e.ep;
-	for (; cp < ep; cp++)
-		s_putc(sp, *cp);
-	s_terminate(sp);
-}
-
 /*
  *  check for shell characters in a String
  */
@@ -53,7 +16,7 @@ shellchars(char *cp)
 	return 0;
 }
 
-static char *specialchars = " ()<>{};=\\'`^&|";
+static char *specialchars = " ()<>{};=\\'\`^&|";
 static char *escape = "%%";
 
 int
@@ -113,9 +76,9 @@ hex2uint(char x)
 extern String*
 unescapespecial(String *s)
 {
-	String *ns;
 	char *sp;
 	uint c, n;
+	String *ns;
 
 	if(strstr(s_to_c(s), escape) == 0)
 		return s;
@@ -124,8 +87,8 @@ unescapespecial(String *s)
 	ns = s_new();
 	for(sp = s_to_c(s); *sp; sp++){
 		if(strncmp(sp, escape, n) == 0){
-			c = (hex2uint(sp[n])<<4) + hex2uint(sp[n+1]);
-			if(c < 0)
+			c = (hex2uint(sp[n])<<4) | hex2uint(sp[n+1]);
+			if(c & 0x80)
 				s_putc(ns, *sp);
 			else {
 				s_putc(ns, c);
@@ -143,6 +106,5 @@ unescapespecial(String *s)
 int
 returnable(char *path)
 {
-
 	return strcmp(path, "/dev/null") != 0;
 }

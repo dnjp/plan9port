@@ -9,11 +9,11 @@ struct Addr
 	Addr *next;
 };
 
-String *from;
-String *sender;
-Field *firstfield;
-int na;
-Addr *al;
+extern String *from;
+extern String *sender;
+extern Field *firstfield;
+extern int na;
+extern Addr *al;
 
 extern String*	getaddr(Node *p);
 extern void	getaddrs(void);

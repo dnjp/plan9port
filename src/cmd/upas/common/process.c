@@ -96,8 +96,7 @@ noshell_proc_start(char **av, stream *inp, stream *outp, stream *errp, int newpg
 		if(who)
 			fprint(2, "warning: cannot run %s as %s\n", av[0], who);
 		exec(av[0], av);
-		perror("proc_start");
-		exits("proc_start");
+		sysfatal("proc_start");
 	default:
 		for (i=0; i<3; i++)
 			if (pp->std[i] != 0) {
@@ -127,7 +126,7 @@ extern int
 proc_wait(process *pp)
 {
 	Waitmsg *status;
-	char err[Errlen];
+	char err[ERRMAX];
 
 	for(;;){
 		status = wait();
@@ -162,13 +161,13 @@ proc_free(process *pp)
 	if (pp->pid >= 0)
 		proc_wait(pp);
 	free(pp->waitmsg);
-	free((char *)pp);
+	free(pp);
 	return 0;
 }
 
 /* kill a process */
-extern int
-proc_kill(process *pp)
-{
-	return syskill(pp->pid);
-}
+//extern int
+//proc_kill(process *pp)
+//{
+//	return syskill(pp->pid);
+//}

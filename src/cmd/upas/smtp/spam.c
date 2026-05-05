@@ -11,7 +11,7 @@ enum {
 	OURDOMS,
 
 	IP = 0,
-	STRING
+	STRING,
 };
 
 
@@ -26,10 +26,10 @@ static Keyword options[] = {
 	"norelay",		NORELAY,
 	"verifysenderdom",	DNSVERIFY,
 	"saveblockedmsg",	SAVEBLOCK,
-	"defaultdomain",	DOMNAME,
+	"defaultdomain",	DOMNAME,	
 	"ournets",		OURNETS,
 	"ourdomains",		OURDOMS,
-	0,			NONE
+	0,			NONE,
 };
 
 static Keyword actions[] = {
@@ -38,7 +38,7 @@ static Keyword actions[] = {
 	"deny",			DENIED,
 	"dial",			DIALUP,
 	"delay",		DELAY,
-	0,			NONE
+	0,			NONE,
 };
 
 static	int	hisaction;
@@ -65,10 +65,10 @@ actstr(int a)
 	static char buf[32];
 	Keyword *p;
 
-	for(p=actions; p->name; p++)
+	for(p = actions; p->name; p++)
 		if(p->code == a)
 			return p->name;
-	if(a==NONE)
+	if(a == NONE)
 		return "none";
 	sprint(buf, "%d", a);
 	return buf;
@@ -84,8 +84,7 @@ getaction(char *s, char *type)
 		return ACCEPT;
 
 	for(k = actions; k->name != 0; k++){
-		snprint(buf, sizeof buf, "%s/mail/ratify/%s/%s/%s",
-			get9root(), k->name, type, s);
+		snprint(buf, sizeof buf, "/mail/ratify/%s/%s/%s", k->name, type, s);
 		if(access(buf,0) >= 0)
 			return k->code;
 	}
@@ -95,13 +94,13 @@ getaction(char *s, char *type)
 int
 istrusted(char *s)
 {
-	char buf[1024];
+	char buf[Pathlen];
 
 	if(s == nil || *s == 0)
 		return 0;
 
-	snprint(buf, sizeof buf, "%s/mail/ratify/trusted/%s", get9root(), s);
-	return access(buf,0) >= 0;
+	snprint(buf, sizeof buf, "/mail/ratify/trusted/%s", s);
+	return access(buf, 0) >= 0;
 }
 
 void
@@ -131,7 +130,7 @@ getconf(void)
 		cp = getline(bp);
 		if(cp == 0)
 			break;
-		p = cp+strlen(cp)+1;
+		p = cp + strlen(cp) + 1;
 		switch(findkey(cp, options)){
 		case NORELAY:
 			if(fflag == 0 && strcmp(p, "on") == 0)
@@ -158,7 +157,7 @@ getconf(void)
 				s = s_new();
 				s_append(s, p);
 				listadd(&ourdoms, s);
-				p += strlen(p)+1;
+				p += strlen(p) + 1;
 			}
 			break;
 		default:
@@ -168,7 +167,6 @@ getconf(void)
 	sysclose(bp);
 }
 
-#if 0
 /*
  *	match a user name.  the only meta-char is '*' which matches all
  *	characters.  we only allow it as "*", which matches anything or
@@ -180,7 +178,7 @@ usermatch(char *pathuser, char *specuser)
 {
 	int n;
 
-	n = strlen(specuser)-1;
+	n = strlen(specuser) - 1;
 	if(specuser[n] == '*'){
 		if(n == 0)		/* match everything */
 			return 0;
@@ -188,7 +186,6 @@ usermatch(char *pathuser, char *specuser)
 	}
 	return strcmp(pathuser, specuser);
 }
-#endif
 
 static int
 dommatch(char *pathdom, char *specdom)
@@ -198,9 +195,9 @@ dommatch(char *pathdom, char *specdom)
 	if (*specdom == '*'){
 		if (specdom[1] == '.' && specdom[2]){
 			specdom += 2;
-			n = strlen(pathdom)-strlen(specdom);
+			n = strlen(pathdom) - strlen(specdom);
 			if(n == 0 || (n > 0 && pathdom[n-1] == '.'))
-				return strcmp(pathdom+n, specdom);
+				return strcmp(pathdom + n, specdom);
 			return n;
 		}
 	}
@@ -264,10 +261,10 @@ getline(Biobuf *bp)
 			return 0;
 		n = Blinelen(bp);
 		cp[n-1] = 0;
-		if(buf == 0 || bufsize < n+1){
+		if(buf == 0 || bufsize < n + 1){
 			bufsize += 512;
-			if(bufsize < n+1)
-				bufsize = n+1;
+			if(bufsize < n + 1)
+				bufsize = n + 1;
 			buf = realloc(buf, bufsize);
 			if(buf == 0)
 				break;
@@ -331,7 +328,7 @@ found:
 			s_append(path, "[");
 			s_append(path, nci->rsys);
 			s_append(path, "]!");
-			s_append(path, cp+3);
+			s_append(path, cp + 3);
 			s_terminate(path);
 			s_free(lpath);
 			return 0;
@@ -351,7 +348,7 @@ found:
 	for(cp = s_to_c(lpath); *cp; cp++)		/* convert receiver lc */
 		*cp = tolower(*cp);
 
-	for(s = s_to_c(lpath); cp = strchr(s, '!'); s = cp+1){
+	for(s = s_to_c(lpath); cp = strchr(s, '!'); s = cp + 1){
 		*cp = 0;
 		if(!isourdom(s)){
 			s_free(lpath);
@@ -390,7 +387,7 @@ masquerade(String *path, char *him)
 		if(isourdom(s))
 			rv = 1;
 	} else if((cp = strrchr(s, '@')) != nil){
-		if(isourdom(cp+1))
+		if(isourdom(cp + 1))
 			rv = 1;
 	} else {
 		if(isourdom(him))
@@ -426,16 +423,16 @@ cidrcheck(char *cp)
 		if(strchr(cp, '/') == 0){
 			m = 0xff000000;
 			p = cp;
-			for(p = strchr(p, '.'); p && p[1]; p = strchr(p+1, '.'))
-					m = (m>>8)|0xff000000;
+			for(p = strchr(p, '.'); p && p[1]; p = strchr(p + 1, '.'))
+				m = (m>>8)|0xff000000;
 
 			/* force at least a class B */
 			m |= 0xffff0000;
 		}
-		if((v4peerip&m) == a)
+		if((v4peerip & m) == a)
 			return 1;
-		cp += strlen(cp)+1;
-	}
+		cp += strlen(cp) + 1;
+	}		
 	return 0;
 }
 
@@ -470,10 +467,10 @@ dumpfile(char *sender)
 		cp = ctime(time(0));
 		cp[7] = 0;
 		if(cp[8] == ' ')
-			sprint(buf, "%s/queue.dump/%s%c", SPOOL, cp+4, cp[9]);
+			sprint(buf, "%s/queue.dump/%s%c", SPOOL, cp + 4, cp[9]);
 		else
-			sprint(buf, "%s/queue.dump/%s%c%c", SPOOL, cp+4, cp[8], cp[9]);
-		cp = buf+strlen(buf);
+			sprint(buf, "%s/queue.dump/%s%c%c", SPOOL, cp + 4, cp[8], cp[9]);
+		cp = buf + strlen(buf);
 		if(access(buf, 0) < 0 && sysmkdir(buf, 0777) < 0)
 			return "/dev/null";
 		h = 0;
@@ -484,7 +481,7 @@ dumpfile(char *sender)
 			sprint(cp, "/%lud", h);
 			if(access(buf, 0) >= 0)
 				continue;
-			fd = syscreate(buf, ORDWR, 0666);
+			fd = create(buf, ORDWR, 0666);
 			if(fd >= 0){
 				if(debug)
 					fprint(2, "saving in %s\n", buf);
@@ -496,7 +493,7 @@ dumpfile(char *sender)
 	return "/dev/null";
 }
 
-char *validator = "#9/mail/lib/validateaddress";
+char *validator = "/mail/lib/validateaddress";
 
 int
 recipok(char *user)
@@ -507,12 +504,7 @@ recipok(char *user)
 	Biobuf *bp;
 	int pid;
 	Waitmsg *w;
-	static int beenhere;
 
-	if(!beenhere){
-		beenhere++;
-		validator = unsharp(validator);
-	}
 	if(shellchars(user)){
 		syslog(0, "smtpd", "shellchars in user name");
 		return 0;
@@ -530,7 +522,9 @@ recipok(char *user)
 			if(w->pid != pid)
 				continue;
 			if(w->msg[0] != 0){
+				/*
 				syslog(0, "smtpd", "validateaddress %s: %s", user, w->msg);
+				*/
 				return 0;
 			}
 			break;
@@ -587,9 +581,9 @@ optoutofspamfilter(char *addr)
 
 
 	rv = 0;
-	f = smprint("%s/mail/box/%s/nospamfiltering", get9root(), p);
+	f = smprint("/mail/box/%s/nospamfiltering", p);
 	if(f != nil){
-		rv = access(f, 0)==0;
+		rv = access(f, 0) == 0;
 		free(f);
 	}
 
