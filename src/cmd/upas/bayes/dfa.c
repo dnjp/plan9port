@@ -2,8 +2,8 @@
 #include <libc.h>
 #include <bin.h>
 #include <bio.h>
-#include <regexp.h>
-#include "../../../libregexp/regcomp.h"
+#include "regexp.h"
+#include "regcomp.h"
 #include "dfa.h"
 
 void rdump(Reprog*);
@@ -140,19 +140,19 @@ followempty(Deter *d, uchar *bits, int bol, int eol)
 			switch(i->type){
 			case RBRA:
 			case LBRA:
-				again |= add(i->u2.next - d->p->firstinst, bits, k);
+				again |= add(i->next - d->p->firstinst, bits, k);
 				break;
 			case OR:
-				again |= add(i->u2.left - d->p->firstinst, bits, k);
-				again |= add(i->u1.right - d->p->firstinst, bits, k);
+				again |= add(i->left - d->p->firstinst, bits, k);
+				again |= add(i->right - d->p->firstinst, bits, k);
 				break;
 			case BOL:
 				if(bol)
-					again |= add(i->u2.next - d->p->firstinst, bits, k);
+					again |= add(i->next - d->p->firstinst, bits, k);
 				break;
 			case EOL:
 				if(eol)
-					again |= add(i->u2.next - d->p->firstinst, bits, k);
+					again |= add(i->next - d->p->firstinst, bits, k);
 				break;
 			}
 		}
@@ -209,27 +209,27 @@ transition(Deter *d, Reiset *s, Rune r, uint eol)
 			longjmp(d->kaboom, 1);
 
 		case RUNE:
-			if(r == i->u1.r)
-				bits[i->u2.next - inst0] = 1;
+			if(r == i->r)
+				bits[i->next - inst0] = 1;
 			break;
 		case ANY:
 			if(r != L'\n')
-				bits[i->u2.next - inst0] = 1;
+				bits[i->next - inst0] = 1;
 			break;
 		case ANYNL:
-			bits[i->u2.next - inst0] = 1;
+			bits[i->next - inst0] = 1;
 			break;
 		case NCCLASS:
 			if(r == L'\n')
 				break;
 			/* fall through */
 		case CCLASS:
-			ep = i->u1.cp->end;
-			for(rp = i->u1.cp->spans; rp < ep; rp += 2)
+			ep = i->cp->end;
+			for(rp = i->cp->spans; rp < ep; rp += 2)
 				if(rp[0] <= r && r <= rp[1])
 					break;
 			if((rp < ep) ^! (i->type == CCLASS))
-				bits[i->u2.next - inst0] = 1;
+				bits[i->next - inst0] = 1;
 			break;
 		case END:
 			break;
@@ -268,7 +268,7 @@ set(Deter *d, u32int **tab, Rune r)
 }
 
 /*
- * Compute the list of important characters.
+ * Compute the list of important characters. 
  * Other characters behave like the ones that surround them.
  */
 static void
@@ -290,9 +290,9 @@ findchars(Deter *d, Reprog *p)
 			set(d, tab, L'\n'+1);
 			break;
 		case RUNE:
-			set(d, tab, i->u1.r-1);
-			set(d, tab, i->u1.r);
-			set(d, tab, i->u1.r+1);
+			set(d, tab, i->r-1);
+			set(d, tab, i->r);
+			set(d, tab, i->r+1);
 			break;
 		case NCCLASS:
 			set(d, tab, L'\n'-1);
@@ -300,8 +300,8 @@ findchars(Deter *d, Reprog *p)
 			set(d, tab, L'\n'+1);
 			/* fall through */
 		case CCLASS:
-			ep = i->u1.cp->end;
-			for(rp = i->u1.cp->spans; rp < ep; rp += 2){
+			ep = i->cp->end;
+			for(rp = i->cp->spans; rp < ep; rp += 2){
 				set(d, tab, rp[0]-1);
 				set(d, tab, rp[0]);
 				set(d, tab, rp[1]);
@@ -667,12 +667,12 @@ main(int argc, char **argv)
 		if(p == 0){
 			print("=== %s: bad regexp\n", argv[i]);
 		}
-	/*	print("=== %s\n", argv[i]); */
-	/*	rdump(p); */
+	//	print("=== %s\n", argv[i]);
+	//	rdump(p);
 		dp = dregcvt(p);
 		print("=== dfa\n");
 		dump(dp);
-
+	
 	for(i=2; i<argc; i++)
 		print("match %d\n", dregexec(dp, argv[i], 0));
 	exits(0);
@@ -688,13 +688,13 @@ Bprintdfa(Biobuf *b, Dreprog *p)
 	nc = 0;
 	for(i=0; i<p->ninst; i++)
 		nc += p->inst[i].nc;
-	Bprint(b, "%d %d %ld %ld %ld %ld\n", p->ninst, nc,
+	Bprint(b, "%d %d %zd %zd %zd %zd\n", p->ninst, nc,
 		p->start[0]-p->inst, p->start[1]-p->inst,
 		p->start[2]-p->inst, p->start[3]-p->inst);
 	for(i=0; i<p->ninst; i++){
 		Bprint(b, "%d %d %d", p->inst[i].isfinal, p->inst[i].isloop, p->inst[i].nc);
 		for(j=0; j<p->inst[i].nc; j++)
-			Bprint(b, " %d %ld", p->inst[i].c[j].start, p->inst[i].c[j].next-p->inst);
+			Bprint(b, " %d %zd", p->inst[i].c[j].start, p->inst[i].c[j].next-p->inst);
 		Bprint(b, "\n");
 	}
 }

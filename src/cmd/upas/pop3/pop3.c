@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <auth.h>
 #include <libsec.h>
+#include <thread.h>
 
 typedef struct Cmd Cmd;
 struct Cmd
@@ -86,15 +87,16 @@ void
 usage(void)
 {
 	fprint(2, "usage: upas/pop3 [-a authmboxfile] [-d debugfile] [-p]\n");
-	exits("usage");
+	threadexitsall("usage");
 }
 
 void
-main(int argc, char **argv)
+threadmain(int argc, char **argv)
 {
 	int fd;
 	char *arg, cmdbuf[1024];
 	Cmd *c;
+	NetConnInfo *n;
 
 	rfork(RFNAMEG);
 	Binit(&in, 0, OREAD);
@@ -104,7 +106,7 @@ main(int argc, char **argv)
 	case 'a':
 		loggedin = 1;
 		if(readmbox(EARGF(usage())) < 0)
-			exits(nil);
+			threadexitsall(nil);
 		break;
 	case 'd':
 		debug++;
@@ -123,7 +125,7 @@ main(int argc, char **argv)
 		tlscert = readcert(EARGF(usage()), &ntlscert);
 		if(tlscert == nil){
 			senderr("cannot read TLS certificate: %r");
-			exits(nil);
+			threadexitsall(nil);
 		}
 		break;
 	case 'p':
@@ -133,7 +135,10 @@ main(int argc, char **argv)
 
 	/* do before TLS */
 	if(peeraddr == nil)
-		peeraddr = remoteaddr(0,0);
+	if(n = getnetconninfo(0, 0)){
+		peeraddr = strdup(n->rsys);
+		freenetconninfo(n);
+	}
 
 	hello();
 
@@ -152,12 +157,12 @@ main(int argc, char **argv)
 		}
 		(*c->f)(arg);
 	}
-	exits(nil);
+	threadexitsall(nil);
 }
 
 /* sort directories in increasing message number order */
 static int
-dircmp(void *a, void *b)
+dircmp(const void *a, const void *b)
 {
 	return atoi(((Dir*)a)->name) - atoi(((Dir*)b)->name);
 }
@@ -173,7 +178,7 @@ readmbox(char *box)
 	Msg *m;
 	Waitmsg *w;
 
-	unmount(nil, "/mail/fs");
+	/* unmount(nil, "/mail/fs"); */ /* not available on Unix */
 	switch(pid = fork()){
 	case -1:
 		return senderr("can't fork to start upas/fs");
@@ -185,7 +190,7 @@ readmbox(char *box)
 		open("/dev/null", OWRITE);
 		execl("/bin/upas/fs", "upas/fs", "-np", "-f", box, nil);
 		snprint(err, sizeof err, "upas/fs: %r");
-		_exits(err);
+		threadexitsall(err);
 		break;
 
 	default:
@@ -244,9 +249,8 @@ readmbox(char *box)
 		for(;;){
 			p = Brdline(b, '\n');
 			if(p == nil){
-				if((n = Blinelen(b)) == 0)
+				if(Blinelen(b) == 0)
 					break;
-				Bseek(b, n, 1);
 			}else
 				lines++;
 		}
@@ -433,9 +437,8 @@ listcmd(char *arg)
 }
 
 static int
-noopcmd(char *arg)
+noopcmd(char*)
 {
-	USED(arg);
 	sendok("");
 	return 0;
 }
@@ -482,7 +485,7 @@ static int
 quitcmd(char*)
 {
 	synccmd(nil);
-	exits(nil);
+	threadexitsall(nil);
 	return 0;
 }
 
@@ -660,9 +663,9 @@ nextarg(char *p)
  * authentication
  */
 Chalstate *chs;
-char user[256];
-char box[256];
-char cbox[256];
+char user[Pathlen];
+char box[Pathlen];
+char cbox[Pathlen];
 
 static void
 hello(void)
@@ -670,7 +673,7 @@ hello(void)
 	fmtinstall('H', encodefmt);
 	if((chs = auth_challenge("proto=apop role=server")) == nil){
 		senderr("auth server not responding, try later");
-		exits(nil);
+		threadexitsall(nil);
 	}
 
 	sendok("POP3 server ready %s", chs->chal);
@@ -681,6 +684,7 @@ setuser(char *arg)
 {
 	char *p;
 
+	*user = 0;
 	strcpy(box, "/mail/box/");
 	strecpy(box+strlen(box), box+sizeof box-7, arg);
 	strcpy(cbox, box);
@@ -702,8 +706,11 @@ usercmd(char *arg)
 		return senderr("already authenticated");
 	if(*arg == 0)
 		return senderr("USER requires argument");
-	if(setuser(arg) < 0)
-		return -1;
+	if(setuser(arg) < 0){
+		sleep(15*1000);
+		senderr("you are not expected to understand this");	/* pop3 attack. */
+		threadexitsall("");
+	}
 	return sendok("");
 }
 
@@ -723,7 +730,7 @@ enableaddr(void)
 	 * if the address is already there and the user owns it,
 	 * remove it and recreate it to give him a new time quanta.
 	 */
-	if(access(buf, 0) >= 0  && remove(buf) < 0)
+	if(access(buf, 0) >= 0 && remove(buf) < 0)
 		return;
 
 	fd = create(buf, OREAD, 0666);
@@ -745,28 +752,21 @@ dologin(char *response)
 	if((ai = auth_response(chs)) == nil){
 		if(tries++ >= 5){
 			senderr("authentication failed: %r; server exiting");
-			exits(nil);
+			threadexitsall(nil);
 		}
 		return senderr("authentication failed");
 	}
 
-	if(auth_chuid(ai, nil) < 0){
-		senderr("chuid failed: %r; server exiting");
-		exits(nil);
-	}
+	/* auth_chuid/newns not available on Unix */
 	auth_freeAI(ai);
 	auth_freechal(chs);
 	chs = nil;
 
 	loggedin = 1;
-	if(newns(user, 0) < 0){
-		senderr("newns failed: %r; server exiting");
-		exits(nil);
-	}
 
 	enableaddr();
 	if(readmbox(box) < 0)
-		exits(nil);
+		threadexitsall(nil);
 	return sendok("mailbox is %s", box);
 }
 
@@ -776,6 +776,12 @@ passcmd(char *arg)
 	DigestState *s;
 	uchar digest[MD5dlen];
 	char response[2*MD5dlen+1];
+
+	if(*user == 0){
+		senderr("inscrutable phase error");	// pop3 attack.
+		sleep(15*1000);
+		threadexitsall("");
+	}
 
 	if(passwordinclear==0 && didtls==0)
 		return senderr("password in the clear disallowed");
@@ -797,7 +803,10 @@ apopcmd(char *arg)
 	char *resp;
 
 	resp = nextarg(arg);
-	if(setuser(arg) < 0)
-		return -1;
+	if(setuser(arg) < 0){
+		senderr("i before e except after c");	// pop3 attack.
+		sleep(15*1000);
+		threadexitsall("");
+	}
 	return dologin(resp);
 }

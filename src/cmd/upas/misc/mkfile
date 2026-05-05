@@ -1,4 +1,3 @@
-
 RCFILES=mail.rc\
 
 all:Q:
@@ -19,7 +18,6 @@ nuke:V:
 UPDATE=\
 	gone.fishing\
 	gone.msg\
-	mail.c\
 	mail.rc\
 	mail.sh\
 	makefile\

@@ -1,14 +1,18 @@
 <$PLAN9/src/mkhdr
 
 TARG=\
-	token\
-	list\
 	deliver\
+	list\
+	mbappend\
+	mbcreate\
+	mbremove\
+	token\
 
 LIB=../common/libcommon.a
+
 OFILES=readaddrs.$O
 
-BIN=$BIN/upas
+BIN=$PLAN9/bin/upas
 <$PLAN9/src/mkmany
 
 CFLAGS=$CFLAGS -I../common

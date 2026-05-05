@@ -10,9 +10,9 @@ HFILES=	spam.h\
 
 LIB=	../common/libcommon.a
 
-BIN=$BIN/upas
+BIN=$PLAN9/bin/upas
 <$PLAN9/src/mkmany
 CFLAGS=$CFLAGS -I../common
 
 scanmail.$O:	scanmail.c
-	$CC $CFLAGS -D'SPOOL="'$PLAN9'/mail"' scanmail.c
+	$CC $CFLAGS scanmail.c

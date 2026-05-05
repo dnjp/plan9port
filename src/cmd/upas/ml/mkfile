@@ -7,7 +7,7 @@ TARG=ml\
 OFILES=\
 	common.$O\
 
-LIB=../common/libcommon.av\
+LIB=../common/libcommon.a
 
 UHFILES= ../common/common.h\
 	../common/sys.h\
@@ -16,14 +16,13 @@ UHFILES= ../common/common.h\
 HFILES=$UHFILES\
 	../smtp/rfc822.tab.h\
 
-LIB=../common/libcommon.a
-
-BIN=$BIN/upas
+BIN=$PLAN9/bin/upas
 <$PLAN9/src/mkmany
 CFLAGS=$CFLAGS -I../common
 
 $O.ml: ../smtp/rfc822.tab.$O
 $O.mlowner: ../smtp/rfc822.tab.$O
+$O.mlmgr: ../smtp/rfc822.tab.$O
 
 ../smtp/rfc822.tab.h ../smtp/rfc822.tab.$O:
 	(

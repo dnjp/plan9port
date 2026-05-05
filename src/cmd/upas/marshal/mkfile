@@ -10,11 +10,5 @@ OFILES= marshal.$O
 
 BIN=$PLAN9/bin/upas
 
-UPDATE=\
-	mkfile\
-	$HFILES\
-	${OFILES:%.$O=%.c}\
-	
 <$PLAN9/src/mkone
 CFLAGS=$CFLAGS -I../common
-

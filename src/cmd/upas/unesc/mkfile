@@ -3,5 +3,5 @@
 TARG=unesc
 OFILES=unesc.$O
 
-BIN=$BIN/upas
+BIN=$PLAN9/bin/upas
 <$PLAN9/src/mkone
