@@ -1,42 +1,41 @@
-#!/bin/sh
+#!/usr/local/plan9/bin/rc
 
-inflags=yes
-flags=""
-while [ $# != 0 -a $inflags = yes ]
-do
-	case "$1" in
-	--)
-		inflags=no
-		shift
-		;;
-	-*)
-		flags="$flags $1"
-		shift
-		;;
-	-)
-		inflags=no
-		shift
-		;;
-	*)
-		inflags=no
-		;;
-	esac
-done
+path=($PLAN9/bin $path)
 
-case $# in
-0)
-	echo 1>&2 'usage: g [flags] pattern [files]'
-	exit 1
-	;;
-1)
-	pattern="$1"
-	files=`/bin/ls *.[bcChlmsy] *.asm *.cc *.cs *.lx *.cgi *.pl *.py *.tex *.ms *.java *.xy *.go *.goc 2>/dev/null |
-		9 grep -v '\.tab?\.[ch]$'`
-	;;
-*)
-	pattern="$1"
+rfork e
+nl='
+'
+flags=()
+recurse=()
+files=()
+while(! ~ $#* 1 && ~ $1 -* && ! ~ $1 --){
+	if(~ $1 '-n')
+		recurse=-n1
+	if not
+		flags=($flags $1);
 	shift
-	files="$@"
-esac
+}
+if(~ $1 --)
+	shift
+if(~ $#* 0) {
+	echo 'usage: g [flags] pattern [files]' >[1=2]
+	exit usage
+}
+pattern=$1
+shift
 
-exec 9 grep -n $flags -- "$pattern" $files /dev/null
+suffixes='\.([bcChlmsSy]|asm|awk|cc|cgi|cpp|cs|cxx|go|goc|ha|hpp|hs|hxx|in|java|lua|lx|md|mk|ml|mli|ms|myr|pl|py|rc|rs|sh|sl|tex|xy|txt|yaml|yml)$'
+fullnames='(^|/)mkfile$'
+repodirs='(^|/)(.git|.hg)($|/)'
+switch($#*){
+case 0
+	walk -f $recurse | grep -e $fullnames -e $suffixes >[2]/dev/null
+case *
+	for(f in $*){
+		if(test -d $f)
+			walk -f $recurse -- $f \
+				| grep -e $fullnames -e $suffixes >[2]/dev/null
+		if not
+			echo $f
+	}
+} | grep -v $repodirs | xargs grep -n $flags -- $pattern /dev/null
