@@ -25,6 +25,8 @@ struct Cmdtab cmdtab[]={
 	{'r',	0,	0,	0,	0,	aDot,	0,	wordx,	e_cmd},
 	{'s',	0,	1,	0,	0,	aDot,	1,	0,	s_cmd},
 	{'t',	0,	0,	1,	0,	aDot,	0,	0,	m_cmd},
+	{'t'|0x101,0,	0,	0,	0,	aNo,	0,	wordx,	te_cmd},
+	{'t'|0x119,0,	0,	0,	0,	aNo,	0,	wordx,	tw_cmd},
 	{'u',	0,	0,	0,	0,	aNo,	2,	0,	u_cmd},
 	{'v',	0,	1,	0,	'p',	aDot,	0,	0,	g_cmd},
 	{'w',	0,	0,	0,	0,	aAll,	0,	wordx,	w_cmd},
@@ -427,6 +429,14 @@ parsecmd(int nest)
 	if(cmd.cmdc=='c' && nextc()=='d'){	/* sleazy two-character case */
 		getch();		/* the 'd' */
 		cmd.cmdc='c'|0x100;
+	}
+	if(cmd.cmdc=='t' && nextc()=='e'){
+		getch();		/* the 'e' */
+		cmd.cmdc='t'|0x101;
+	}
+	if(cmd.cmdc=='t' && nextc()=='w'){
+		getch();		/* the 'w' */
+		cmd.cmdc='t'|0x119;
 	}
 	i = lookup(cmd.cmdc);
 	if(i >= 0){

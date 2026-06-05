@@ -50,7 +50,8 @@ static char *emsg[]={
 	"temporary file too large",
 	"file is append-only",
 	"no destination for plumb message",
-	"internal read error in buffer load"
+	"internal read error in buffer load",
+	"expected \"off\" or \"on\""
 };
 static char *wmsg[]={
 	/* warn_s */

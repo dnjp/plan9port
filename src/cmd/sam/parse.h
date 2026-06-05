@@ -63,7 +63,7 @@ int	p_cmd(File*, Cmd*), q_cmd(File*, Cmd*);
 int	s_cmd(File*, Cmd*), u_cmd(File*, Cmd*), w_cmd(File*, Cmd*);
 int	x_cmd(File*, Cmd*), X_cmd(File*, Cmd*), plan9_cmd(File*, Cmd*);
 int	eq_cmd(File*, Cmd*);
-
+int	te_cmd(File*, Cmd*), tw_cmd(File*, Cmd*);
 
 String	*getregexp(int);
 Addr	*newaddr(void);

@@ -55,6 +55,8 @@ char *hname[] = {
 	[Hexit]		"Hexit",
 	[Hplumb]	"Hplumb",
 	[Hmenucmd]	"Hmenucmd",
+	[Htabexpand]	"Htabexpand",
+	[Htabwidth]	"Htabwidth",
 };
 
 char *tname[] = {

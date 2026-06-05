@@ -73,6 +73,8 @@ typedef enum Hmesg
 	Hexit,
 	Hplumb,		/* return plumb message to terminal - version 1 */
 	Hmenucmd,	/* modify custom cmds in b2 menu */
+	Htabexpand, 	/* indent using spaces for file */
+	Htabwidth,	/* set tab width for file */
 	HMAX,
 }Hmesg;
 typedef struct Header{

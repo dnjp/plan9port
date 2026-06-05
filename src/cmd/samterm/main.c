@@ -394,17 +394,17 @@ getcol(Rasp *r, long p)
 }
 
 long
-del(Rasp *r, long o, long p)
+del(Rasp *r, long o, long p, int tab, int spaces)
 {
 	int i, col, n;
 
 	if(--p < o)
 		return o;
-	if(!spacesindent || raspc(r, p)!=' ')
+	if(!spaces || raspc(r, p)!=' ')
 		return p;
 	col = getcol(r, p) + 1;
-	if((n = col % maxtab) == 0)
-		n = maxtab;
+	if((n = col % tab) == 0)
+		n = tab;
 	for(i = 0; p-1>=o && raspc(r, p-1)==' ' && i<n-1; --p, i++)
 		;
 	return p>=o? p : o;
@@ -553,10 +553,10 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 				break;
 			}
 		}
-		if(spacesindent && c == '\t'){
+		if(t->spacesindent && c == '\t'){
 			int i, col, n;
 			col = getcol(&t->rasp, a);
-			n = maxtab - col % maxtab;
+			n = t->maxtab - col % t->maxtab;
 			for(i = 0; i < n && p < buf+nelem(buf); i++)
 				*p++ = ' ';
 		} else
@@ -648,7 +648,7 @@ type(Flayer *l, int res)	/* what a bloody mess this is */
 			switch(c){
 			case Kbs:
 			case Kdel:	/* del */
-				l->p0 = del(&t->rasp, l->origin, a);
+				l->p0 = del(&t->rasp, l->origin, a, t->maxtab, t->spacesindent);
 				break;
 			case Knack:	/* ctrl-u */
 				l->p0 = ctlu(&t->rasp, l->origin, a);

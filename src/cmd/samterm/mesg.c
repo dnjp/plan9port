@@ -299,6 +299,25 @@ inmesg(Hmesg type, int count)
 		snarflen = inlong(0);
 		break;
 
+	case Htabexpand:
+		l = invlong(2);
+		if((i=whichmenu(m)) < 0)
+			break;
+		t = whichtext(m);
+		t->spacesindent = l;
+		break;
+
+	case Htabwidth:
+		l = invlong(2);
+		if((i=whichmenu(m)) < 0)
+			break;
+		t = whichtext(m);
+		t->maxtab = l;
+		lp = &t->l[t->front];
+		if(t->l[t->front].textfn!=0)
+			lp->f.maxtab = l*stringwidth(lp->f.font, "0");
+		break;
+
 	case Hack:
 		outT0(Tack);
 		break;
@@ -347,6 +366,8 @@ void
 startnewfile(int type, Text *t)
 {
 	t->tag = Untagged;
+	t->maxtab = maxtab;
+	t->spacesindent = spacesindent;
 	outTv(type, (vlong)(uintptr)t);				/* for 64-bit pointers */
 }
 

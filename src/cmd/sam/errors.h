@@ -48,7 +48,8 @@ typedef enum Err{
 	Etmpovfl,
 	Eappend,
 	Ecantplumb,
-	Ebufload
+	Ebufload,
+	Eoffon,
 }Err;
 typedef enum Warn{
 	/* warn_s */

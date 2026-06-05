@@ -44,6 +44,8 @@ struct Text
 	short	front;		/* input window */
 	ushort	tag;
 	char	lock;
+	int	maxtab;
+	int	spacesindent;
 	Flayer	l[NL];		/* screen storage */
 };
 

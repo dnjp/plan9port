@@ -286,6 +286,45 @@ s_cmd(File *f, Cmd *cp)
 }
 
 int
+te_cmd(File *f, Cmd *cp)
+{
+	char  *tmp;
+	int tabexpand;
+	USED(f);
+
+	tmp = Strtoc(cp->ctext);
+	if(strstr(tmp, "on") != 0)
+		tabexpand = 1;
+	else if(strstr(tmp, "off") != 0)
+		tabexpand = 0;
+	else
+		tabexpand = -1;
+	if(tabexpand<0){
+		error(Eoffon);
+		return FALSE;
+	}
+	if(downloaded){
+		outTsv(Htabexpand, f->tag, tabexpand);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+int
+tw_cmd(File *f, Cmd *cp)
+{
+	int tabwidth;
+	USED(f);
+	if((tabwidth = atoi(Strtoc(cp->ctext))) == 0)
+		error(Ebadrhs);
+	if(downloaded){
+		outTsv(Htabwidth, f->tag, tabwidth);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+int
 u_cmd(File *f, Cmd *cp)
 {
 	int n;
