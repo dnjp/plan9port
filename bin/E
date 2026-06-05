@@ -4,12 +4,12 @@
 # great to set as $EDITOR.
 # the notion of a file changing is a little weak.
 
-stat=`ls -l $1`
+stat=`mtime $1`
 B "$@"
 echo editing "$@"
 while sleep 1
 do
-	nstat=`ls -l $1`
+	nstat=`mtime $1`
 	if [ "x$stat" != "x$nstat" ]
 	then
 		exit
