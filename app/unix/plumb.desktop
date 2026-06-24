@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=plumb
+Comment=Plan 9 Plumber
+Exec=/usr/local/plan9/app/unix/bin/plumb
+Icon=/usr/local/plan9/app/unix/icon/spaceglenda.png
+Terminal=false
+Categories=Development;TextEditor;

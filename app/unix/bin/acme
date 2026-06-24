@@ -1,0 +1,52 @@
+#!/bin/sh
+
+fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
+: "${SHELL:=$fshell}"
+: "${PLAN9:=/usr/local/plan9}"
+
+export INSIDE_P9P=true
+export INSIDE_9TERM=true
+
+cd $HOME
+
+case "$SHELL" in
+*/rc)
+	echo '
+		if(! ~ $PLAN9/bin $path)
+			path=($path $PLAN9/bin)
+		args=(-a)
+		if(! ~ $#fixfont 0)
+			args=($args -F $fixfont)
+		if(! ~ $#varfont 0)
+			args=($args -f $varfont)
+		acme $args &
+	' | $SHELL -l
+	exit 0
+	;;
+*/bash)
+	. ~/.bash_profile
+	;;
+*)
+	. ~/.profile
+	;;
+esac
+
+case ":$PATH" in
+	*":$PLAN9/bin:"*) ;;
+	*) PATH=$PATH:$PLAN9/bin ;;
+esac
+
+export font=$fixfont
+
+args="-a"
+if [ ! -z "$fixfont" ]; then
+	args="$args -F $fixfont"
+fi
+if [ ! -z "$varfont" ]; then
+	args="$args -f $varfont"
+fi
+
+plumber &
+fontsrv &
+eval "acme $args"
+exit 0

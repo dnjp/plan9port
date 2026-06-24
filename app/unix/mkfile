@@ -1,0 +1,4 @@
+
+install:V:
+	cp *.desktop /usr/local/share/applications/
+

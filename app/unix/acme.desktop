@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=acme
+Comment=Plan 9 Editor
+Exec=/usr/local/plan9/app/unix/bin/acme
+Icon=/usr/local/plan9/app/unix/icon/spaceglenda.png
+Terminal=false
+Categories=Development;TextEditor;

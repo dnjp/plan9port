@@ -1,0 +1,46 @@
+#!/bin/sh
+
+file=$1
+
+fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
+: "${SHELL:=$fshell}"
+: "${PLAN9:=/usr/local/plan9}"
+
+case "$SHELL" in
+*/rc)
+	echo '
+		spaces=`{echo "$file" | grep -q " "}
+		if(! ~ $#spaces 0){
+			base=`{basename "$file" | sed 's/ /_/g'}
+			attr='action=showdata filename=/BadName/'^$base
+			cat $file | plumb -i -d edit -a ''''$attr''''
+		}
+		if not {
+			plumb -d edit $file
+		}
+	' | $SHELL -l
+	exit 0
+	;;
+*/bash)
+	. ~/.bash_profile
+	;;
+*)
+	. ~/.profile
+	;;
+esac
+
+case ":$PATH" in
+	*":$PLAN9/bin:"*) ;;
+	*) PATH=$PATH:$PLAN9/bin ;;
+esac
+
+# Blanks are problematic in filenames: just plumb
+# the file's content.
+spaces=$(echo "$file" | grep -q " ")
+if [ ! -z "$spaces" ]; then
+	base=$(basename "$file" | sed 's/ /_/g')
+	attr="action=showdata filename=/BadName/$base"
+	cat $file | plumb -i -d edit -a "$attr"
+else
+	plumb -d edit "$file"
+fi

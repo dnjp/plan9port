@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=9term
+Comment=Plan 9 terminal
+Exec=/usr/local/plan9/app/unix/bin/9term
+Icon=/usr/local/plan9/app/unix/icon/spaceglenda.png
+Terminal=false
+Categories=Development;Terminal;
