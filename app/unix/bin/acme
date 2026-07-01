@@ -1,6 +1,10 @@
 #!/bin/sh
 
-fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
+if [ "$(uname)" = "Linux" ]; then
+	fshell=$(grep $(whoami) /etc/passwd | awk -F ':' '{print $NF}')
+else
+	fshell=$(finger $(whoami) | sed -n 's/.*Shell: //p' | sed 1q)
+fi
 : "${SHELL:=$fshell}"
 : "${PLAN9:=/usr/local/plan9}"
 
